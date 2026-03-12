@@ -209,6 +209,25 @@ async fn test_between() {
 }
 
 #[tokio::test]
+async fn test_not_between() {
+    let pool = setup_db().await;
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("age").not_between(25, 30));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // Charlie (age=35) is outside [25, 30]
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
 async fn test_aggregate_count() {
     let pool = setup_db().await;
 

@@ -307,6 +307,18 @@ fn render_where_clause<V: Clone>(
                 ph_high
             )
         }
+        WhereClause::NotBetween { col, low, high } => {
+            binds.push(low.clone());
+            let ph_low = (cfg.ph)(binds.len());
+            binds.push(high.clone());
+            let ph_high = (cfg.ph)(binds.len());
+            format!(
+                "{} NOT BETWEEN {} AND {}",
+                render_col_ref(col, cfg),
+                ph_low,
+                ph_high
+            )
+        }
         WhereClause::In { col: _, vals } if vals.is_empty() => "1 = 0".to_string(),
         WhereClause::In { col, vals } => {
             let placeholders: Vec<String> = vals
