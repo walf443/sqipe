@@ -1746,6 +1746,65 @@ mod tests {
     }
 
     #[test]
+    fn test_between_qualified_col() {
+        let mut q = sqipe("employee");
+        q.join("dept", table("employee").col("dept_id").eq_col("id"));
+        q.and_where(table("employee").col("age").between(20, 30));
+        q.select_cols(&table("employee").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"employee\".\"id\", \"employee\".\"name\" FROM \"employee\" INNER JOIN \"dept\" ON \"employee\".\"dept_id\" = \"dept\".\"id\" WHERE \"employee\".\"age\" BETWEEN ? AND ?"
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_qualified_col() {
+        let mut q = sqipe("employee");
+        q.join("dept", table("employee").col("dept_id").eq_col("id"));
+        q.and_where(table("employee").col("age").not_between(20, 30));
+        q.select_cols(&table("employee").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"employee\".\"id\", \"employee\".\"name\" FROM \"employee\" INNER JOIN \"dept\" ON \"employee\".\"dept_id\" = \"dept\".\"id\" WHERE \"employee\".\"age\" NOT BETWEEN ? AND ?"
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut q = sqipe("employee");
+        q.and_where(("dept", "eng"));
+        q.and_where(col("age").not_between(20, 30));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = $1 AND \"age\" NOT BETWEEN $2 AND $3"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("eng".to_string()),
+                Value::Int(20),
+                Value::Int(30)
+            ]
+        );
+    }
+
+    #[test]
     fn test_in_range_inclusive() {
         let mut q = sqipe("employee");
         q.and_where(col("age").in_range(20..=30));
