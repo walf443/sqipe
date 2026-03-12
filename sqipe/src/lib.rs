@@ -182,16 +182,23 @@ pub struct JoinClause {
     pub condition: JoinCondition,
 }
 
-/// Column reference in WHERE conditions — either simple or table-qualified.
+/// Column reference — simple, table-qualified, or aliased.
 #[derive(Debug, Clone)]
 pub enum ColRef {
     Simple(String),
     Qualified { table: String, col: String },
+    Aliased { col: Box<ColRef>, alias: String },
 }
 
 /// Trait for converting into a `ColRef`.
 pub trait IntoColRef {
     fn into_col_ref(self) -> ColRef;
+}
+
+impl IntoColRef for ColRef {
+    fn into_col_ref(self) -> ColRef {
+        self
+    }
 }
 
 macro_rules! impl_col_methods {
@@ -289,6 +296,13 @@ impl IntoColRef for Col {
 impl_col_methods!(Col);
 
 impl Col {
+    pub fn as_(self, alias: &str) -> ColRef {
+        ColRef::Aliased {
+            col: Box::new(self.into_col_ref()),
+            alias: alias.to_string(),
+        }
+    }
+
     pub fn asc(self) -> OrderByClause {
         OrderByClause {
             col: self.name,
@@ -316,6 +330,13 @@ impl IntoColRef for QualifiedCol {
 impl_col_methods!(QualifiedCol);
 
 impl QualifiedCol {
+    pub fn as_(self, alias: &str) -> ColRef {
+        ColRef::Aliased {
+            col: Box::new(self.into_col_ref()),
+            alias: alias.to_string(),
+        }
+    }
+
     pub fn eq_col(self, other: impl Into<JoinCol>) -> JoinCondition {
         JoinCondition::ColEq {
             left: self,
@@ -1847,5 +1868,38 @@ mod tests {
             sql,
             "SELECT \"id\", \"name\", \"o\".\"total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\""
         );
+    }
+
+    #[test]
+    fn test_select_with_alias() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.select(&["id"]);
+        q.add_select(table("o").col("total").as_("order_total"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\""
+        );
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" AS \"u\" |> INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\" |> SELECT \"id\", \"o\".\"total\" AS \"order_total\""
+        );
+    }
+
+    #[test]
+    fn test_select_simple_col_with_alias() {
+        let mut q = sqipe("users");
+        q.add_select(col("name").as_("user_name"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
     }
 }
