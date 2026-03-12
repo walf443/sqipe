@@ -24,12 +24,16 @@ let (sql, binds) = q.to_pipe_sql();
 assert_eq!(sql, "FROM \"employee\" |> WHERE \"name\" = ? |> SELECT \"id\", \"name\"");
 ```
 
-### Dialect support
+## Features
 
-Each dialect is a separate crate with its own `sqipe` function.
-Dialect-specific methods are available through the wrapper.
+- **Standard SQL & pipe syntax** — Generate both traditional `SELECT ... FROM ... WHERE` and pipe syntax `FROM ... |> WHERE ... |> SELECT ...` from the same query builder
+- **Driver agnostic** — Works with any database driver. Tested with [sqlx](https://github.com/launchbadge/sqlx) (SQLite, MySQL), [rusqlite](https://github.com/rusqlite/rusqlite), [tokio-postgres](https://github.com/sfackler/rust-postgres), and [postgres](https://github.com/sfackler/rust-postgres)
+- **Extensible bind value types** — Use the built-in `Value` enum for quick prototyping, or define your own type with `sqipe_with::<V>()` to match your driver's parameter types
+- **Dialect support** — Customize placeholder style (`?`, `$1`, ...) and identifier quoting via the `Dialect` trait. MySQL dialect is available as a separate crate:
+  - [sqipe-mysql](./sqipe-mysql/README.md) — backtick quoting, index hints, STRAIGHT_JOIN
+- **Dynamic query building** — Conditionally add WHERE clauses, JOINs, and other clauses at runtime
 
-- [sqipe-mysql](./sqipe-mysql/README.md) — MySQL dialect (backtick quoting, index hints, STRAIGHT_JOIN)
+## API
 
 ### Comparison operators
 
