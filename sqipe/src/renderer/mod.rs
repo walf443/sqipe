@@ -326,6 +326,25 @@ fn render_where_clause<V: Clone>(
             let sub_sql = render_subquery_sql(sub, cfg, binds);
             format!("{} IN ({})", render_col_ref(col, cfg), sub_sql)
         }
+        WhereClause::NotIn { col: _, vals } if vals.is_empty() => "1 = 1".to_string(),
+        WhereClause::NotIn { col, vals } => {
+            let placeholders: Vec<String> = vals
+                .iter()
+                .map(|v| {
+                    binds.push(v.clone());
+                    (cfg.ph)(binds.len())
+                })
+                .collect();
+            format!(
+                "{} NOT IN ({})",
+                render_col_ref(col, cfg),
+                placeholders.join(", ")
+            )
+        }
+        WhereClause::NotInSubQuery { col, sub } => {
+            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            format!("{} NOT IN ({})", render_col_ref(col, cfg), sub_sql)
+        }
         WhereClause::Any(clauses) => {
             let parts: Vec<String> = clauses
                 .iter()

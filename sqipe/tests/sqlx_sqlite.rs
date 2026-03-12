@@ -292,3 +292,26 @@ async fn test_in_subquery_with_outer_binds() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<String, _>("name"), "Alice");
 }
+
+#[tokio::test]
+async fn test_not_in_subquery() {
+    let pool = setup_db().await;
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("id").not_included(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // Charlie (id=3) is not in shipped orders (user_id 1,2)
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
+}

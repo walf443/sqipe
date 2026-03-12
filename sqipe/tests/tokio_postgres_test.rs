@@ -310,3 +310,26 @@ async fn test_in_subquery_with_outer_binds() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<_, String>("name"), "Alice");
 }
+
+#[tokio::test]
+async fn test_not_in_subquery() {
+    let (_container, client) = setup_container().await;
+
+    let mut sub = sqipe_with::<PgValue>("orders");
+    sub.select(&["user_id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("id").not_included(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    // Charlie (id=3) is not in shipped orders (user_id 1,2)
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Charlie");
+}

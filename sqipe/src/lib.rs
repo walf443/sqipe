@@ -267,6 +267,18 @@ macro_rules! impl_col_methods {
                 source.into_in_clause(self.into_col_ref())
             }
 
+            /// Generate a `NOT IN (...)` condition.
+            ///
+            /// Accepts a slice of values or a `Query` for subqueries:
+            /// - `col("id").not_included(&[1, 2, 3])` → `"id" NOT IN (?, ?, ?)`
+            /// - `col("id").not_included(sub_query)` → `"id" NOT IN (SELECT ...)`
+            ///
+            /// When a value list is empty, this produces `1 = 1` (always true) instead of
+            /// invalid SQL.
+            pub fn not_included<V: Clone>(self, source: impl IntoIncluded<V>) -> WhereClause<V> {
+                source.into_not_in_clause(self.into_col_ref())
+            }
+
             pub fn between<V: Clone>(self, low: V, high: V) -> WhereClause<V> {
                 WhereClause::Between {
                     col: self.into_col_ref(),
@@ -385,6 +397,14 @@ pub enum WhereClause<V: Clone = Value> {
         col: ColRef,
         sub: Box<tree::SelectTree<V>>,
     },
+    NotIn {
+        col: ColRef,
+        vals: Vec<V>,
+    },
+    NotInSubQuery {
+        col: ColRef,
+        sub: Box<tree::SelectTree<V>>,
+    },
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
 }
@@ -414,6 +434,16 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .field("col", col)
                 .field("sub", sub)
                 .finish(),
+            WhereClause::NotIn { col, vals } => f
+                .debug_struct("NotIn")
+                .field("col", col)
+                .field("vals", vals)
+                .finish(),
+            WhereClause::NotInSubQuery { col, sub } => f
+                .debug_struct("NotInSubQuery")
+                .field("col", col)
+                .field("sub", sub)
+                .finish(),
             WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
             WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
         }
@@ -439,6 +469,14 @@ impl<V: Clone> WhereClause<V> {
                 vals: vals.into_iter().map(f).collect(),
             },
             WhereClause::InSubQuery { col, sub } => WhereClause::InSubQuery {
+                col,
+                sub: Box::new(sub.map_values(f)),
+            },
+            WhereClause::NotIn { col, vals } => WhereClause::NotIn {
+                col,
+                vals: vals.into_iter().map(f).collect(),
+            },
+            WhereClause::NotInSubQuery { col, sub } => WhereClause::NotInSubQuery {
                 col,
                 sub: Box::new(sub.map_values(f)),
             },
@@ -546,11 +584,19 @@ impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
 /// Implemented for slices (value list) and `Query` (subquery).
 pub trait IntoIncluded<V: Clone> {
     fn into_in_clause(self, col: ColRef) -> WhereClause<V>;
+    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V>;
 }
 
 impl<V: Clone> IntoIncluded<V> for &[V] {
     fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::In {
+            col,
+            vals: self.to_vec(),
+        }
+    }
+
+    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::NotIn {
             col,
             vals: self.to_vec(),
         }
@@ -564,12 +610,26 @@ impl<V: Clone, const N: usize> IntoIncluded<V> for &[V; N] {
             vals: self.to_vec(),
         }
     }
+
+    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::NotIn {
+            col,
+            vals: self.to_vec(),
+        }
+    }
 }
 
 /// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
 impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for Query<V> {
     fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::InSubQuery {
+            col,
+            sub: Box::new(tree::SelectTree::from_query_owned(self)),
+        }
+    }
+
+    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::NotInSubQuery {
             col,
             sub: Box::new(tree::SelectTree::from_query_owned(self)),
         }
@@ -2323,5 +2383,93 @@ mod tests {
             "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"id\" IN (SELECT \"order_id\" FROM \"line_items\" WHERE \"quantity\" > ?))"
         );
         assert_eq!(binds, vec![Value::Int(10)]);
+    }
+
+    #[test]
+    fn test_not_in_clause() {
+        let mut q = sqipe("users");
+        q.and_where(col("status").not_included(&["inactive", "banned"]));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" NOT IN (?, ?)"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("inactive".to_string()),
+                Value::String("banned".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_not_in_clause_empty() {
+        let empty: &[&str] = &[];
+        let mut q = sqipe("users");
+        q.and_where(col("status").not_included(empty));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE 1 = 1");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn test_not_in_clause_pipe_sql() {
+        let mut q = sqipe("users");
+        q.and_where(col("status").not_included(&["inactive", "banned"]));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"status\" NOT IN (?, ?) |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("inactive".to_string()),
+                Value::String("banned".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_not_in_subquery() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("cancelled"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").not_included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?)"
+        );
+        assert_eq!(binds, vec![Value::String("cancelled".to_string())]);
+    }
+
+    #[test]
+    fn test_not_in_subquery_pipe_sql() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("cancelled"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").not_included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?) |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(binds, vec![Value::String("cancelled".to_string())]);
     }
 }

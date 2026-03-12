@@ -59,6 +59,13 @@ impl<V: Clone + std::fmt::Debug> sqipe::IntoIncluded<V> for MysqlQuery<V> {
             sub: Box::new(self.into_tree()),
         }
     }
+
+    fn into_not_in_clause(self, col: sqipe::ColRef) -> sqipe::WhereClause<V> {
+        sqipe::WhereClause::NotInSubQuery {
+            col,
+            sub: Box::new(self.into_tree()),
+        }
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlQuery<V> {
