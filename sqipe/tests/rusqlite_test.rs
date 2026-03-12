@@ -332,3 +332,31 @@ fn test_in_subquery_with_outer_binds() {
     // Alice (age=30 > 26, has shipped order) — Bob (age=25) filtered out by age > 26
     assert_eq!(names, vec!["Alice"]);
 }
+
+#[test]
+fn test_not_in_subquery() {
+    let conn = setup_db();
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("id").not_included(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Charlie (id=3) is not in shipped orders (user_id 1,2)
+    assert_eq!(names, vec!["Charlie"]);
+}
