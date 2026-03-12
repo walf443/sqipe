@@ -131,6 +131,22 @@ impl From<&str> for JoinCol {
 pub enum JoinCondition {
     ColEq { left: QualifiedCol, right: JoinCol },
     And(Vec<JoinCondition>),
+    Using(Vec<String>),
+}
+
+/// JOIN condition helpers.
+pub mod join {
+    use super::JoinCondition;
+
+    /// Create a USING join condition with a single column.
+    pub fn using_col(col: &str) -> JoinCondition {
+        JoinCondition::Using(vec![col.to_string()])
+    }
+
+    /// Create a USING join condition with multiple columns.
+    pub fn using_cols(cols: &[&str]) -> JoinCondition {
+        JoinCondition::Using(cols.iter().map(|c| c.to_string()).collect())
+    }
 }
 
 /// JOIN type.
@@ -602,6 +618,7 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
                 resolve_join_condition(c, join_table);
             }
         }
+        JoinCondition::Using(_) => {}
     }
 }
 
@@ -1570,5 +1587,71 @@ mod tests {
         let (sql, binds) = q.to_sql();
         assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"age\" <= ?");
         assert_eq!(binds, vec![Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_join_using_standard() {
+        let mut q = sqipe("users");
+        q.join("orders", join::using_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\")"
+        );
+    }
+
+    #[test]
+    fn test_join_using_pipe() {
+        let mut q = sqipe("users");
+        q.join("orders", join::using_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> INNER JOIN \"orders\" USING (\"user_id\") |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_left_join_using() {
+        let mut q = sqipe("users");
+        q.left_join("addresses", join::using_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"addresses\" USING (\"user_id\")"
+        );
+    }
+
+    #[test]
+    fn test_join_using_multiple_columns() {
+        let mut q = sqipe("users");
+        q.join("orders", join::using_cols(&["user_id", "tenant_id"]));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\", \"tenant_id\")"
+        );
+    }
+
+    #[test]
+    fn test_join_using_with_on_mixed() {
+        let mut q = sqipe("users");
+        q.join("orders", join::using_col("user_id"));
+        q.left_join("addresses", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\") LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\""
+        );
     }
 }

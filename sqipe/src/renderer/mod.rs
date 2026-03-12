@@ -144,6 +144,7 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
                 .collect();
             parts.join(" AND ")
         }
+        JoinCondition::Using(_) => unreachable!("Using is handled in render_joins"),
     }
 }
 
@@ -155,6 +156,15 @@ pub(super) fn render_joins(joins: &[JoinClause], cfg: &RenderConfig) -> Vec<Stri
                 JoinType::Inner => "INNER JOIN",
                 JoinType::Left => "LEFT JOIN",
             };
+            if let JoinCondition::Using(cols) = &j.condition {
+                let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
+                return format!(
+                    "{} {} USING ({})",
+                    keyword,
+                    (cfg.qi)(&j.table),
+                    quoted.join(", ")
+                );
+            }
             format!(
                 "{} {} ON {}",
                 keyword,
