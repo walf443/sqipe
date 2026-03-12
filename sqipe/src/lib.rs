@@ -254,6 +254,18 @@ macro_rules! impl_col_methods {
                 }
             }
 
+            /// Generate an `IN (...)` condition.
+            ///
+            /// When the list is empty, this produces `1 = 0` (always false) instead of
+            /// invalid SQL. If you need to distinguish "no filter" from "match nothing",
+            /// check that the slice is non-empty before calling this method.
+            pub fn included(self, vals: &[impl Into<Value> + Clone]) -> WhereClause {
+                WhereClause::In {
+                    col: self.into_col_ref(),
+                    vals: vals.iter().map(|v| v.clone().into()).collect(),
+                }
+            }
+
             pub fn between(self, low: impl Into<Value>, high: impl Into<Value>) -> WhereClause {
                 WhereClause::Between {
                     col: self.into_col_ref(),
@@ -359,6 +371,10 @@ pub enum WhereClause {
         col: ColRef,
         low: Value,
         high: Value,
+    },
+    In {
+        col: ColRef,
+        vals: Vec<Value>,
     },
     Any(Vec<WhereClause>),
     All(Vec<WhereClause>),
@@ -1924,5 +1940,83 @@ mod tests {
 
         let (sql, _) = q.to_sql();
         assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
+    }
+
+    #[test]
+    fn test_in_clause() {
+        let mut q = sqipe("users");
+        q.and_where(col("status").included(&["active", "pending"]));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" IN (?, ?)"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("active".to_string()),
+                Value::String("pending".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_in_clause_with_integers() {
+        let mut q = sqipe("users");
+        q.and_where(col("age").included(&[25, 30, 35]));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"age\" IN (?, ?, ?)"
+        );
+        assert_eq!(binds, vec![Value::Int(25), Value::Int(30), Value::Int(35)]);
+    }
+
+    #[test]
+    fn test_in_clause_qualified_col() {
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(
+            table("orders")
+                .col("status")
+                .included(&["shipped", "delivered"]),
+        );
+        q.select_cols(&table("users").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"users\".\"id\", \"users\".\"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" WHERE \"orders\".\"status\" IN (?, ?)"
+        );
+        assert_eq!(binds.len(), 2);
+    }
+
+    #[test]
+    fn test_in_clause_pipe_sql() {
+        let mut q = sqipe("users");
+        q.and_where(col("status").included(&["active", "pending"]));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"status\" IN (?, ?) |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_in_clause_empty() {
+        let empty: &[&str] = &[];
+        let mut q = sqipe("users");
+        q.and_where(col("status").included(empty));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE 1 = 0");
+        assert!(binds.is_empty());
     }
 }

@@ -1,6 +1,6 @@
 #![cfg(feature = "test-tokio-postgres")]
 
-use sqipe::{col, sqipe, table, Dialect, UnionQueryOps};
+use sqipe::{Dialect, UnionQueryOps, col, sqipe, table};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
@@ -27,7 +27,10 @@ fn to_pg_params(binds: &[sqipe::Value]) -> Vec<Box<dyn ToSql + Sync>> {
         .collect()
 }
 
-async fn setup_container() -> (testcontainers::ContainerAsync<Postgres>, tokio_postgres::Client) {
+async fn setup_container() -> (
+    testcontainers::ContainerAsync<Postgres>,
+    tokio_postgres::Client,
+) {
     let container = Postgres::default().start().await.unwrap();
     let host_port = container.get_host_port_ipv4(5432).await.unwrap();
 

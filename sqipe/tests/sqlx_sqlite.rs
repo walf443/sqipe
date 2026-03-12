@@ -1,7 +1,7 @@
 #![cfg(feature = "test-sqlx")]
 
-use sqlx::{Row, SqlitePool};
 use sqipe::{col, sqipe, table};
+use sqlx::{Row, SqlitePool};
 
 async fn setup_db() -> SqlitePool {
     let pool = SqlitePool::connect(":memory:").await.unwrap();

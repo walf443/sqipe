@@ -1,8 +1,8 @@
 #![cfg(feature = "test-sqlx")]
 
-use sqlx::{MySqlPool, Row};
 use sqipe::{col, table};
 use sqipe_mysql::sqipe;
+use sqlx::{MySqlPool, Row};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 

@@ -1,7 +1,7 @@
 #![cfg(feature = "test-postgres")]
 
 use postgres::{Client, NoTls, types::ToSql};
-use sqipe::{col, sqipe, table, Dialect};
+use sqipe::{Dialect, col, sqipe, table};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 

@@ -239,6 +239,21 @@ fn render_where_clause(
                 ph_high
             )
         }
+        WhereClause::In { col: _, vals } if vals.is_empty() => "1 = 0".to_string(),
+        WhereClause::In { col, vals } => {
+            let placeholders: Vec<String> = vals
+                .iter()
+                .map(|v| {
+                    binds.push(v.clone());
+                    (cfg.ph)(binds.len())
+                })
+                .collect();
+            format!(
+                "{} IN ({})",
+                render_col_ref(col, cfg),
+                placeholders.join(", ")
+            )
+        }
         WhereClause::Any(clauses) => {
             let parts: Vec<String> = clauses
                 .iter()
