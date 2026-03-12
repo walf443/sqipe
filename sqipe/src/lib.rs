@@ -2206,4 +2206,26 @@ mod tests {
             "SELECT \"id\" FROM \"users\" WHERE \"users\".\"id\" IN (SELECT \"user_id\" FROM \"orders\")"
         );
     }
+
+    #[test]
+    fn test_in_subquery_nested() {
+        let mut inner_sub = sqipe("line_items");
+        inner_sub.select(&["order_id"]);
+        inner_sub.and_where(col("quantity").gt(10));
+
+        let mut outer_sub = sqipe("orders");
+        outer_sub.select(&["user_id"]);
+        outer_sub.and_where(col("id").included(&inner_sub));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(&outer_sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"id\" IN (SELECT \"order_id\" FROM \"line_items\" WHERE \"quantity\" > ?))"
+        );
+        assert_eq!(binds, vec![Value::Int(10)]);
+    }
 }

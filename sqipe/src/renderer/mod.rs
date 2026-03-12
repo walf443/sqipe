@@ -211,9 +211,9 @@ fn render_select_item(col: &ColRef, cfg: &RenderConfig) -> String {
     }
 }
 
-/// Render a SelectTree as standard SQL for use in subqueries.
-/// Uses the shared binds accumulator so placeholder indices are correct.
-fn render_subquery_sql<V: Clone>(
+/// Render the core of a SELECT statement (SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING)
+/// without ORDER BY / LIMIT / OFFSET. Shared by StandardSqlRenderer and subquery rendering.
+pub(super) fn render_select_core<V: Clone>(
     tree: &SelectTree<V>,
     cfg: &RenderConfig,
     binds: &mut Vec<V>,
@@ -259,7 +259,17 @@ fn render_subquery_sql<V: Clone>(
         parts.push(format!("HAVING {}", having_sql));
     }
 
-    let mut sql = parts.join(" ");
+    parts.join(" ")
+}
+
+/// Render a SelectTree as standard SQL for use in subqueries.
+/// Uses the shared binds accumulator so placeholder indices are correct.
+fn render_subquery_sql<V: Clone>(
+    tree: &SelectTree<V>,
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> String {
+    let mut sql = render_select_core(tree, cfg, binds);
     append_order_by(&mut sql, &tree.order_bys, cfg, " ");
     append_limit_offset_flat(&mut sql, tree.limit, tree.offset);
     sql
