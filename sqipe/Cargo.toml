@@ -13,7 +13,7 @@ rusqlite = { version = "0.32" }
 tokio-postgres = "0.7"
 postgres = "0.19"
 testcontainers = "0.24"
-testcontainers-modules = { version = "0.12", features = ["postgres"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 
 [features]
 test-sqlx = []
