@@ -2472,4 +2472,82 @@ mod tests {
         );
         assert_eq!(binds, vec![Value::String("cancelled".to_string())]);
     }
+
+    #[test]
+    fn test_not_in_clause_with_integers() {
+        let mut q = sqipe("users");
+        q.and_where(col("age").not_included(&[25, 30, 35]));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"age\" NOT IN (?, ?, ?)"
+        );
+        assert_eq!(binds, vec![Value::Int(25), Value::Int(30), Value::Int(35)]);
+    }
+
+    #[test]
+    fn test_not_in_clause_qualified_col() {
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(
+            table("orders")
+                .col("status")
+                .not_included(&["shipped", "delivered"]),
+        );
+        q.select_cols(&table("users").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"users\".\"id\", \"users\".\"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" WHERE \"orders\".\"status\" NOT IN (?, ?)"
+        );
+        assert_eq!(binds.len(), 2);
+    }
+
+    #[test]
+    fn test_not_in_subquery_qualified_col() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+
+        let mut q = sqipe("users");
+        q.and_where(table("users").col("id").not_included(sub));
+        q.select(&["id"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\" FROM \"users\" WHERE \"users\".\"id\" NOT IN (SELECT \"user_id\" FROM \"orders\")"
+        );
+    }
+
+    #[test]
+    fn test_not_in_subquery_pipe_sql_with_outer_binds_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(20));
+        q.and_where(col("id").not_included(sub));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_pipe_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"age\" > $1 AND \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = $2) |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
 }
