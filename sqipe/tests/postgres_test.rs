@@ -269,3 +269,24 @@ pg_test!(test_in_subquery, |client| {
     assert_eq!(rows[0].get::<_, String>("name"), "Alice");
     assert_eq!(rows[1].get::<_, String>("name"), "Bob");
 });
+
+pg_test!(test_in_subquery_with_outer_binds, |client| {
+    let mut sub = sqipe_with::<PgValue>("orders");
+    sub.select(&["user_id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("age").gt(26));
+    q.and_where(col("id").included(&sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    // Alice (age=30 > 26, has shipped order) — Bob (age=25) filtered out by age > 26
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+});

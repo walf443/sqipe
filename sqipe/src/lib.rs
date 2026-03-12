@@ -2186,6 +2186,35 @@ mod tests {
     }
 
     #[test]
+    fn test_in_subquery_with_outer_binds_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(20));
+        q.and_where(col("id").included(&sub));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"age\" > $1 AND \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = $2)"
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
+
+    #[test]
     fn test_in_subquery_pipe_sql() {
         let mut sub = sqipe("orders");
         sub.select(&["user_id"]);
