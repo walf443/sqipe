@@ -1,6 +1,6 @@
 use crate::{
-    AggregateExpr, AggregateFunc, JoinClause, JoinCondition, JoinType, OrderByClause, SortDir,
-    Value, WhereClause, WhereEntry,
+    AggregateExpr, AggregateFunc, ColRef, JoinClause, JoinCondition, JoinType, OrderByClause,
+    SortDir, Value, WhereClause, WhereEntry,
 };
 
 pub mod pipe;
@@ -176,6 +176,13 @@ pub(super) fn render_select_columns(cols: &[String], cfg: &RenderConfig) -> Stri
 
 // ── Private helpers ──
 
+fn render_col_ref(col: &ColRef, cfg: &RenderConfig) -> String {
+    match col {
+        ColRef::Simple(name) => (cfg.qi)(name),
+        ColRef::Qualified { table, col } => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(col)),
+    }
+}
+
 fn render_where_clause(
     clause: &WhereClause,
     is_top_level: bool,
@@ -186,14 +193,24 @@ fn render_where_clause(
         WhereClause::Condition { col, op, val } => {
             binds.push(val.clone());
             let placeholder = (cfg.ph)(binds.len());
-            format!("{} {} {}", (cfg.qi)(col), op.as_str(), placeholder)
+            format!(
+                "{} {} {}",
+                render_col_ref(col, cfg),
+                op.as_str(),
+                placeholder
+            )
         }
         WhereClause::Between { col, low, high } => {
             binds.push(low.clone());
             let ph_low = (cfg.ph)(binds.len());
             binds.push(high.clone());
             let ph_high = (cfg.ph)(binds.len());
-            format!("{} BETWEEN {} AND {}", (cfg.qi)(col), ph_low, ph_high)
+            format!(
+                "{} BETWEEN {} AND {}",
+                render_col_ref(col, cfg),
+                ph_low,
+                ph_high
+            )
         }
         WhereClause::Any(clauses) => {
             let parts: Vec<String> = clauses

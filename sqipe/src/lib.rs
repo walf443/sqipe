@@ -100,15 +100,6 @@ pub struct QualifiedCol {
     pub col: String,
 }
 
-impl QualifiedCol {
-    pub fn eq_col(self, other: impl Into<JoinCol>) -> JoinCondition {
-        JoinCondition::ColEq {
-            left: self,
-            right: other.into(),
-        }
-    }
-}
-
 /// A column reference in a JOIN condition, optionally qualified with a table name.
 /// When `table` is `None`, the table name is inferred from the `join()` / `left_join()` call.
 #[derive(Debug, Clone)]
@@ -157,6 +148,91 @@ pub struct JoinClause {
     pub condition: JoinCondition,
 }
 
+/// Column reference in WHERE conditions — either simple or table-qualified.
+#[derive(Debug, Clone)]
+pub enum ColRef {
+    Simple(String),
+    Qualified { table: String, col: String },
+}
+
+/// Trait for converting into a `ColRef`.
+pub trait IntoColRef {
+    fn into_col_ref(self) -> ColRef;
+}
+
+macro_rules! impl_col_methods {
+    ($ty:ty) => {
+        impl $ty {
+            pub fn eq(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Eq,
+                    val: val.into(),
+                }
+            }
+
+            pub fn ne(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Ne,
+                    val: val.into(),
+                }
+            }
+
+            pub fn gt(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Gt,
+                    val: val.into(),
+                }
+            }
+
+            pub fn lt(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Lt,
+                    val: val.into(),
+                }
+            }
+
+            pub fn gte(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Gte,
+                    val: val.into(),
+                }
+            }
+
+            pub fn lte(self, val: impl Into<Value>) -> WhereClause {
+                WhereClause::Condition {
+                    col: self.into_col_ref(),
+                    op: Op::Lte,
+                    val: val.into(),
+                }
+            }
+
+            pub fn between(self, low: impl Into<Value>, high: impl Into<Value>) -> WhereClause {
+                WhereClause::Between {
+                    col: self.into_col_ref(),
+                    low: low.into(),
+                    high: high.into(),
+                }
+            }
+
+            /// Convert a Rust range into SQL conditions.
+            ///
+            /// - `20..=30` → `BETWEEN 20 AND 30`
+            /// - `20..30`  → `col >= 20 AND col < 30`
+            /// - `20..`    → `col >= 20`
+            /// - `..30`    → `col < 30`
+            /// - `..=30`   → `col <= 30`
+            pub fn in_range<V: Into<Value>>(self, range: impl IntoRangeClause<V>) -> WhereClause {
+                range.into_where_clause(self.into_col_ref())
+            }
+        }
+    };
+}
+
 /// A column reference used to build conditions and order-by clauses.
 #[derive(Debug, Clone)]
 pub struct Col {
@@ -170,74 +246,15 @@ pub fn col(name: &str) -> Col {
     }
 }
 
+impl IntoColRef for Col {
+    fn into_col_ref(self) -> ColRef {
+        ColRef::Simple(self.name)
+    }
+}
+
+impl_col_methods!(Col);
+
 impl Col {
-    pub fn eq(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Eq,
-            val: val.into(),
-        }
-    }
-
-    pub fn ne(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Ne,
-            val: val.into(),
-        }
-    }
-
-    pub fn gt(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Gt,
-            val: val.into(),
-        }
-    }
-
-    pub fn lt(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Lt,
-            val: val.into(),
-        }
-    }
-
-    pub fn gte(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Gte,
-            val: val.into(),
-        }
-    }
-
-    pub fn lte(self, val: impl Into<Value>) -> WhereClause {
-        WhereClause::Condition {
-            col: self.name,
-            op: Op::Lte,
-            val: val.into(),
-        }
-    }
-
-    pub fn between(self, low: impl Into<Value>, high: impl Into<Value>) -> WhereClause {
-        WhereClause::Between {
-            col: self.name,
-            low: low.into(),
-            high: high.into(),
-        }
-    }
-
-    /// Convert a Rust range into SQL conditions.
-    ///
-    /// - `20..=30` → `BETWEEN 20 AND 30`
-    /// - `20..30`  → `col >= 20 AND col < 30`
-    /// - `20..`    → `col >= 20`
-    /// - `..30`    → `col < 30`
-    /// - `..=30`   → `col <= 30`
-    pub fn in_range<V: Into<Value>>(self, range: impl IntoRangeClause<V>) -> WhereClause {
-        range.into_where_clause(self.name)
-    }
-
     pub fn asc(self) -> OrderByClause {
         OrderByClause {
             col: self.name,
@@ -253,16 +270,36 @@ impl Col {
     }
 }
 
+impl IntoColRef for QualifiedCol {
+    fn into_col_ref(self) -> ColRef {
+        ColRef::Qualified {
+            table: self.table,
+            col: self.col,
+        }
+    }
+}
+
+impl_col_methods!(QualifiedCol);
+
+impl QualifiedCol {
+    pub fn eq_col(self, other: impl Into<JoinCol>) -> JoinCondition {
+        JoinCondition::ColEq {
+            left: self,
+            right: other.into(),
+        }
+    }
+}
+
 /// A WHERE condition tree.
 #[derive(Debug, Clone)]
 pub enum WhereClause {
     Condition {
-        col: String,
+        col: ColRef,
         op: Op,
         val: Value,
     },
     Between {
-        col: String,
+        col: ColRef,
         low: Value,
         high: Value,
     },
@@ -274,7 +311,7 @@ pub enum WhereClause {
 impl<V: Into<Value>> From<(&str, V)> for WhereClause {
     fn from((col, val): (&str, V)) -> Self {
         WhereClause::Condition {
-            col: col.to_string(),
+            col: ColRef::Simple(col.to_string()),
             op: Op::Eq,
             val: val.into(),
         }
@@ -283,14 +320,14 @@ impl<V: Into<Value>> From<(&str, V)> for WhereClause {
 
 /// Trait for converting Rust range types into WhereClause.
 pub trait IntoRangeClause<V: Into<Value>> {
-    fn into_where_clause(self, col: String) -> WhereClause;
+    fn into_where_clause(self, col: ColRef) -> WhereClause;
 }
 
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 /// `20..=30` → `col BETWEEN 20 AND 30`
 impl<V: Into<Value>> IntoRangeClause<V> for RangeInclusive<V> {
-    fn into_where_clause(self, col: String) -> WhereClause {
+    fn into_where_clause(self, col: ColRef) -> WhereClause {
         let (low, high) = self.into_inner();
         WhereClause::Between {
             col,
@@ -302,7 +339,7 @@ impl<V: Into<Value>> IntoRangeClause<V> for RangeInclusive<V> {
 
 /// `20..30` → `col >= 20 AND col < 30`
 impl<V: Into<Value>> IntoRangeClause<V> for Range<V> {
-    fn into_where_clause(self, col: String) -> WhereClause {
+    fn into_where_clause(self, col: ColRef) -> WhereClause {
         WhereClause::All(vec![
             WhereClause::Condition {
                 col: col.clone(),
@@ -320,7 +357,7 @@ impl<V: Into<Value>> IntoRangeClause<V> for Range<V> {
 
 /// `20..` → `col >= 20`
 impl<V: Into<Value>> IntoRangeClause<V> for RangeFrom<V> {
-    fn into_where_clause(self, col: String) -> WhereClause {
+    fn into_where_clause(self, col: ColRef) -> WhereClause {
         WhereClause::Condition {
             col,
             op: Op::Gte,
@@ -331,7 +368,7 @@ impl<V: Into<Value>> IntoRangeClause<V> for RangeFrom<V> {
 
 /// `..30` → `col < 30`
 impl<V: Into<Value>> IntoRangeClause<V> for RangeTo<V> {
-    fn into_where_clause(self, col: String) -> WhereClause {
+    fn into_where_clause(self, col: ColRef) -> WhereClause {
         WhereClause::Condition {
             col,
             op: Op::Lt,
@@ -342,7 +379,7 @@ impl<V: Into<Value>> IntoRangeClause<V> for RangeTo<V> {
 
 /// `..=30` → `col <= 30`
 impl<V: Into<Value>> IntoRangeClause<V> for RangeToInclusive<V> {
-    fn into_where_clause(self, col: String) -> WhereClause {
+    fn into_where_clause(self, col: ColRef) -> WhereClause {
         WhereClause::Condition {
             col,
             op: Op::Lte,
@@ -1460,6 +1497,46 @@ mod tests {
         assert_eq!(
             sql,
             "FROM \"users\" |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> WHERE \"name\" = ? |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_join_with_qualified_where() {
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(table("orders").col("status").eq("shipped"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" WHERE \"orders\".\"status\" = ?"
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> WHERE \"orders\".\"status\" = ? |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_join_with_mixed_where() {
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(("name", "Alice"));
+        q.and_where(table("orders").col("amount").gt(100));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" WHERE \"name\" = ? AND \"orders\".\"amount\" > ?"
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("Alice".to_string()), Value::Int(100)]
         );
     }
 
