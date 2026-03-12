@@ -185,12 +185,9 @@ pub struct OrderByClause {
     dir: SortDir,
 }
 
-/// SQL dialect for placeholder style.
-#[derive(Debug, Clone)]
-pub enum Dialect {
-    MySQL,
-    PostgreSQL,
-    BigQuery,
+/// Trait for SQL dialect placeholder styles.
+pub trait Dialect {
+    fn placeholder(&self, index: usize) -> String;
 }
 
 #[derive(Debug, Clone)]
@@ -264,13 +261,13 @@ impl Query {
     }
 
     /// Build standard SQL with dialect-specific placeholders.
-    pub fn to_sql_with(&self, dialect: Dialect) -> (String, Vec<Value>) {
-        self.build_standard_sql(&placeholder_fn(&dialect))
+    pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        self.build_standard_sql(&|n| dialect.placeholder(n))
     }
 
     /// Build pipe syntax SQL with dialect-specific placeholders.
-    pub fn to_pipe_sql_with(&self, dialect: Dialect) -> (String, Vec<Value>) {
-        self.build_pipe_sql(&placeholder_fn(&dialect))
+    pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        self.build_pipe_sql(&|n| dialect.placeholder(n))
     }
 
     fn build_standard_sql(&self, ph: &dyn Fn(usize) -> String) -> (String, Vec<Value>) {
@@ -440,14 +437,6 @@ fn render_where_clause(
     }
 }
 
-fn placeholder_fn(dialect: &Dialect) -> Box<dyn Fn(usize) -> String> {
-    match dialect {
-        Dialect::MySQL => Box::new(|_| "?".to_string()),
-        Dialect::PostgreSQL => Box::new(|n| format!("${}", n)),
-        Dialect::BigQuery => Box::new(|n| format!("@p{}", n)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,36 +469,6 @@ mod tests {
 
         let (sql, _) = q.to_sql();
         assert_eq!(sql, "SELECT * FROM employee WHERE name = ?");
-    }
-
-    #[test]
-    fn test_dialect_postgresql() {
-        let mut q = sqipe("employee");
-        q.and_where(("name", "Alice"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_sql_with(Dialect::PostgreSQL);
-        assert_eq!(sql, "SELECT id, name FROM employee WHERE name = $1");
-    }
-
-    #[test]
-    fn test_dialect_bigquery_pipe() {
-        let mut q = sqipe("employee");
-        q.and_where(("name", "Alice"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql_with(Dialect::BigQuery);
-        assert_eq!(sql, "FROM employee |> WHERE name = @p1 |> SELECT id, name");
-    }
-
-    #[test]
-    fn test_dialect_mysql() {
-        let mut q = sqipe("employee");
-        q.and_where(("name", "Alice"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_sql_with(Dialect::MySQL);
-        assert_eq!(sql, "SELECT id, name FROM employee WHERE name = ?");
     }
 
     #[test]
@@ -629,20 +588,6 @@ mod tests {
         assert_eq!(
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(20)]
-        );
-    }
-
-    #[test]
-    fn test_postgresql_positional_params() {
-        let mut q = sqipe("employee");
-        q.and_where(("name", "Alice"));
-        q.and_where(col("age").gt(20));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_sql_with(Dialect::PostgreSQL);
-        assert_eq!(
-            sql,
-            "SELECT id, name FROM employee WHERE name = $1 AND age > $2"
         );
     }
 }
