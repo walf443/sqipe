@@ -181,11 +181,11 @@ pub(super) fn render_joins(joins: &[JoinClause], cfg: &RenderConfig) -> Vec<Stri
         .collect()
 }
 
-pub(super) fn render_select_columns(cols: &[String], cfg: &RenderConfig) -> String {
+pub(super) fn render_select_columns(cols: &[crate::ColRef], cfg: &RenderConfig) -> String {
     if cols.is_empty() {
         "SELECT *".to_string()
     } else {
-        let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
+        let quoted: Vec<String> = cols.iter().map(|c| render_col_ref(c, cfg)).collect();
         format!("SELECT {}", quoted.join(", "))
     }
 }

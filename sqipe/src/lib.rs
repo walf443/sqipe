@@ -94,6 +94,16 @@ impl TableRef {
         }
     }
 
+    /// Create multiple qualified column references at once.
+    pub fn cols(&self, cols: &[&str]) -> Vec<ColRef> {
+        cols.iter()
+            .map(|c| ColRef::Qualified {
+                table: self.name.clone(),
+                col: c.to_string(),
+            })
+            .collect()
+    }
+
     pub fn as_(mut self, alias: &str) -> Self {
         self.alias = Some(alias.to_string());
         self
@@ -565,7 +575,7 @@ use tree::{SelectTree, UnionTree, default_quote_identifier};
 pub struct Query {
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
-    pub(crate) selects: Vec<String>,
+    pub(crate) selects: Vec<ColRef>,
     pub(crate) wheres: Vec<WhereEntry>,
     pub(crate) havings: Vec<WhereEntry>,
     pub(crate) aggregates: Vec<AggregateExpr>,
@@ -674,7 +684,19 @@ impl Query {
     }
 
     pub fn select(&mut self, cols: &[&str]) -> &mut Self {
-        self.selects = cols.iter().map(|s| s.to_string()).collect();
+        self.selects = cols.iter().map(|s| ColRef::Simple(s.to_string())).collect();
+        self
+    }
+
+    /// Set select columns from `ColRef` values (e.g., from `table("o").cols(&["id"])`).
+    pub fn select_cols(&mut self, cols: &[ColRef]) -> &mut Self {
+        self.selects = cols.to_vec();
+        self
+    }
+
+    /// Append a single column to the select list.
+    pub fn add_select(&mut self, col: impl IntoColRef) -> &mut Self {
+        self.selects.push(col.into_col_ref());
         self
     }
 
@@ -1763,6 +1785,67 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT \"id\", \"name\" FROM \"employees\" AS \"e\" LEFT JOIN \"employees\" AS \"m\" ON \"e\".\"manager_id\" = \"m\".\"id\""
+        );
+    }
+
+    #[test]
+    fn test_select_cols_qualified() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        let mut cols = table("u").cols(&["id", "name"]);
+        cols.extend(table("o").cols(&["total"]));
+        q.select_cols(&cols);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"u\".\"id\", \"u\".\"name\", \"o\".\"total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\""
+        );
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" AS \"u\" |> INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\" |> SELECT \"u\".\"id\", \"u\".\"name\", \"o\".\"total\""
+        );
+    }
+
+    #[test]
+    fn test_add_select() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.select(&["id"]);
+        q.add_select(table("o").col("total"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"o\".\"total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\""
+        );
+    }
+
+    #[test]
+    fn test_select_cols_mixed_simple_and_qualified() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.select(&["id", "name"]);
+        q.add_select(table("o").col("total"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\", \"o\".\"total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\""
         );
     }
 }
