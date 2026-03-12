@@ -264,6 +264,9 @@ pub(super) fn render_select_core<V: Clone>(
 
 /// Render a SelectTree as standard SQL for use in subqueries.
 /// Uses the shared binds accumulator so placeholder indices are correct.
+///
+/// Always renders standard SQL (not pipe syntax) because subqueries appear
+/// inside parentheses where pipe syntax would be invalid.
 fn render_subquery_sql<V: Clone>(
     tree: &SelectTree<V>,
     cfg: &RenderConfig,

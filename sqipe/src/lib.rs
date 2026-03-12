@@ -361,6 +361,10 @@ impl QualifiedCol {
 }
 
 /// A WHERE condition tree, generic over the bind value type.
+///
+/// `Debug` is implemented manually (not derived) because `InSubQuery` contains
+/// `SelectTree<V>` which requires `V: Clone`. The derive macro would only add
+/// `V: Debug`, but we also need `V: Clone` for the enum definition itself.
 #[derive(Clone)]
 pub enum WhereClause<V: Clone = Value> {
     Condition {
@@ -562,6 +566,7 @@ impl<V: Clone, const N: usize> IntoIncluded<V> for &[V; N] {
     }
 }
 
+/// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
 impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for &Query<V> {
     fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::InSubQuery {
