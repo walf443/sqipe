@@ -101,10 +101,36 @@ pub struct QualifiedCol {
 }
 
 impl QualifiedCol {
-    pub fn eq_col(self, other: QualifiedCol) -> JoinCondition {
+    pub fn eq_col(self, other: impl Into<JoinCol>) -> JoinCondition {
         JoinCondition::ColEq {
             left: self,
-            right: other,
+            right: other.into(),
+        }
+    }
+}
+
+/// A column reference in a JOIN condition, optionally qualified with a table name.
+/// When `table` is `None`, the table name is inferred from the `join()` / `left_join()` call.
+#[derive(Debug, Clone)]
+pub struct JoinCol {
+    pub table: Option<String>,
+    pub col: String,
+}
+
+impl From<QualifiedCol> for JoinCol {
+    fn from(qc: QualifiedCol) -> Self {
+        JoinCol {
+            table: Some(qc.table),
+            col: qc.col,
+        }
+    }
+}
+
+impl From<&str> for JoinCol {
+    fn from(col: &str) -> Self {
+        JoinCol {
+            table: None,
+            col: col.to_string(),
         }
     }
 }
@@ -112,10 +138,7 @@ impl QualifiedCol {
 /// A JOIN ON condition.
 #[derive(Debug, Clone)]
 pub enum JoinCondition {
-    ColEq {
-        left: QualifiedCol,
-        right: QualifiedCol,
-    },
+    ColEq { left: QualifiedCol, right: JoinCol },
     And(Vec<JoinCondition>),
 }
 
@@ -530,6 +553,21 @@ pub fn sqipe(table: &str) -> Query {
     }
 }
 
+fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
+    match cond {
+        JoinCondition::ColEq { right, .. } => {
+            if right.table.is_none() {
+                right.table = Some(join_table.to_string());
+            }
+        }
+        JoinCondition::And(conditions) => {
+            for c in conditions {
+                resolve_join_condition(c, join_table);
+            }
+        }
+    }
+}
+
 impl Query {
     pub fn and_where(&mut self, cond: impl Into<WhereClause>) -> &mut Self {
         if self.aggregates.is_empty() {
@@ -565,6 +603,8 @@ impl Query {
     }
 
     pub fn join(&mut self, table: &str, condition: JoinCondition) -> &mut Self {
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, table);
         self.joins.push(JoinClause {
             join_type: JoinType::Inner,
             table: table.to_string(),
@@ -574,6 +614,8 @@ impl Query {
     }
 
     pub fn left_join(&mut self, table: &str, condition: JoinCondition) -> &mut Self {
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, table);
         self.joins.push(JoinClause {
             join_type: JoinType::Left,
             table: table.to_string(),
@@ -1312,6 +1354,59 @@ mod tests {
     #[test]
     fn test_inner_join_standard() {
         let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\""
+        );
+    }
+
+    #[test]
+    fn test_inner_join_pipe() {
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_left_join_standard() {
+        let mut q = sqipe("users");
+        q.left_join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\""
+        );
+    }
+
+    #[test]
+    fn test_left_join_pipe() {
+        let mut q = sqipe("users");
+        q.left_join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> LEFT JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_join_with_qualified_col() {
+        // eq_col also accepts fully qualified QualifiedCol
+        let mut q = sqipe("users");
         q.join(
             "orders",
             table("users")
@@ -1328,74 +1423,10 @@ mod tests {
     }
 
     #[test]
-    fn test_inner_join_pipe() {
-        let mut q = sqipe("users");
-        q.join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql();
-        assert_eq!(
-            sql,
-            "FROM \"users\" |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
-        );
-    }
-
-    #[test]
-    fn test_left_join_standard() {
-        let mut q = sqipe("users");
-        q.left_join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_sql();
-        assert_eq!(
-            sql,
-            "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\""
-        );
-    }
-
-    #[test]
-    fn test_left_join_pipe() {
-        let mut q = sqipe("users");
-        q.left_join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql();
-        assert_eq!(
-            sql,
-            "FROM \"users\" |> LEFT JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
-        );
-    }
-
-    #[test]
     fn test_multiple_joins() {
         let mut q = sqipe("users");
-        q.join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
-        q.left_join(
-            "addresses",
-            table("users")
-                .col("id")
-                .eq_col(table("addresses").col("user_id")),
-        );
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.left_join("addresses", table("users").col("id").eq_col("user_id"));
         q.select(&["id", "name"]);
 
         let (sql, _) = q.to_sql();
@@ -1414,12 +1445,7 @@ mod tests {
     #[test]
     fn test_join_with_where() {
         let mut q = sqipe("users");
-        q.join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
+        q.join("orders", table("users").col("id").eq_col("user_id"));
         q.and_where(("name", "Alice"));
         q.select(&["id", "name"]);
 
@@ -1440,12 +1466,7 @@ mod tests {
     #[test]
     fn test_join_with_aggregate_and_having() {
         let mut q = sqipe("users");
-        q.join(
-            "orders",
-            table("users")
-                .col("id")
-                .eq_col(table("orders").col("user_id")),
-        );
+        q.join("orders", table("users").col("id").eq_col("user_id"));
         q.aggregate(&[aggregate::count_all().as_("cnt")]);
         q.group_by(&["name"]);
         q.and_where(col("cnt").gt(5));

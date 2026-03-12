@@ -120,15 +120,21 @@ pub(super) fn render_from(from: &FromClause, cfg: &RenderConfig) -> String {
     s
 }
 
+fn render_join_col(col: &crate::JoinCol, cfg: &RenderConfig) -> String {
+    match &col.table {
+        Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&col.col)),
+        None => (cfg.qi)(&col.col),
+    }
+}
+
 pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) -> String {
     match cond {
         JoinCondition::ColEq { left, right } => {
             format!(
-                "{}.{} = {}.{}",
+                "{}.{} = {}",
                 (cfg.qi)(&left.table),
                 (cfg.qi)(&left.col),
-                (cfg.qi)(&right.table),
-                (cfg.qi)(&right.col)
+                render_join_col(right, cfg)
             )
         }
         JoinCondition::And(conditions) => {
