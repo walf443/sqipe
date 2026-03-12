@@ -52,7 +52,7 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AND \"age\" > ? AND \"age\" <= ? AND \"salary\" < ? AND \"level\" >= ? AND \"role\" != ?");
 ```
 
-### BETWEEN
+### BETWEEN / NOT BETWEEN
 
 ```rust
 # use sqipe::{sqipe, col};
@@ -62,6 +62,14 @@ q.select(&["id", "name"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" BETWEEN ? AND ?");
+
+// NOT BETWEEN
+let mut q = sqipe("employee");
+q.and_where(col("age").not_between(20, 30));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BETWEEN ? AND ?");
 ```
 
 ### Range conditions

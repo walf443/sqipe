@@ -287,6 +287,14 @@ macro_rules! impl_col_methods {
                 }
             }
 
+            pub fn not_between<V: Clone>(self, low: V, high: V) -> WhereClause<V> {
+                WhereClause::NotBetween {
+                    col: self.into_col_ref(),
+                    low,
+                    high,
+                }
+            }
+
             /// Convert a Rust range into SQL conditions.
             ///
             /// - `20..=30` → `BETWEEN 20 AND 30`
@@ -389,6 +397,11 @@ pub enum WhereClause<V: Clone = Value> {
         low: V,
         high: V,
     },
+    NotBetween {
+        col: ColRef,
+        low: V,
+        high: V,
+    },
     In {
         col: ColRef,
         vals: Vec<V>,
@@ -420,6 +433,12 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .finish(),
             WhereClause::Between { col, low, high } => f
                 .debug_struct("Between")
+                .field("col", col)
+                .field("low", low)
+                .field("high", high)
+                .finish(),
+            WhereClause::NotBetween { col, low, high } => f
+                .debug_struct("NotBetween")
                 .field("col", col)
                 .field("low", low)
                 .field("high", high)
@@ -460,6 +479,11 @@ impl<V: Clone> WhereClause<V> {
                 val: f(val),
             },
             WhereClause::Between { col, low, high } => WhereClause::Between {
+                col,
+                low: f(low),
+                high: f(high),
+            },
+            WhereClause::NotBetween { col, low, high } => WhereClause::NotBetween {
                 col,
                 low: f(low),
                 high: f(high),
@@ -1661,6 +1685,114 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT * FROM \"employee\" WHERE \"dept\" = ? AND \"age\" BETWEEN ? AND ?"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("eng".to_string()),
+                Value::Int(20),
+                Value::Int(30)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_not_between() {
+        let mut q = sqipe("employee");
+        q.and_where(col("age").not_between(20, 30));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BETWEEN ? AND ?"
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_pipe_sql() {
+        let mut q = sqipe("employee");
+        q.and_where(col("age").not_between(20, 30));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"employee\" |> WHERE \"age\" NOT BETWEEN ? AND ? |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_with_other_conditions() {
+        let mut q = sqipe("employee");
+        q.and_where(("dept", "eng"));
+        q.and_where(col("age").not_between(20, 30));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE \"dept\" = ? AND \"age\" NOT BETWEEN ? AND ?"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("eng".to_string()),
+                Value::Int(20),
+                Value::Int(30)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_between_qualified_col() {
+        let mut q = sqipe("employee");
+        q.join("dept", table("employee").col("dept_id").eq_col("id"));
+        q.and_where(table("employee").col("age").between(20, 30));
+        q.select_cols(&table("employee").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"employee\".\"id\", \"employee\".\"name\" FROM \"employee\" INNER JOIN \"dept\" ON \"employee\".\"dept_id\" = \"dept\".\"id\" WHERE \"employee\".\"age\" BETWEEN ? AND ?"
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_qualified_col() {
+        let mut q = sqipe("employee");
+        q.join("dept", table("employee").col("dept_id").eq_col("id"));
+        q.and_where(table("employee").col("age").not_between(20, 30));
+        q.select_cols(&table("employee").cols(&["id", "name"]));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"employee\".\"id\", \"employee\".\"name\" FROM \"employee\" INNER JOIN \"dept\" ON \"employee\".\"dept_id\" = \"dept\".\"id\" WHERE \"employee\".\"age\" NOT BETWEEN ? AND ?"
+        );
+        assert_eq!(binds, vec![Value::Int(20), Value::Int(30)]);
+    }
+
+    #[test]
+    fn test_not_between_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut q = sqipe("employee");
+        q.and_where(("dept", "eng"));
+        q.and_where(col("age").not_between(20, 30));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = $1 AND \"age\" NOT BETWEEN $2 AND $3"
         );
         assert_eq!(
             binds,
