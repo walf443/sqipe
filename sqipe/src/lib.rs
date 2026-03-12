@@ -303,12 +303,13 @@ pub trait UnionQueryOps: AsUnionParts {
     fn to_pipe_sql(&self) -> (String, Vec<Value>);
 }
 
+pub mod renderer;
 pub mod tree;
 
-use tree::{
-    PipeSqlRenderer, RenderConfig, Renderer, SelectTree, StandardSqlRenderer, UnionTree,
-    default_quote_identifier,
-};
+use renderer::pipe::PipeSqlRenderer;
+use renderer::standard::StandardSqlRenderer;
+use renderer::{RenderConfig, Renderer};
+use tree::{SelectTree, UnionTree, default_quote_identifier};
 
 /// The query builder.
 #[derive(Debug, Clone)]

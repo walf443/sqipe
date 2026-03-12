@@ -1,7 +1,8 @@
 use sqipe::Dialect;
-use sqipe::tree::{
-    PipeSqlRenderer, RenderConfig, Renderer, SelectTree, StandardSqlRenderer, UnionTree,
-};
+use sqipe::renderer::pipe::PipeSqlRenderer;
+use sqipe::renderer::standard::StandardSqlRenderer;
+use sqipe::renderer::{RenderConfig, Renderer};
+use sqipe::tree::{SelectTree, UnionTree};
 use std::ops::{Deref, DerefMut};
 
 struct MySQL;
