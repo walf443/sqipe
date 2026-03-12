@@ -1,0 +1,273 @@
+#![cfg(feature = "test-sqlx")]
+
+use sqlx::{MySqlPool, Row};
+use sqipe::{col, table};
+use sqipe_mysql::sqipe;
+use testcontainers::runners::AsyncRunner;
+use testcontainers_modules::mysql::Mysql;
+
+async fn setup_container() -> (testcontainers::ContainerAsync<Mysql>, MySqlPool) {
+    let container = Mysql::default().start().await.unwrap();
+    let host_port = container.get_host_port_ipv4(3306).await.unwrap();
+
+    let url = format!("mysql://root@127.0.0.1:{}/test", host_port);
+    let pool = MySqlPool::connect(&url).await.unwrap();
+
+    sqlx::query(
+        "CREATE TABLE users (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            age INT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "CREATE TABLE orders (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            user_id INT NOT NULL,
+            total DOUBLE NOT NULL,
+            status VARCHAR(255) NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30), (2, 'Bob', 25), (3, 'Charlie', 35)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("INSERT INTO orders (id, user_id, total, status) VALUES (1, 1, 100.0, 'shipped'), (2, 1, 200.0, 'pending'), (3, 2, 50.0, 'shipped')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    (container, pool)
+}
+
+fn bind_params<'a>(
+    mut query: sqlx::query::Query<'a, sqlx::MySql, sqlx::mysql::MySqlArguments>,
+    binds: &'a [sqipe::Value],
+) -> sqlx::query::Query<'a, sqlx::MySql, sqlx::mysql::MySqlArguments> {
+    for bind in binds {
+        query = match bind {
+            sqipe::Value::String(s) => query.bind(s.as_str()),
+            sqipe::Value::Int(n) => query.bind(*n),
+            sqipe::Value::Float(f) => query.bind(*f),
+            sqipe::Value::Bool(b) => query.bind(*b),
+        };
+    }
+    query
+}
+
+#[tokio::test]
+async fn test_basic_select() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_where_condition() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.and_where(("name", "Alice"));
+    q.select(&["id", "name", "age"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[0].get::<i64, _>("age"), 30);
+}
+
+#[tokio::test]
+async fn test_order_by_and_limit() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.order_by(col("age").desc());
+    q.limit(2);
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
+    assert_eq!(rows[1].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_join() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.and_where(table("orders").col("status").eq("shipped"));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+}
+
+#[tokio::test]
+async fn test_join_with_alias() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.as_("u");
+    q.join(
+        table("orders").as_("o"),
+        table("u").col("id").eq_col("user_id"),
+    );
+    q.and_where(table("o").col("status").eq("shipped"));
+    let mut cols = table("u").cols(&["id", "name"]);
+    cols.extend(table("o").cols(&["total"]));
+    q.select_cols(&cols);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_left_join() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.as_("u");
+    q.left_join(
+        table("orders").as_("o"),
+        table("u").col("id").eq_col("user_id"),
+    );
+    q.select_cols(&table("u").cols(&["id", "name"]));
+    q.add_select(table("o").col("total").as_("order_total"));
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    assert_eq!(rows.len(), 4);
+}
+
+#[tokio::test]
+async fn test_straight_join() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.straight_join("orders", table("users").col("id").eq_col("user_id"));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    assert_eq!(rows.len(), 3);
+}
+
+#[tokio::test]
+async fn test_force_index() {
+    let (_container, pool) = setup_container().await;
+
+    // Create an index to reference
+    sqlx::query("CREATE INDEX idx_name ON users (name)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut q = sqipe("users");
+    q.force_index(&["idx_name"]);
+    q.and_where(("name", "Alice"));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_between() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("users");
+    q.and_where(col("age").between(25, 30));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Bob");
+}
+
+#[tokio::test]
+async fn test_aggregate_count() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe("orders");
+    q.aggregate(&[sqipe::aggregate::count_all().as_("cnt")]);
+    q.group_by(&["status"]);
+    q.select(&["status"]);
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    assert_eq!(rows.len(), 2);
+}
+
+#[tokio::test]
+async fn test_union() {
+    let (_container, pool) = setup_container().await;
+
+    use sqipe::UnionQueryOps;
+
+    let mut q1 = sqipe("users");
+    q1.and_where(col("age").gt(30));
+    q1.select(&["id", "name"]);
+
+    let mut q2 = sqipe("users");
+    q2.and_where(col("age").lt(26));
+    q2.select(&["id", "name"]);
+
+    let uq = q1.union(&q2);
+    let (sql, binds) = uq.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+}
