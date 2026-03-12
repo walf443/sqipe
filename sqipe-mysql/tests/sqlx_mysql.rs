@@ -304,3 +304,26 @@ async fn test_union() {
 
     assert_eq!(rows.len(), 2);
 }
+
+#[tokio::test]
+async fn test_in_subquery() {
+    let (_container, pool) = setup_container().await;
+
+    let mut sub = sqipe_with::<MysqlValue>("orders");
+    sub.select(&["user_id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_with::<MysqlValue>("users");
+    q.and_where(col("id").included(&sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Bob");
+}
