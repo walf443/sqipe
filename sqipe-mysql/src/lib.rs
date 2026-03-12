@@ -165,6 +165,20 @@ impl MysqlQuery {
         self.inject_index_hints(body)
     }
 
+    /// Build a full query for use as a UNION part with MySQL index hints.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    fn build_sql_union_part(&self, binds: &mut Vec<sqipe::Value>) -> String {
+        let body = self.inner.to_sql_union_part_with(&MySQL, binds);
+        self.inject_index_hints(body)
+    }
+
+    /// Build a full pipe query for use as a UNION part with MySQL index hints.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    fn build_pipe_sql_union_part(&self, binds: &mut Vec<sqipe::Value>) -> String {
+        let body = self.inner.to_pipe_sql_union_part_with(&MySQL, binds);
+        self.inject_index_hints(body)
+    }
+
     fn inject_index_hints(&self, sql: String) -> String {
         let hints = self.build_index_hints();
         if hints.is_empty() {
@@ -241,7 +255,7 @@ impl sqipe::UnionQueryOps for MysqlUnionQuery {
                 };
                 sql.push_str(&format!(" {} ", keyword));
             }
-            sql.push_str(&query.build_body_with_hints(&mut binds));
+            sql.push_str(&query.build_sql_union_part(&mut binds));
         }
 
         self.append_order_limit(&mut sql);
@@ -260,7 +274,7 @@ impl sqipe::UnionQueryOps for MysqlUnionQuery {
                 };
                 sql.push_str(&format!(" |> {} ", keyword));
             }
-            sql.push_str(&query.build_pipe_body_with_hints(&mut binds));
+            sql.push_str(&query.build_pipe_sql_union_part(&mut binds));
         }
 
         self.append_pipe_order_limit(&mut sql);

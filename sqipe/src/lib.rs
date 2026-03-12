@@ -501,6 +501,25 @@ impl Query {
         self.build_limit_offset()
     }
 
+    /// Build a full query for use as a UNION part with dialect-specific quoting.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    pub fn to_sql_union_part_with(&self, dialect: &dyn Dialect, binds: &mut Vec<Value>) -> String {
+        let cfg = SqlConfig {
+            ph: &|n| dialect.placeholder(n),
+            qi: &|name| dialect.quote_identifier(name),
+        };
+        self.build_standard_sql_union_part(&cfg, binds)
+    }
+
+    /// Build a full pipe query for use as a UNION part with dialect-specific quoting.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    pub fn to_pipe_sql_union_part_with(&self, dialect: &dyn Dialect, binds: &mut Vec<Value>) -> String {
+        let cfg = SqlConfig {
+            ph: &|n| dialect.placeholder(n),
+            qi: &|name| dialect.quote_identifier(name),
+        };
+        self.build_pipe_sql_union_part(&cfg, binds)
+    }
 
     fn build_select_clause(&self, cfg: &SqlConfig) -> String {
         if self.selects.is_empty() {
@@ -587,6 +606,56 @@ impl Query {
         }
 
         parts.join(" ")
+    }
+
+    /// Build a full query for use as a UNION part.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    fn build_standard_sql_union_part(&self, cfg: &SqlConfig, binds: &mut Vec<Value>) -> String {
+        let mut sql = self.build_standard_sql_core(cfg, binds);
+        let has_extra = !self.order_bys.is_empty() || self.limit_val.is_some() || self.offset_val.is_some();
+
+        if has_extra {
+            if let Some(order_by) = self.build_order_by_clause(cfg) {
+                sql.push_str(&format!(" {}", order_by));
+            }
+            let (limit, offset) = self.build_limit_offset();
+            if let Some(l) = limit {
+                sql.push_str(&format!(" {}", l));
+            }
+            if let Some(o) = offset {
+                sql.push_str(&format!(" {}", o));
+            }
+            sql = format!("({})", sql);
+        }
+
+        sql
+    }
+
+    /// Build a full pipe query for use as a UNION part.
+    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
+    fn build_pipe_sql_union_part(&self, cfg: &SqlConfig, binds: &mut Vec<Value>) -> String {
+        let mut sql = self.build_pipe_sql_core(cfg, binds);
+        let has_extra = !self.order_bys.is_empty() || self.limit_val.is_some() || self.offset_val.is_some();
+
+        if has_extra {
+            if let Some(order_by) = self.build_order_by_clause(cfg) {
+                sql.push_str(&format!(" |> {}", order_by));
+            }
+            let (limit, offset) = self.build_limit_offset();
+            let mut lo_parts = Vec::new();
+            if let Some(l) = limit {
+                lo_parts.push(l);
+            }
+            if let Some(o) = offset {
+                lo_parts.push(o);
+            }
+            if !lo_parts.is_empty() {
+                sql.push_str(&format!(" |> {}", lo_parts.join(" ")));
+            }
+            sql = format!("({})", sql);
+        }
+
+        sql
     }
 
     fn build_standard_sql(&self, cfg: &SqlConfig) -> (String, Vec<Value>) {
@@ -802,7 +871,7 @@ impl UnionQuery {
                 };
                 sql.push_str(&format!(" {} ", keyword));
             }
-            sql.push_str(&query.build_standard_sql_core(cfg, &mut binds));
+            sql.push_str(&query.build_standard_sql_union_part(cfg, &mut binds));
         }
 
         if !self.order_bys.is_empty() {
@@ -842,7 +911,7 @@ impl UnionQuery {
                 };
                 sql.push_str(&format!(" |> {} ", keyword));
             }
-            sql.push_str(&query.build_pipe_sql_core(cfg, &mut binds));
+            sql.push_str(&query.build_pipe_sql_union_part(cfg, &mut binds));
         }
 
         if !self.order_bys.is_empty() {
@@ -1280,6 +1349,52 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"contractor\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"contractor\" WHERE \"dept\" = ?"
+        );
+    }
+
+    #[test]
+    fn test_union_with_query_order_by_and_limit() {
+        let mut q1 = sqipe("employee");
+        q1.and_where(("dept", "eng"));
+        q1.select(&["id", "name"]);
+        q1.order_by(col("name").asc());
+        q1.limit(5);
+
+        let mut q2 = sqipe("employee");
+        q2.and_where(("dept", "sales"));
+        q2.select(&["id", "name"]);
+        q2.order_by(col("name").desc());
+        q2.limit(3);
+
+        let mut uq = q1.union_all(&q2);
+        uq.order_by(col("id").asc());
+        uq.limit(10);
+
+        let (sql, _) = uq.to_sql();
+        assert_eq!(
+            sql,
+            "(SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 5) UNION ALL (SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" DESC LIMIT 3) ORDER BY \"id\" ASC LIMIT 10"
+        );
+    }
+
+    #[test]
+    fn test_union_with_one_query_having_order_by() {
+        let mut q1 = sqipe("employee");
+        q1.and_where(("dept", "eng"));
+        q1.select(&["id", "name"]);
+
+        let mut q2 = sqipe("employee");
+        q2.and_where(("dept", "sales"));
+        q2.select(&["id", "name"]);
+        q2.order_by(col("name").asc());
+        q2.limit(5);
+
+        let uq = q1.union_all(&q2);
+
+        let (sql, _) = uq.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL (SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 5)"
         );
     }
 
