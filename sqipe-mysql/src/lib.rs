@@ -52,6 +52,15 @@ impl<V: Clone + std::fmt::Debug> DerefMut for MysqlQuery<V> {
     }
 }
 
+impl<V: Clone + std::fmt::Debug> sqipe::IntoIncluded<V> for MysqlQuery<V> {
+    fn into_in_clause(self, col: sqipe::ColRef) -> sqipe::WhereClause<V> {
+        sqipe::WhereClause::InSubQuery {
+            col,
+            sub: Box::new(self.into_tree()),
+        }
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlQuery<V> {
     type Query = MysqlQuery<V>;
     fn as_union_parts(&self) -> Vec<(sqipe::SetOp, MysqlQuery<V>)> {
@@ -73,6 +82,29 @@ pub fn sqipe(table: &str) -> MysqlQuery<Value> {
         force_indexes: Vec::new(),
         use_indexes: Vec::new(),
         ignore_indexes: Vec::new(),
+    }
+}
+
+fn apply_index_hints_to<V: Clone>(
+    tree: &mut SelectTree<V>,
+    force_indexes: &[String],
+    use_indexes: &[String],
+    ignore_indexes: &[String],
+) {
+    if !force_indexes.is_empty() {
+        tree.from
+            .table_suffix
+            .push(format!("FORCE INDEX ({})", force_indexes.join(", ")));
+    }
+    if !use_indexes.is_empty() {
+        tree.from
+            .table_suffix
+            .push(format!("USE INDEX ({})", use_indexes.join(", ")));
+    }
+    if !ignore_indexes.is_empty() {
+        tree.from
+            .table_suffix
+            .push(format!("IGNORE INDEX ({})", ignore_indexes.join(", ")));
     }
 }
 
@@ -164,6 +196,18 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         tree
     }
 
+    /// Convert into a SelectTree by moving fields, with MySQL-specific index hints applied.
+    pub(crate) fn into_tree(self) -> SelectTree<V> {
+        let mut tree = sqipe::tree::SelectTree::from_query_owned(self.inner);
+        apply_index_hints_to(
+            &mut tree,
+            &self.force_indexes,
+            &self.use_indexes,
+            &self.ignore_indexes,
+        );
+        tree
+    }
+
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -181,21 +225,12 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     }
 
     fn apply_index_hints(&self, tree: &mut SelectTree<V>) {
-        if !self.force_indexes.is_empty() {
-            tree.from
-                .table_suffix
-                .push(format!("FORCE INDEX ({})", self.force_indexes.join(", ")));
-        }
-        if !self.use_indexes.is_empty() {
-            tree.from
-                .table_suffix
-                .push(format!("USE INDEX ({})", self.use_indexes.join(", ")));
-        }
-        if !self.ignore_indexes.is_empty() {
-            tree.from
-                .table_suffix
-                .push(format!("IGNORE INDEX ({})", self.ignore_indexes.join(", ")));
-        }
+        apply_index_hints_to(
+            tree,
+            &self.force_indexes,
+            &self.use_indexes,
+            &self.ignore_indexes,
+        );
     }
 }
 
@@ -522,6 +557,43 @@ mod tests {
             sql,
             "FROM `users` |> STRAIGHT_JOIN `orders` ON `users`.`id` = `orders`.`user_id` |> SELECT `id`, `name`"
         );
+    }
+
+    #[test]
+    fn test_in_subquery() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `users` WHERE `id` IN (SELECT `user_id` FROM `orders` WHERE `status` = ?)"
+        );
+        assert_eq!(binds, vec![sqipe::Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_in_subquery_with_force_index() {
+        let mut sub = sqipe("orders");
+        sub.force_index(&["idx_status"]);
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `users` WHERE `id` IN (SELECT `user_id` FROM `orders` FORCE INDEX (idx_status) WHERE `status` = ?)"
+        );
+        assert_eq!(binds, vec![sqipe::Value::String("shipped".to_string())]);
     }
 
     #[test]

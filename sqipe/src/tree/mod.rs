@@ -49,6 +49,25 @@ pub struct UnionTree<V: Clone = crate::Value> {
     pub offset: Option<u64>,
 }
 
+impl<V: Clone> SelectTree<V> {
+    /// Transform all bind values in this tree.
+    ///
+    /// `select` is not mapped because `SelectClause` contains only column
+    /// references and aggregate expressions, neither of which holds bind values.
+    pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> SelectTree<U> {
+        SelectTree {
+            from: self.from,
+            joins: self.joins,
+            wheres: self.wheres.into_iter().map(|w| w.map_values(f)).collect(),
+            havings: self.havings.into_iter().map(|w| w.map_values(f)).collect(),
+            select: self.select,
+            order_bys: self.order_bys,
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
+}
+
 // ── Build tree from Query ──
 
 impl<V: Clone + std::fmt::Debug> SelectTree<V> {
@@ -73,6 +92,33 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             havings: query.havings.clone(),
             select,
             order_bys: query.order_bys.clone(),
+            limit: query.limit_val,
+            offset: query.offset_val,
+        }
+    }
+
+    /// Convert a Query into a SelectTree by moving fields instead of cloning.
+    pub fn from_query_owned(query: crate::Query<V>) -> Self {
+        let select = if !query.aggregates.is_empty() {
+            SelectClause::Aggregate {
+                group_bys: query.group_bys,
+                exprs: query.aggregates,
+            }
+        } else {
+            SelectClause::Columns(query.selects)
+        };
+
+        SelectTree {
+            from: FromClause {
+                table: query.table,
+                alias: query.table_alias,
+                table_suffix: Vec::new(),
+            },
+            joins: query.joins,
+            wheres: query.wheres,
+            havings: query.havings,
+            select,
+            order_bys: query.order_bys,
             limit: query.limit_val,
             offset: query.offset_val,
         }

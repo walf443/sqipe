@@ -206,7 +206,7 @@ impl IntoColRef for ColRef {
 macro_rules! impl_col_methods {
     ($ty:ty) => {
         impl $ty {
-            pub fn eq<V>(self, val: V) -> WhereClause<V> {
+            pub fn eq<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Eq,
@@ -214,7 +214,7 @@ macro_rules! impl_col_methods {
                 }
             }
 
-            pub fn ne<V>(self, val: V) -> WhereClause<V> {
+            pub fn ne<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Ne,
@@ -222,7 +222,7 @@ macro_rules! impl_col_methods {
                 }
             }
 
-            pub fn gt<V>(self, val: V) -> WhereClause<V> {
+            pub fn gt<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Gt,
@@ -230,7 +230,7 @@ macro_rules! impl_col_methods {
                 }
             }
 
-            pub fn lt<V>(self, val: V) -> WhereClause<V> {
+            pub fn lt<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Lt,
@@ -238,7 +238,7 @@ macro_rules! impl_col_methods {
                 }
             }
 
-            pub fn gte<V>(self, val: V) -> WhereClause<V> {
+            pub fn gte<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Gte,
@@ -246,7 +246,7 @@ macro_rules! impl_col_methods {
                 }
             }
 
-            pub fn lte<V>(self, val: V) -> WhereClause<V> {
+            pub fn lte<V: Clone>(self, val: V) -> WhereClause<V> {
                 WhereClause::Condition {
                     col: self.into_col_ref(),
                     op: Op::Lte,
@@ -256,17 +256,18 @@ macro_rules! impl_col_methods {
 
             /// Generate an `IN (...)` condition.
             ///
-            /// When the list is empty, this produces `1 = 0` (always false) instead of
+            /// Accepts a slice of values or a `&Query` for subqueries:
+            /// - `col("id").included(&[1, 2, 3])` → `"id" IN (?, ?, ?)`
+            /// - `col("id").included(sub_query)` → `"id" IN (SELECT ...)`
+            ///
+            /// When a value list is empty, this produces `1 = 0` (always false) instead of
             /// invalid SQL. If you need to distinguish "no filter" from "match nothing",
             /// check that the slice is non-empty before calling this method.
-            pub fn included<V: Clone>(self, vals: &[V]) -> WhereClause<V> {
-                WhereClause::In {
-                    col: self.into_col_ref(),
-                    vals: vals.to_vec(),
-                }
+            pub fn included<V: Clone>(self, source: impl IntoIncluded<V>) -> WhereClause<V> {
+                source.into_in_clause(self.into_col_ref())
             }
 
-            pub fn between<V>(self, low: V, high: V) -> WhereClause<V> {
+            pub fn between<V: Clone>(self, low: V, high: V) -> WhereClause<V> {
                 WhereClause::Between {
                     col: self.into_col_ref(),
                     low,
@@ -281,7 +282,7 @@ macro_rules! impl_col_methods {
             /// - `20..`    → `col >= 20`
             /// - `..30`    → `col < 30`
             /// - `..=30`   → `col <= 30`
-            pub fn in_range<V>(self, range: impl IntoRangeClause<V>) -> WhereClause<V> {
+            pub fn in_range<V: Clone>(self, range: impl IntoRangeClause<V>) -> WhereClause<V> {
                 range.into_where_clause(self.into_col_ref())
             }
         }
@@ -360,18 +361,68 @@ impl QualifiedCol {
 }
 
 /// A WHERE condition tree, generic over the bind value type.
-#[derive(Debug, Clone)]
-pub enum WhereClause<V = Value> {
-    Condition { col: ColRef, op: Op, val: V },
-    Between { col: ColRef, low: V, high: V },
-    In { col: ColRef, vals: Vec<V> },
+///
+/// `Debug` is implemented manually (not derived) because `InSubQuery` contains
+/// `SelectTree<V>` which requires `V: Clone`. The derive macro would only add
+/// `V: Debug`, but we also need `V: Clone` for the enum definition itself.
+#[derive(Clone)]
+pub enum WhereClause<V: Clone = Value> {
+    Condition {
+        col: ColRef,
+        op: Op,
+        val: V,
+    },
+    Between {
+        col: ColRef,
+        low: V,
+        high: V,
+    },
+    In {
+        col: ColRef,
+        vals: Vec<V>,
+    },
+    InSubQuery {
+        col: ColRef,
+        sub: Box<tree::SelectTree<V>>,
+    },
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
 }
 
-impl<V> WhereClause<V> {
+impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WhereClause::Condition { col, op, val } => f
+                .debug_struct("Condition")
+                .field("col", col)
+                .field("op", op)
+                .field("val", val)
+                .finish(),
+            WhereClause::Between { col, low, high } => f
+                .debug_struct("Between")
+                .field("col", col)
+                .field("low", low)
+                .field("high", high)
+                .finish(),
+            WhereClause::In { col, vals } => f
+                .debug_struct("In")
+                .field("col", col)
+                .field("vals", vals)
+                .finish(),
+            WhereClause::InSubQuery { col, sub } => f
+                .debug_struct("InSubQuery")
+                .field("col", col)
+                .field("sub", sub)
+                .finish(),
+            WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
+            WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
+        }
+    }
+}
+
+impl<V: Clone> WhereClause<V> {
     /// Transform all bind values in this clause.
-    pub fn map_values<U>(self, f: &dyn Fn(V) -> U) -> WhereClause<U> {
+    pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> WhereClause<U> {
         match self {
             WhereClause::Condition { col, op, val } => WhereClause::Condition {
                 col,
@@ -387,6 +438,10 @@ impl<V> WhereClause<V> {
                 col,
                 vals: vals.into_iter().map(f).collect(),
             },
+            WhereClause::InSubQuery { col, sub } => WhereClause::InSubQuery {
+                col,
+                sub: Box::new(sub.map_values(f)),
+            },
             WhereClause::Any(clauses) => {
                 WhereClause::Any(clauses.into_iter().map(|c| c.map_values(f)).collect())
             }
@@ -398,19 +453,19 @@ impl<V> WhereClause<V> {
 }
 
 /// Trait for types that can be converted into a `WhereClause<V>`.
-pub trait IntoWhereClause<V> {
+pub trait IntoWhereClause<V: Clone> {
     fn into_where_clause(self) -> WhereClause<V>;
 }
 
 /// Convert `WhereClause<T>` to `WhereClause<V>` when `T: Into<V>`.
-impl<V, T: Into<V>> IntoWhereClause<V> for WhereClause<T> {
+impl<V: Clone, T: Clone + Into<V>> IntoWhereClause<V> for WhereClause<T> {
     fn into_where_clause(self) -> WhereClause<V> {
         self.map_values(&|v| v.into())
     }
 }
 
 /// Tuple shorthand: `("name", value)` becomes `col = value`.
-impl<V, T: Into<V>> IntoWhereClause<V> for (&str, T) {
+impl<V: Clone, T: Into<V>> IntoWhereClause<V> for (&str, T) {
     fn into_where_clause(self) -> WhereClause<V> {
         WhereClause::Condition {
             col: ColRef::Simple(self.0.to_string()),
@@ -421,14 +476,14 @@ impl<V, T: Into<V>> IntoWhereClause<V> for (&str, T) {
 }
 
 /// Trait for converting Rust range types into WhereClause.
-pub trait IntoRangeClause<V> {
+pub trait IntoRangeClause<V: Clone> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V>;
 }
 
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 /// `20..=30` → `col BETWEEN 20 AND 30`
-impl<V> IntoRangeClause<V> for RangeInclusive<V> {
+impl<V: Clone> IntoRangeClause<V> for RangeInclusive<V> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
         let (low, high) = self.into_inner();
         WhereClause::Between { col, low, high }
@@ -436,7 +491,7 @@ impl<V> IntoRangeClause<V> for RangeInclusive<V> {
 }
 
 /// `20..30` → `col >= 20 AND col < 30`
-impl<V> IntoRangeClause<V> for Range<V> {
+impl<V: Clone> IntoRangeClause<V> for Range<V> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::All(vec![
             WhereClause::Condition {
@@ -454,7 +509,7 @@ impl<V> IntoRangeClause<V> for Range<V> {
 }
 
 /// `20..` → `col >= 20`
-impl<V> IntoRangeClause<V> for RangeFrom<V> {
+impl<V: Clone> IntoRangeClause<V> for RangeFrom<V> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::Condition {
             col,
@@ -465,7 +520,7 @@ impl<V> IntoRangeClause<V> for RangeFrom<V> {
 }
 
 /// `..30` → `col < 30`
-impl<V> IntoRangeClause<V> for RangeTo<V> {
+impl<V: Clone> IntoRangeClause<V> for RangeTo<V> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::Condition {
             col,
@@ -476,7 +531,7 @@ impl<V> IntoRangeClause<V> for RangeTo<V> {
 }
 
 /// `..=30` → `col <= 30`
-impl<V> IntoRangeClause<V> for RangeToInclusive<V> {
+impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
     fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::Condition {
             col,
@@ -486,13 +541,48 @@ impl<V> IntoRangeClause<V> for RangeToInclusive<V> {
     }
 }
 
+/// Trait for types that can be used as a source for `included` (IN clause).
+///
+/// Implemented for slices (value list) and `Query` (subquery).
+pub trait IntoIncluded<V: Clone> {
+    fn into_in_clause(self, col: ColRef) -> WhereClause<V>;
+}
+
+impl<V: Clone> IntoIncluded<V> for &[V] {
+    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::In {
+            col,
+            vals: self.to_vec(),
+        }
+    }
+}
+
+impl<V: Clone, const N: usize> IntoIncluded<V> for &[V; N] {
+    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::In {
+            col,
+            vals: self.to_vec(),
+        }
+    }
+}
+
+/// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
+impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for Query<V> {
+    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+        WhereClause::InSubQuery {
+            col,
+            sub: Box::new(tree::SelectTree::from_query_owned(self)),
+        }
+    }
+}
+
 /// Combine conditions with OR: `any(a, b)` => `(a OR b)`.
-pub fn any<V>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
+pub fn any<V: Clone>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
     WhereClause::Any(vec![a, b])
 }
 
 /// Combine conditions with AND: `all(a, b)` => `(a AND b)`.
-pub fn all<V>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
+pub fn all<V: Clone>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
     WhereClause::All(vec![a, b])
 }
 
@@ -598,9 +688,18 @@ pub trait Dialect {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum WhereEntry<V = Value> {
+pub(crate) enum WhereEntry<V: Clone = Value> {
     And(WhereClause<V>),
     Or(WhereClause<V>),
+}
+
+impl<V: Clone> WhereEntry<V> {
+    pub(crate) fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> WhereEntry<U> {
+        match self {
+            WhereEntry::And(c) => WhereEntry::And(c.map_values(f)),
+            WhereEntry::Or(c) => WhereEntry::Or(c.map_values(f)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2052,5 +2151,177 @@ mod tests {
         let (sql, binds) = q.to_sql();
         assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE 1 = 0");
         assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn test_in_subquery() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?)"
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_in_subquery_with_outer_binds() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("amount").gt(100));
+
+        let mut q = sqipe("users");
+        q.and_where(col("active").eq(true));
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"active\" = ? AND \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"amount\" > ?)"
+        );
+        assert_eq!(binds, vec![Value::Bool(true), Value::Int(100)]);
+    }
+
+    #[test]
+    fn test_in_subquery_with_outer_binds_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(20));
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"age\" > $1 AND \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = $2)"
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_in_subquery_pipe_sql() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?) |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_in_subquery_pipe_sql_with_outer_binds() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(20));
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"age\" > ? AND \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?) |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_in_subquery_pipe_sql_with_outer_binds_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(20));
+        q.and_where(col("id").included(sub));
+        q.select(&["id", "name"]);
+        let (sql, binds) = q.to_pipe_sql_with(&PgDialect);
+
+        assert_eq!(
+            sql,
+            "FROM \"users\" |> WHERE \"age\" > $1 AND \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = $2) |> SELECT \"id\", \"name\""
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_in_subquery_qualified_col() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+
+        let mut q = sqipe("users");
+        q.and_where(table("users").col("id").included(sub));
+        q.select(&["id"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\" FROM \"users\" WHERE \"users\".\"id\" IN (SELECT \"user_id\" FROM \"orders\")"
+        );
+    }
+
+    #[test]
+    fn test_in_subquery_nested() {
+        let mut inner_sub = sqipe("line_items");
+        inner_sub.select(&["order_id"]);
+        inner_sub.and_where(col("quantity").gt(10));
+
+        let mut outer_sub = sqipe("orders");
+        outer_sub.select(&["user_id"]);
+        outer_sub.and_where(col("id").included(inner_sub));
+
+        let mut q = sqipe("users");
+        q.and_where(col("id").included(outer_sub));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" IN (SELECT \"user_id\" FROM \"orders\" WHERE \"id\" IN (SELECT \"order_id\" FROM \"line_items\" WHERE \"quantity\" > ?))"
+        );
+        assert_eq!(binds, vec![Value::Int(10)]);
     }
 }

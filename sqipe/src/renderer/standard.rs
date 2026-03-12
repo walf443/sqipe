@@ -1,67 +1,19 @@
 use super::{
-    RenderConfig, Renderer, append_limit_offset_flat, append_order_by, render_aggregate_expr,
-    render_from, render_joins, render_select_columns, render_wheres, set_op_keyword,
+    RenderConfig, Renderer, append_limit_offset_flat, append_order_by, render_select_core,
+    set_op_keyword,
 };
-use crate::tree::{SelectClause, SelectTree, UnionTree};
+use crate::tree::{SelectTree, UnionTree};
 
 pub struct StandardSqlRenderer;
 
 impl StandardSqlRenderer {
-    fn render_core<V: Clone>(
-        &self,
-        tree: &SelectTree<V>,
-        cfg: &RenderConfig,
-        binds: &mut Vec<V>,
-    ) -> String {
-        let mut parts = Vec::new();
-
-        match &tree.select {
-            SelectClause::Columns(cols) => {
-                parts.push(render_select_columns(cols, cfg));
-            }
-            SelectClause::Aggregate { group_bys, exprs } => {
-                let mut items = Vec::new();
-                for col in group_bys {
-                    items.push((cfg.qi)(col));
-                }
-                for expr in exprs {
-                    items.push(render_aggregate_expr(expr, cfg));
-                }
-                parts.push(format!("SELECT {}", items.join(", ")));
-            }
-        }
-
-        parts.push(render_from(&tree.from, cfg));
-
-        for join_sql in render_joins(&tree.joins, cfg) {
-            parts.push(join_sql);
-        }
-
-        if let Some(where_sql) = render_wheres(&tree.wheres, cfg, binds) {
-            parts.push(format!("WHERE {}", where_sql));
-        }
-
-        if let SelectClause::Aggregate { group_bys, .. } = &tree.select
-            && !group_bys.is_empty()
-        {
-            let cols: Vec<String> = group_bys.iter().map(|c| (cfg.qi)(c)).collect();
-            parts.push(format!("GROUP BY {}", cols.join(", ")));
-        }
-
-        if let Some(having_sql) = render_wheres(&tree.havings, cfg, binds) {
-            parts.push(format!("HAVING {}", having_sql));
-        }
-
-        parts.join(" ")
-    }
-
     fn render_union_part<V: Clone>(
         &self,
         tree: &SelectTree<V>,
         cfg: &RenderConfig,
         binds: &mut Vec<V>,
     ) -> String {
-        let mut sql = self.render_core(tree, cfg, binds);
+        let mut sql = render_select_core(tree, cfg, binds);
         let has_extra = !tree.order_bys.is_empty() || tree.limit.is_some() || tree.offset.is_some();
 
         if has_extra {
@@ -81,7 +33,7 @@ impl Renderer for StandardSqlRenderer {
         cfg: &RenderConfig,
     ) -> (String, Vec<V>) {
         let mut binds = Vec::new();
-        let mut sql = self.render_core(tree, cfg, &mut binds);
+        let mut sql = render_select_core(tree, cfg, &mut binds);
         append_order_by(&mut sql, &tree.order_bys, cfg, " ");
         append_limit_offset_flat(&mut sql, tree.limit, tree.offset);
         (sql, binds)
