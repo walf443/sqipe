@@ -314,7 +314,7 @@ async fn test_in_subquery() {
     sub.and_where(col("status").eq("shipped"));
 
     let mut q = sqipe_with::<MysqlValue>("users");
-    q.and_where(col("id").included(&sub));
+    q.and_where(col("id").included(sub));
     q.select(&["id", "name"]);
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
@@ -338,7 +338,7 @@ async fn test_in_subquery_with_outer_binds() {
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("age").gt(26));
-    q.and_where(col("id").included(&sub));
+    q.and_where(col("id").included(sub));
     q.select(&["id", "name"]);
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();

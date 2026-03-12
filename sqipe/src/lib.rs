@@ -258,7 +258,7 @@ macro_rules! impl_col_methods {
             ///
             /// Accepts a slice of values or a `&Query` for subqueries:
             /// - `col("id").included(&[1, 2, 3])` → `"id" IN (?, ?, ?)`
-            /// - `col("id").included(&sub_query)` → `"id" IN (SELECT ...)`
+            /// - `col("id").included(sub_query)` → `"id" IN (SELECT ...)`
             ///
             /// When a value list is empty, this produces `1 = 0` (always false) instead of
             /// invalid SQL. If you need to distinguish "no filter" from "match nothing",
@@ -567,11 +567,11 @@ impl<V: Clone, const N: usize> IntoIncluded<V> for &[V; N] {
 }
 
 /// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
-impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for &Query<V> {
+impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for Query<V> {
     fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
         WhereClause::InSubQuery {
             col,
-            sub: Box::new(tree::SelectTree::from_query(self)),
+            sub: Box::new(tree::SelectTree::from_query_owned(self)),
         }
     }
 }
@@ -2160,7 +2160,7 @@ mod tests {
         sub.and_where(col("status").eq("shipped"));
 
         let mut q = sqipe("users");
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
 
         let (sql, binds) = q.to_sql();
@@ -2179,7 +2179,7 @@ mod tests {
 
         let mut q = sqipe("users");
         q.and_where(col("active").eq(true));
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
 
         let (sql, binds) = q.to_sql();
@@ -2205,7 +2205,7 @@ mod tests {
 
         let mut q = sqipe("users");
         q.and_where(col("age").gt(20));
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
         let (sql, binds) = q.to_sql_with(&PgDialect);
 
@@ -2226,7 +2226,7 @@ mod tests {
         sub.and_where(col("status").eq("shipped"));
 
         let mut q = sqipe("users");
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
 
         let (sql, _) = q.to_pipe_sql();
@@ -2244,7 +2244,7 @@ mod tests {
 
         let mut q = sqipe("users");
         q.and_where(col("age").gt(20));
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
 
         let (sql, binds) = q.to_pipe_sql();
@@ -2273,7 +2273,7 @@ mod tests {
 
         let mut q = sqipe("users");
         q.and_where(col("age").gt(20));
-        q.and_where(col("id").included(&sub));
+        q.and_where(col("id").included(sub));
         q.select(&["id", "name"]);
         let (sql, binds) = q.to_pipe_sql_with(&PgDialect);
 
@@ -2293,7 +2293,7 @@ mod tests {
         sub.select(&["user_id"]);
 
         let mut q = sqipe("users");
-        q.and_where(table("users").col("id").included(&sub));
+        q.and_where(table("users").col("id").included(sub));
         q.select(&["id"]);
 
         let (sql, _) = q.to_sql();
@@ -2311,10 +2311,10 @@ mod tests {
 
         let mut outer_sub = sqipe("orders");
         outer_sub.select(&["user_id"]);
-        outer_sub.and_where(col("id").included(&inner_sub));
+        outer_sub.and_where(col("id").included(inner_sub));
 
         let mut q = sqipe("users");
-        q.and_where(col("id").included(&outer_sub));
+        q.and_where(col("id").included(outer_sub));
         q.select(&["id", "name"]);
 
         let (sql, binds) = q.to_sql();

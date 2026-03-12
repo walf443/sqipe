@@ -96,6 +96,33 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             offset: query.offset_val,
         }
     }
+
+    /// Convert a Query into a SelectTree by moving fields instead of cloning.
+    pub fn from_query_owned(query: crate::Query<V>) -> Self {
+        let select = if !query.aggregates.is_empty() {
+            SelectClause::Aggregate {
+                group_bys: query.group_bys,
+                exprs: query.aggregates,
+            }
+        } else {
+            SelectClause::Columns(query.selects)
+        };
+
+        SelectTree {
+            from: FromClause {
+                table: query.table,
+                alias: query.table_alias,
+                table_suffix: Vec::new(),
+            },
+            joins: query.joins,
+            wheres: query.wheres,
+            havings: query.havings,
+            select,
+            order_bys: query.order_bys,
+            limit: query.limit_val,
+            offset: query.offset_val,
+        }
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> UnionTree<V> {
