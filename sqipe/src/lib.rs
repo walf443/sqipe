@@ -304,10 +304,12 @@ pub trait UnionQueryOps: IntoUnionParts {
 }
 
 mod builder;
+pub mod tree;
 
 use builder::{default_quote_identifier, SqlBuilder, SqlConfig};
 use builder::standard::StandardSqlBuilder;
 use builder::pipe::PipeSqlBuilder;
+use tree::{RenderConfig, SelectTree, UnionTree};
 
 /// The query builder.
 #[derive(Debug, Clone)]
@@ -426,30 +428,39 @@ impl Query {
         self
     }
 
+    /// Build a SelectTree from this query.
+    pub fn to_tree(&self) -> SelectTree {
+        SelectTree::from_query(self)
+    }
+
     /// Build standard SQL with `?` placeholders and double-quote identifiers.
     pub fn to_sql(&self) -> (String, Vec<Value>) {
-        let cfg = SqlConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
-        StandardSqlBuilder::build_full(self, &cfg)
+        let tree = self.to_tree();
+        let cfg = RenderConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
+        tree.render_standard(&cfg)
     }
 
     /// Build pipe syntax SQL with `?` placeholders and double-quote identifiers.
     pub fn to_pipe_sql(&self) -> (String, Vec<Value>) {
-        let cfg = SqlConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
-        PipeSqlBuilder::build_full(self, &cfg)
+        let tree = self.to_tree();
+        let cfg = RenderConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
+        tree.render_pipe(&cfg)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlBuilder::build_full(self, &SqlConfig { ph: &ph, qi: &qi })
+        tree.render_standard(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     /// Build pipe syntax SQL with dialect-specific placeholders and quoting.
     pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlBuilder::build_full(self, &SqlConfig { ph: &ph, qi: &qi })
+        tree.render_pipe(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     /// Build only the core body (SELECT/FROM/WHERE/GROUP BY, no ORDER BY/LIMIT).
@@ -534,27 +545,36 @@ impl UnionQueryOps for UnionQuery {
     }
 
     fn to_sql(&self) -> (String, Vec<Value>) {
-        let cfg = SqlConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
-        StandardSqlBuilder::build_union(self, &cfg)
+        let tree = UnionTree::from_union_query(self);
+        let cfg = RenderConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
+        tree.render_standard(&cfg)
     }
 
     fn to_pipe_sql(&self) -> (String, Vec<Value>) {
-        let cfg = SqlConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
-        PipeSqlBuilder::build_union(self, &cfg)
+        let tree = UnionTree::from_union_query(self);
+        let cfg = RenderConfig { ph: &|_| "?".to_string(), qi: &default_quote_identifier };
+        tree.render_pipe(&cfg)
     }
 }
 
 impl UnionQuery {
+    /// Build a UnionTree from this union query.
+    pub fn to_tree(&self) -> UnionTree {
+        UnionTree::from_union_query(self)
+    }
+
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlBuilder::build_union(self, &SqlConfig { ph: &ph, qi: &qi })
+        tree.render_standard(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
+        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlBuilder::build_union(self, &SqlConfig { ph: &ph, qi: &qi })
+        tree.render_pipe(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     /// Returns the parts for dialect wrappers to build SQL with custom rendering per part.

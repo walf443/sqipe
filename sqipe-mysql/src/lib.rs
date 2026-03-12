@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use sqipe::Dialect;
+use sqipe::tree::{RenderConfig, SelectTree, UnionTree};
 
 struct MySQL;
 
@@ -17,7 +18,6 @@ impl sqipe::Dialect for MySQL {
 #[derive(Clone)]
 pub struct MysqlQuery {
     inner: sqipe::Query,
-    table: String,
     force_indexes: Vec<String>,
     use_indexes: Vec<String>,
     ignore_indexes: Vec<String>,
@@ -62,7 +62,6 @@ impl sqipe::IntoUnionParts for MysqlUnionQuery {
 pub fn sqipe(table: &str) -> MysqlQuery {
     MysqlQuery {
         inner: sqipe::sqipe(table),
-        table: table.to_string(),
         force_indexes: Vec::new(),
         use_indexes: Vec::new(),
         ignore_indexes: Vec::new(),
@@ -111,95 +110,61 @@ impl MysqlQuery {
         MysqlUnionQuery { parts, order_bys: Vec::new(), limit_val: None, offset_val: None }
     }
 
+    /// Build a SelectTree with MySQL-specific index hints applied.
+    pub fn to_tree(&self) -> SelectTree {
+        let mut tree = self.inner.to_tree();
+        self.apply_index_hints(&mut tree);
+        tree
+    }
+
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<sqipe::Value>) {
-        let mut binds = Vec::new();
-        let mut sql = self.build_body_with_hints(&mut binds);
-
-        if let Some(order_by) = self.inner.to_order_by_with(&MySQL) {
-            sql.push_str(&format!(" {}", order_by));
-        }
-
-        let (limit, offset) = self.inner.to_limit_offset();
-        if let Some(l) = limit {
-            sql.push_str(&format!(" {}", l));
-        }
-        if let Some(o) = offset {
-            sql.push_str(&format!(" {}", o));
-        }
-
-        (sql, binds)
+        let tree = self.to_tree();
+        let ph = |n: usize| MySQL.placeholder(n);
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        tree.render_standard(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     /// Build pipe syntax SQL with MySQL dialect.
     pub fn to_pipe_sql(&self) -> (String, Vec<sqipe::Value>) {
-        let mut binds = Vec::new();
-        let mut sql = self.build_pipe_body_with_hints(&mut binds);
-
-        if let Some(order_by) = self.inner.to_order_by_with(&MySQL) {
-            sql.push_str(&format!(" |> {}", order_by));
-        }
-
-        let (limit, offset) = self.inner.to_limit_offset();
-        let mut limit_offset_parts = Vec::new();
-        if let Some(l) = limit {
-            limit_offset_parts.push(l);
-        }
-        if let Some(o) = offset {
-            limit_offset_parts.push(o);
-        }
-        if !limit_offset_parts.is_empty() {
-            sql.push_str(&format!(" |> {}", limit_offset_parts.join(" ")));
-        }
-
-        (sql, binds)
+        let tree = self.to_tree();
+        let ph = |n: usize| MySQL.placeholder(n);
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        tree.render_pipe(&RenderConfig { ph: &ph, qi: &qi })
     }
 
-    fn build_body_with_hints(&self, binds: &mut Vec<sqipe::Value>) -> String {
-        let body = self.inner.to_sql_body_with(&MySQL, binds);
-        self.inject_index_hints(body)
-    }
-
-    fn build_pipe_body_with_hints(&self, binds: &mut Vec<sqipe::Value>) -> String {
-        let body = self.inner.to_pipe_sql_body_with(&MySQL, binds);
-        self.inject_index_hints(body)
-    }
-
-    /// Build a full query for use as a UNION part with MySQL index hints.
-    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
-    fn build_sql_union_part(&self, binds: &mut Vec<sqipe::Value>) -> String {
-        let body = self.inner.to_sql_union_part_with(&MySQL, binds);
-        self.inject_index_hints(body)
-    }
-
-    /// Build a full pipe query for use as a UNION part with MySQL index hints.
-    /// If the query has ORDER BY/LIMIT/OFFSET, wraps in parentheses.
-    fn build_pipe_sql_union_part(&self, binds: &mut Vec<sqipe::Value>) -> String {
-        let body = self.inner.to_pipe_sql_union_part_with(&MySQL, binds);
-        self.inject_index_hints(body)
-    }
-
-    fn inject_index_hints(&self, sql: String) -> String {
-        let hints = self.build_index_hints();
-        if hints.is_empty() {
-            return sql;
-        }
-        let from_table = format!("FROM `{}`", self.table.replace('`', "``"));
-        sql.replacen(&from_table, &format!("{} {}", from_table, hints), 1)
-    }
-
-    fn build_index_hints(&self) -> String {
-        let mut parts = Vec::new();
+    fn apply_index_hints(&self, tree: &mut SelectTree) {
         if !self.force_indexes.is_empty() {
-            parts.push(format!("FORCE INDEX ({})", self.force_indexes.join(", ")));
+            tree.from.table_suffix.push(
+                format!("FORCE INDEX ({})", self.force_indexes.join(", "))
+            );
         }
         if !self.use_indexes.is_empty() {
-            parts.push(format!("USE INDEX ({})", self.use_indexes.join(", ")));
+            tree.from.table_suffix.push(
+                format!("USE INDEX ({})", self.use_indexes.join(", "))
+            );
         }
         if !self.ignore_indexes.is_empty() {
-            parts.push(format!("IGNORE INDEX ({})", self.ignore_indexes.join(", ")));
+            tree.from.table_suffix.push(
+                format!("IGNORE INDEX ({})", self.ignore_indexes.join(", "))
+            );
         }
-        parts.join(" ")
+    }
+}
+
+impl MysqlUnionQuery {
+    fn to_tree(&self) -> UnionTree {
+        let parts = self
+            .parts
+            .iter()
+            .map(|(op, mq)| (op.clone(), mq.to_tree()))
+            .collect();
+        UnionTree {
+            parts,
+            order_bys: self.order_bys.clone(),
+            limit: self.limit_val,
+            offset: self.offset_val,
+        }
     }
 }
 
@@ -244,95 +209,17 @@ impl sqipe::UnionQueryOps for MysqlUnionQuery {
     }
 
     fn to_sql(&self) -> (String, Vec<sqipe::Value>) {
-        let mut binds = Vec::new();
-        let mut sql = String::new();
-
-        for (i, (op, query)) in self.parts.iter().enumerate() {
-            if i > 0 {
-                let keyword = match op {
-                    sqipe::SetOp::Union => "UNION",
-                    sqipe::SetOp::UnionAll => "UNION ALL",
-                };
-                sql.push_str(&format!(" {} ", keyword));
-            }
-            sql.push_str(&query.build_sql_union_part(&mut binds));
-        }
-
-        self.append_order_limit(&mut sql);
-        (sql, binds)
+        let tree = self.to_tree();
+        let ph = |n: usize| MySQL.placeholder(n);
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        tree.render_standard(&RenderConfig { ph: &ph, qi: &qi })
     }
 
     fn to_pipe_sql(&self) -> (String, Vec<sqipe::Value>) {
-        let mut binds = Vec::new();
-        let mut sql = String::new();
-
-        for (i, (op, query)) in self.parts.iter().enumerate() {
-            if i > 0 {
-                let keyword = match op {
-                    sqipe::SetOp::Union => "UNION",
-                    sqipe::SetOp::UnionAll => "UNION ALL",
-                };
-                sql.push_str(&format!(" |> {} ", keyword));
-            }
-            sql.push_str(&query.build_pipe_sql_union_part(&mut binds));
-        }
-
-        self.append_pipe_order_limit(&mut sql);
-        (sql, binds)
-    }
-}
-
-impl MysqlUnionQuery {
-    fn append_order_limit(&self, sql: &mut String) {
-        if !self.order_bys.is_empty() {
-            let clauses: Vec<String> = self
-                .order_bys
-                .iter()
-                .map(|o| {
-                    let dir = match o.dir {
-                        sqipe::SortDir::Asc => "ASC",
-                        sqipe::SortDir::Desc => "DESC",
-                    };
-                    format!("{} {}", MySQL.quote_identifier(&o.col), dir)
-                })
-                .collect();
-            sql.push_str(&format!(" ORDER BY {}", clauses.join(", ")));
-        }
-
-        if let Some(limit) = self.limit_val {
-            sql.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = self.offset_val {
-            sql.push_str(&format!(" OFFSET {}", offset));
-        }
-    }
-
-    fn append_pipe_order_limit(&self, sql: &mut String) {
-        if !self.order_bys.is_empty() {
-            let clauses: Vec<String> = self
-                .order_bys
-                .iter()
-                .map(|o| {
-                    let dir = match o.dir {
-                        sqipe::SortDir::Asc => "ASC",
-                        sqipe::SortDir::Desc => "DESC",
-                    };
-                    format!("{} {}", MySQL.quote_identifier(&o.col), dir)
-                })
-                .collect();
-            sql.push_str(&format!(" |> ORDER BY {}", clauses.join(", ")));
-        }
-
-        let mut limit_offset_parts = Vec::new();
-        if let Some(limit) = self.limit_val {
-            limit_offset_parts.push(format!("LIMIT {}", limit));
-        }
-        if let Some(offset) = self.offset_val {
-            limit_offset_parts.push(format!("OFFSET {}", offset));
-        }
-        if !limit_offset_parts.is_empty() {
-            sql.push_str(&format!(" |> {}", limit_offset_parts.join(" ")));
-        }
+        let tree = self.to_tree();
+        let ph = |n: usize| MySQL.placeholder(n);
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        tree.render_pipe(&RenderConfig { ph: &ph, qi: &qi })
     }
 }
 

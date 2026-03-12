@@ -2,7 +2,7 @@ pub(crate) mod pipe;
 pub(crate) mod standard;
 
 use crate::{
-    AggregateExpr, AggregateFunc, OrderByClause, Query, SortDir, UnionQuery, Value,
+    AggregateExpr, AggregateFunc, OrderByClause, Query, SortDir, Value,
     WhereClause, WhereEntry,
 };
 
@@ -22,14 +22,8 @@ pub(crate) trait SqlBuilder {
     /// Build the core body (no ORDER BY / LIMIT).
     fn build_core(query: &Query, cfg: &SqlConfig, binds: &mut Vec<Value>) -> String;
 
-    /// Build a full standalone query (core + ORDER BY + LIMIT).
-    fn build_full(query: &Query, cfg: &SqlConfig) -> (String, Vec<Value>);
-
     /// Build a query as a union part (wraps in parens if ORDER BY/LIMIT present).
     fn build_union_part(query: &Query, cfg: &SqlConfig, binds: &mut Vec<Value>) -> String;
-
-    /// Build a full union query.
-    fn build_union(union: &UnionQuery, cfg: &SqlConfig) -> (String, Vec<Value>);
 }
 
 // ── Shared clause renderers ──

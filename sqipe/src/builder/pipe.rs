@@ -2,7 +2,7 @@ use crate::builder::{
     build_aggregate_pipe, build_limit_offset, build_order_by_clause, build_select_clause,
     build_where, SqlBuilder, SqlConfig,
 };
-use crate::{Query, SetOp, UnionQuery, Value};
+use crate::{Query, Value};
 
 pub(crate) struct PipeSqlBuilder;
 
@@ -27,29 +27,6 @@ impl SqlBuilder for PipeSqlBuilder {
         }
 
         parts.join(" |> ")
-    }
-
-    fn build_full(query: &Query, cfg: &SqlConfig) -> (String, Vec<Value>) {
-        let mut binds = Vec::new();
-        let mut sql = Self::build_core(query, cfg, &mut binds);
-
-        if let Some(order_by) = build_order_by_clause(&query.order_bys, cfg) {
-            sql.push_str(&format!(" |> {}", order_by));
-        }
-
-        let (limit, offset) = build_limit_offset(query.limit_val, query.offset_val);
-        let mut lo_parts = Vec::new();
-        if let Some(l) = limit {
-            lo_parts.push(l);
-        }
-        if let Some(o) = offset {
-            lo_parts.push(o);
-        }
-        if !lo_parts.is_empty() {
-            sql.push_str(&format!(" |> {}", lo_parts.join(" ")));
-        }
-
-        (sql, binds)
     }
 
     fn build_union_part(query: &Query, cfg: &SqlConfig, binds: &mut Vec<Value>) -> String {
@@ -79,37 +56,4 @@ impl SqlBuilder for PipeSqlBuilder {
         sql
     }
 
-    fn build_union(union: &UnionQuery, cfg: &SqlConfig) -> (String, Vec<Value>) {
-        let mut binds = Vec::new();
-        let mut sql = String::new();
-
-        for (i, (op, query)) in union.parts.iter().enumerate() {
-            if i > 0 {
-                let keyword = match op {
-                    SetOp::Union => "UNION",
-                    SetOp::UnionAll => "UNION ALL",
-                };
-                sql.push_str(&format!(" |> {} ", keyword));
-            }
-            sql.push_str(&Self::build_union_part(query, cfg, &mut binds));
-        }
-
-        if let Some(order_by) = build_order_by_clause(&union.order_bys, cfg) {
-            sql.push_str(&format!(" |> {}", order_by));
-        }
-
-        let (limit, offset) = build_limit_offset(union.limit_val, union.offset_val);
-        let mut lo_parts = Vec::new();
-        if let Some(l) = limit {
-            lo_parts.push(l);
-        }
-        if let Some(o) = offset {
-            lo_parts.push(o);
-        }
-        if !lo_parts.is_empty() {
-            sql.push_str(&format!(" |> {}", lo_parts.join(" ")));
-        }
-
-        (sql, binds)
-    }
 }
