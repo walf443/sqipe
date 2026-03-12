@@ -317,6 +317,7 @@ pub struct Query {
     pub(crate) table: String,
     pub(crate) selects: Vec<String>,
     pub(crate) wheres: Vec<WhereEntry>,
+    pub(crate) havings: Vec<WhereEntry>,
     pub(crate) aggregates: Vec<AggregateExpr>,
     pub(crate) group_bys: Vec<String>,
     pub(crate) order_bys: Vec<OrderByClause>,
@@ -353,6 +354,7 @@ pub fn sqipe(table: &str) -> Query {
         table: table.to_string(),
         selects: Vec::new(),
         wheres: Vec::new(),
+        havings: Vec::new(),
         aggregates: Vec::new(),
         group_bys: Vec::new(),
         order_bys: Vec::new(),
@@ -363,12 +365,20 @@ pub fn sqipe(table: &str) -> Query {
 
 impl Query {
     pub fn and_where(&mut self, cond: impl Into<WhereClause>) -> &mut Self {
-        self.wheres.push(WhereEntry::And(cond.into()));
+        if self.aggregates.is_empty() {
+            self.wheres.push(WhereEntry::And(cond.into()));
+        } else {
+            self.havings.push(WhereEntry::And(cond.into()));
+        }
         self
     }
 
     pub fn or_where(&mut self, cond: impl Into<WhereClause>) -> &mut Self {
-        self.wheres.push(WhereEntry::Or(cond.into()));
+        if self.aggregates.is_empty() {
+            self.wheres.push(WhereEntry::Or(cond.into()));
+        } else {
+            self.havings.push(WhereEntry::Or(cond.into()));
+        }
         self
     }
 
@@ -985,5 +995,37 @@ mod tests {
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(20)]
         );
+    }
+
+    #[test]
+    fn test_having_via_and_where_after_aggregate() {
+        let mut q = sqipe("employee");
+        q.and_where(col("active").eq(true));
+        q.aggregate(&[aggregate::count_all().as_("cnt")]);
+        q.group_by(&["dept"]);
+        q.and_where(col("cnt").gt(5));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" WHERE \"active\" = ? GROUP BY \"dept\" HAVING \"cnt\" > ?"
+        );
+        assert_eq!(binds, vec![Value::Bool(true), Value::Int(5)]);
+    }
+
+    #[test]
+    fn test_having_pipe_sql() {
+        let mut q = sqipe("employee");
+        q.and_where(col("active").eq(true));
+        q.aggregate(&[aggregate::count_all().as_("cnt")]);
+        q.group_by(&["dept"]);
+        q.and_where(col("cnt").gt(5));
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"employee\" |> WHERE \"active\" = ? |> AGGREGATE COUNT(*) AS \"cnt\" GROUP BY \"dept\" |> WHERE \"cnt\" > ?"
+        );
+        assert_eq!(binds, vec![Value::Bool(true), Value::Int(5)]);
     }
 }

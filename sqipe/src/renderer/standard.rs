@@ -41,6 +41,10 @@ impl StandardSqlRenderer {
             parts.push(format!("GROUP BY {}", cols.join(", ")));
         }
 
+        if let Some(having_sql) = render_wheres(&tree.havings, cfg, binds) {
+            parts.push(format!("HAVING {}", having_sql));
+        }
+
         parts.join(" ")
     }
 

@@ -31,6 +31,7 @@ pub enum SelectClause {
 pub struct SelectTree {
     pub from: FromClause,
     pub(crate) wheres: Vec<WhereEntry>,
+    pub(crate) havings: Vec<WhereEntry>,
     pub select: SelectClause,
     pub order_bys: Vec<OrderByClause>,
     pub limit: Option<u64>,
@@ -65,6 +66,7 @@ impl SelectTree {
                 table_suffix: Vec::new(),
             },
             wheres: query.wheres.clone(),
+            havings: query.havings.clone(),
             select,
             order_bys: query.order_bys.clone(),
             limit: query.limit_val,

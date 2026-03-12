@@ -36,6 +36,10 @@ impl PipeSqlRenderer {
             }
         }
 
+        if let Some(having_sql) = render_wheres(&tree.havings, cfg, binds) {
+            parts.push(format!("WHERE {}", having_sql));
+        }
+
         parts.join(" |> ")
     }
 
