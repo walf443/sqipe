@@ -44,6 +44,20 @@ impl DerefMut for MysqlQuery {
     }
 }
 
+impl sqipe::IntoUnionParts for MysqlQuery {
+    type Query = MysqlQuery;
+    fn into_union_parts(&self) -> Vec<(sqipe::SetOp, MysqlQuery)> {
+        vec![(sqipe::SetOp::Union, self.clone())]
+    }
+}
+
+impl sqipe::IntoUnionParts for MysqlUnionQuery {
+    type Query = MysqlQuery;
+    fn into_union_parts(&self) -> Vec<(sqipe::SetOp, MysqlQuery)> {
+        self.parts.clone()
+    }
+}
+
 /// Create a MySQL-specific query builder for the given table.
 pub fn sqipe(table: &str) -> MysqlQuery {
     MysqlQuery {
@@ -71,12 +85,30 @@ impl MysqlQuery {
         self
     }
 
-    pub fn union(&self, other: &MysqlQuery) -> MysqlUnionQuery {
-        MysqlUnionQuery::new(self.clone(), sqipe::SetOp::Union, other.clone())
+    pub fn union<T: sqipe::IntoUnionParts<Query = MysqlQuery>>(&self, other: &T) -> MysqlUnionQuery {
+        let mut parts = vec![(sqipe::SetOp::Union, self.clone())];
+        let other_parts = other.into_union_parts();
+        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+            if i == 0 {
+                parts.push((sqipe::SetOp::Union, query));
+            } else {
+                parts.push((op, query));
+            }
+        }
+        MysqlUnionQuery { parts, order_bys: Vec::new(), limit_val: None, offset_val: None }
     }
 
-    pub fn union_all(&self, other: &MysqlQuery) -> MysqlUnionQuery {
-        MysqlUnionQuery::new(self.clone(), sqipe::SetOp::UnionAll, other.clone())
+    pub fn union_all<T: sqipe::IntoUnionParts<Query = MysqlQuery>>(&self, other: &T) -> MysqlUnionQuery {
+        let mut parts = vec![(sqipe::SetOp::Union, self.clone())];
+        let other_parts = other.into_union_parts();
+        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+            if i == 0 {
+                parts.push((sqipe::SetOp::UnionAll, query));
+            } else {
+                parts.push((op, query));
+            }
+        }
+        MysqlUnionQuery { parts, order_bys: Vec::new(), limit_val: None, offset_val: None }
     }
 
     /// Build standard SQL with MySQL dialect.
@@ -158,15 +190,27 @@ impl MysqlQuery {
 }
 
 impl sqipe::UnionQueryOps for MysqlUnionQuery {
-    type Query = MysqlQuery;
-
-    fn union(&mut self, other: &MysqlQuery) -> &mut Self {
-        self.parts.push((sqipe::SetOp::Union, other.clone()));
+    fn union<T: sqipe::IntoUnionParts<Query = MysqlQuery>>(&mut self, other: &T) -> &mut Self {
+        let parts = other.into_union_parts();
+        for (i, (op, query)) in parts.into_iter().enumerate() {
+            if i == 0 {
+                self.parts.push((sqipe::SetOp::Union, query));
+            } else {
+                self.parts.push((op, query));
+            }
+        }
         self
     }
 
-    fn union_all(&mut self, other: &MysqlQuery) -> &mut Self {
-        self.parts.push((sqipe::SetOp::UnionAll, other.clone()));
+    fn union_all<T: sqipe::IntoUnionParts<Query = MysqlQuery>>(&mut self, other: &T) -> &mut Self {
+        let parts = other.into_union_parts();
+        for (i, (op, query)) in parts.into_iter().enumerate() {
+            if i == 0 {
+                self.parts.push((sqipe::SetOp::UnionAll, query));
+            } else {
+                self.parts.push((op, query));
+            }
+        }
         self
     }
 
@@ -225,39 +269,6 @@ impl sqipe::UnionQueryOps for MysqlUnionQuery {
 }
 
 impl MysqlUnionQuery {
-    fn new(first: MysqlQuery, op: sqipe::SetOp, second: MysqlQuery) -> Self {
-        MysqlUnionQuery {
-            parts: vec![(sqipe::SetOp::Union, first), (op, second)],
-            order_bys: Vec::new(),
-            limit_val: None,
-            offset_val: None,
-        }
-    }
-
-    /// Merge another MysqlUnionQuery using UNION.
-    pub fn union_query(&mut self, other: &MysqlUnionQuery) -> &mut Self {
-        for (i, (op, query)) in other.parts.iter().enumerate() {
-            if i == 0 {
-                self.parts.push((sqipe::SetOp::Union, query.clone()));
-            } else {
-                self.parts.push((op.clone(), query.clone()));
-            }
-        }
-        self
-    }
-
-    /// Merge another MysqlUnionQuery using UNION ALL.
-    pub fn union_all_query(&mut self, other: &MysqlUnionQuery) -> &mut Self {
-        for (i, (op, query)) in other.parts.iter().enumerate() {
-            if i == 0 {
-                self.parts.push((sqipe::SetOp::UnionAll, query.clone()));
-            } else {
-                self.parts.push((op.clone(), query.clone()));
-            }
-        }
-        self
-    }
-
     fn append_order_limit(&self, sql: &mut String) {
         if !self.order_bys.is_empty() {
             let clauses: Vec<String> = self
@@ -485,5 +496,60 @@ mod tests {
             sql,
             "FROM `employee` FORCE INDEX (idx_dept) |> WHERE `dept` = ? |> SELECT `id`, `name` |> UNION ALL FROM `employee` FORCE INDEX (idx_dept) |> WHERE `dept` = ? |> SELECT `id`, `name`"
         );
+    }
+
+    #[test]
+    fn test_union_with_union_query() {
+        let mut q1 = sqipe("employee");
+        q1.and_where(("dept", "eng"));
+        q1.select(&["id", "name"]);
+
+        let mut q2 = sqipe("employee");
+        q2.and_where(("dept", "sales"));
+        q2.select(&["id", "name"]);
+
+        let mut q3 = sqipe("contractor");
+        q3.and_where(("dept", "eng"));
+        q3.select(&["id", "name"]);
+
+        let mut q4 = sqipe("contractor");
+        q4.and_where(("dept", "sales"));
+        q4.select(&["id", "name"]);
+
+        let uq2 = q3.union_all(&q4);
+        let mut uq1 = q1.union_all(&q2);
+        uq1.union_all(&uq2);
+
+        let (sql, binds) = uq1.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `employee` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `contractor` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `contractor` WHERE `dept` = ?"
+        );
+        assert_eq!(binds.len(), 4);
+    }
+
+    #[test]
+    fn test_query_union_with_union_query() {
+        let mut q1 = sqipe("employee");
+        q1.and_where(("dept", "eng"));
+        q1.select(&["id", "name"]);
+
+        let mut q2 = sqipe("employee");
+        q2.and_where(("dept", "sales"));
+        q2.select(&["id", "name"]);
+
+        let mut q3 = sqipe("contractor");
+        q3.and_where(("dept", "eng"));
+        q3.select(&["id", "name"]);
+
+        let uq = q2.union_all(&q3);
+        let result = q1.union_all(&uq);
+
+        let (sql, binds) = result.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `employee` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `contractor` WHERE `dept` = ?"
+        );
+        assert_eq!(binds.len(), 3);
     }
 }

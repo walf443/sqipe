@@ -286,12 +286,16 @@ pub enum SetOp {
     UnionAll,
 }
 
-/// Common interface for union query builders.
-pub trait UnionQueryOps {
-    type Query;
+/// Trait for types that can be used as a source in union operations.
+pub trait IntoUnionParts {
+    type Query: Clone;
+    fn into_union_parts(&self) -> Vec<(SetOp, Self::Query)>;
+}
 
-    fn union(&mut self, other: &Self::Query) -> &mut Self;
-    fn union_all(&mut self, other: &Self::Query) -> &mut Self;
+/// Common interface for union query builders.
+pub trait UnionQueryOps: IntoUnionParts {
+    fn union<T: IntoUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
+    fn union_all<T: IntoUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
     fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
     fn limit(&mut self, n: u64) -> &mut Self;
     fn offset(&mut self, n: u64) -> &mut Self;
@@ -330,6 +334,20 @@ pub struct UnionQuery {
     order_bys: Vec<OrderByClause>,
     limit_val: Option<u64>,
     offset_val: Option<u64>,
+}
+
+impl IntoUnionParts for Query {
+    type Query = Query;
+    fn into_union_parts(&self) -> Vec<(SetOp, Query)> {
+        vec![(SetOp::Union, self.clone())] // SetOp is placeholder, caller overrides
+    }
+}
+
+impl IntoUnionParts for UnionQuery {
+    type Query = Query;
+    fn into_union_parts(&self) -> Vec<(SetOp, Query)> {
+        self.parts.clone()
+    }
 }
 
 /// Create a new query builder for the given table.
@@ -372,12 +390,30 @@ impl Query {
         self
     }
 
-    pub fn union(&self, other: &Query) -> UnionQuery {
-        UnionQuery::new(self.clone(), SetOp::Union, other.clone())
+    pub fn union<T: IntoUnionParts<Query = Query>>(&self, other: &T) -> UnionQuery {
+        let mut parts = vec![(SetOp::Union, self.clone())];
+        let other_parts = other.into_union_parts();
+        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+            if i == 0 {
+                parts.push((SetOp::Union, query));
+            } else {
+                parts.push((op, query));
+            }
+        }
+        UnionQuery { parts, order_bys: Vec::new(), limit_val: None, offset_val: None }
     }
 
-    pub fn union_all(&self, other: &Query) -> UnionQuery {
-        UnionQuery::new(self.clone(), SetOp::UnionAll, other.clone())
+    pub fn union_all<T: IntoUnionParts<Query = Query>>(&self, other: &T) -> UnionQuery {
+        let mut parts = vec![(SetOp::Union, self.clone())];
+        let other_parts = other.into_union_parts();
+        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+            if i == 0 {
+                parts.push((SetOp::UnionAll, query));
+            } else {
+                parts.push((op, query));
+            }
+        }
+        UnionQuery { parts, order_bys: Vec::new(), limit_val: None, offset_val: None }
     }
 
     pub fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
@@ -651,15 +687,27 @@ impl Query {
 }
 
 impl UnionQueryOps for UnionQuery {
-    type Query = Query;
-
-    fn union(&mut self, other: &Query) -> &mut Self {
-        self.parts.push((SetOp::Union, other.clone()));
+    fn union<T: IntoUnionParts<Query = Query>>(&mut self, other: &T) -> &mut Self {
+        let parts = other.into_union_parts();
+        for (i, (op, query)) in parts.into_iter().enumerate() {
+            if i == 0 {
+                self.parts.push((SetOp::Union, query));
+            } else {
+                self.parts.push((op, query));
+            }
+        }
         self
     }
 
-    fn union_all(&mut self, other: &Query) -> &mut Self {
-        self.parts.push((SetOp::UnionAll, other.clone()));
+    fn union_all<T: IntoUnionParts<Query = Query>>(&mut self, other: &T) -> &mut Self {
+        let parts = other.into_union_parts();
+        for (i, (op, query)) in parts.into_iter().enumerate() {
+            if i == 0 {
+                self.parts.push((SetOp::UnionAll, query));
+            } else {
+                self.parts.push((op, query));
+            }
+        }
         self
     }
 
@@ -696,39 +744,6 @@ impl UnionQueryOps for UnionQuery {
 }
 
 impl UnionQuery {
-    fn new(first: Query, op: SetOp, second: Query) -> Self {
-        UnionQuery {
-            parts: vec![(SetOp::Union, first), (op, second)],
-            order_bys: Vec::new(),
-            limit_val: None,
-            offset_val: None,
-        }
-    }
-
-    /// Merge another UnionQuery using UNION.
-    pub fn union_query(&mut self, other: &UnionQuery) -> &mut Self {
-        for (i, (op, query)) in other.parts.iter().enumerate() {
-            if i == 0 {
-                self.parts.push((SetOp::Union, query.clone()));
-            } else {
-                self.parts.push((op.clone(), query.clone()));
-            }
-        }
-        self
-    }
-
-    /// Merge another UnionQuery using UNION ALL.
-    pub fn union_all_query(&mut self, other: &UnionQuery) -> &mut Self {
-        for (i, (op, query)) in other.parts.iter().enumerate() {
-            if i == 0 {
-                self.parts.push((SetOp::UnionAll, query.clone()));
-            } else {
-                self.parts.push((op.clone(), query.clone()));
-            }
-        }
-        self
-    }
-
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<Value>) {
         let cfg = SqlConfig {
             ph: &|n| dialect.placeholder(n),
@@ -1259,7 +1274,7 @@ mod tests {
 
         let mut uq1 = q1.union_all(&q2);
         let uq2 = q3.union_all(&q4);
-        uq1.union_all_query(&uq2);
+        uq1.union_all(&uq2);
 
         let (sql, _) = uq1.to_sql();
         assert_eq!(
