@@ -113,6 +113,9 @@ pub(super) fn render_aggregate_expr(expr: &AggregateExpr, cfg: &RenderConfig) ->
 
 pub(super) fn render_from(from: &FromClause, cfg: &RenderConfig) -> String {
     let mut s = format!("FROM {}", (cfg.qi)(&from.table));
+    if let Some(alias) = &from.alias {
+        s.push_str(&format!(" AS {}", (cfg.qi)(alias)));
+    }
     for suffix in &from.table_suffix {
         s.push(' ');
         s.push_str(suffix);
@@ -148,6 +151,13 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
     }
 }
 
+fn render_join_table(table: &str, alias: &Option<String>, cfg: &RenderConfig) -> String {
+    match alias {
+        Some(a) => format!("{} AS {}", (cfg.qi)(table), (cfg.qi)(a)),
+        None => (cfg.qi)(table),
+    }
+}
+
 pub(super) fn render_joins(joins: &[JoinClause], cfg: &RenderConfig) -> Vec<String> {
     joins
         .iter()
@@ -156,19 +166,15 @@ pub(super) fn render_joins(joins: &[JoinClause], cfg: &RenderConfig) -> Vec<Stri
                 JoinType::Inner => "INNER JOIN",
                 JoinType::Left => "LEFT JOIN",
             };
+            let table = render_join_table(&j.table, &j.alias, cfg);
             if let JoinCondition::Using(cols) = &j.condition {
                 let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
-                return format!(
-                    "{} {} USING ({})",
-                    keyword,
-                    (cfg.qi)(&j.table),
-                    quoted.join(", ")
-                );
+                return format!("{} {} USING ({})", keyword, table, quoted.join(", "));
             }
             format!(
                 "{} {} ON {}",
                 keyword,
-                (cfg.qi)(&j.table),
+                table,
                 render_join_condition(&j.condition, cfg)
             )
         })

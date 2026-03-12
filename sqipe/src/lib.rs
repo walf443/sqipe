@@ -71,16 +71,18 @@ impl Op {
     }
 }
 
-/// A table reference for building qualified column references.
+/// A table reference for building qualified column references and join targets.
 #[derive(Debug, Clone)]
 pub struct TableRef {
     name: String,
+    alias: Option<String>,
 }
 
 /// Create a table reference for qualified column names.
 pub fn table(name: &str) -> TableRef {
     TableRef {
         name: name.to_string(),
+        alias: None,
     }
 }
 
@@ -90,6 +92,11 @@ impl TableRef {
             table: self.name.clone(),
             col: col.to_string(),
         }
+    }
+
+    pub fn as_(mut self, alias: &str) -> Self {
+        self.alias = Some(alias.to_string());
+        self
     }
 }
 
@@ -161,6 +168,7 @@ pub enum JoinType {
 pub struct JoinClause {
     pub join_type: JoinType,
     pub table: String,
+    pub alias: Option<String>,
     pub condition: JoinCondition,
 }
 
@@ -556,6 +564,7 @@ use tree::{SelectTree, UnionTree, default_quote_identifier};
 #[derive(Debug, Clone)]
 pub struct Query {
     pub(crate) table: String,
+    pub(crate) table_alias: Option<String>,
     pub(crate) selects: Vec<String>,
     pub(crate) wheres: Vec<WhereEntry>,
     pub(crate) havings: Vec<WhereEntry>,
@@ -594,6 +603,7 @@ impl AsUnionParts for UnionQuery {
 pub fn sqipe(table: &str) -> Query {
     Query {
         table: table.to_string(),
+        table_alias: None,
         selects: Vec::new(),
         wheres: Vec::new(),
         havings: Vec::new(),
@@ -603,6 +613,23 @@ pub fn sqipe(table: &str) -> Query {
         order_bys: Vec::new(),
         limit_val: None,
         offset_val: None,
+    }
+}
+
+/// Trait for types that can specify a join target table.
+pub trait IntoJoinTable {
+    fn into_join_table(self) -> (String, Option<String>);
+}
+
+impl IntoJoinTable for &str {
+    fn into_join_table(self) -> (String, Option<String>) {
+        (self.to_string(), None)
+    }
+}
+
+impl IntoJoinTable for TableRef {
+    fn into_join_table(self) -> (String, Option<String>) {
+        (self.name, self.alias)
     }
 }
 
@@ -623,6 +650,11 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
 }
 
 impl Query {
+    pub fn as_(&mut self, alias: &str) -> &mut Self {
+        self.table_alias = Some(alias.to_string());
+        self
+    }
+
     pub fn and_where(&mut self, cond: impl Into<WhereClause>) -> &mut Self {
         if self.aggregates.is_empty() {
             self.wheres.push(WhereEntry::And(cond.into()));
@@ -656,23 +688,29 @@ impl Query {
         self
     }
 
-    pub fn join(&mut self, table: &str, condition: JoinCondition) -> &mut Self {
+    pub fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
+        let (name, alias) = table.into_join_table();
+        let resolve_name = alias.as_deref().unwrap_or(&name);
         let mut condition = condition;
-        resolve_join_condition(&mut condition, table);
+        resolve_join_condition(&mut condition, resolve_name);
         self.joins.push(JoinClause {
             join_type: JoinType::Inner,
-            table: table.to_string(),
+            table: name,
+            alias,
             condition,
         });
         self
     }
 
-    pub fn left_join(&mut self, table: &str, condition: JoinCondition) -> &mut Self {
+    pub fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
+        let (name, alias) = table.into_join_table();
+        let resolve_name = alias.as_deref().unwrap_or(&name);
         let mut condition = condition;
-        resolve_join_condition(&mut condition, table);
+        resolve_join_condition(&mut condition, resolve_name);
         self.joins.push(JoinClause {
             join_type: JoinType::Left,
-            table: table.to_string(),
+            table: name,
+            alias,
             condition,
         });
         self
@@ -1652,6 +1690,79 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\") LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\""
+        );
+    }
+
+    #[test]
+    fn test_from_alias() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.and_where(table("u").col("name").eq("Alice"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" AS \"u\" WHERE \"u\".\"name\" = ?"
+        );
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" AS \"u\" |> WHERE \"u\".\"name\" = ? |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_join_with_aliases() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.and_where(table("o").col("status").eq("shipped"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\" WHERE \"o\".\"status\" = ?"
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_join_alias_pipe() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"users\" AS \"u\" |> INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\" |> SELECT \"id\", \"name\""
+        );
+    }
+
+    #[test]
+    fn test_self_join_with_aliases() {
+        let mut q = sqipe("employees");
+        q.as_("e");
+        q.left_join(
+            table("employees").as_("m"),
+            table("e").col("manager_id").eq_col("id"),
+        );
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT \"id\", \"name\" FROM \"employees\" AS \"e\" LEFT JOIN \"employees\" AS \"m\" ON \"e\".\"manager_id\" = \"m\".\"id\""
         );
     }
 }

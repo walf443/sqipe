@@ -9,6 +9,7 @@ pub fn default_quote_identifier(name: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct FromClause {
     pub table: String,
+    pub alias: Option<String>,
     /// Raw SQL fragments appended after the table name (e.g., "FORCE INDEX (idx)").
     /// Dialect crates populate this via tree transformation.
     pub table_suffix: Vec<String>,
@@ -64,6 +65,7 @@ impl SelectTree {
         SelectTree {
             from: FromClause {
                 table: query.table.clone(),
+                alias: query.table_alias.clone(),
                 table_suffix: Vec::new(),
             },
             joins: query.joins.clone(),
