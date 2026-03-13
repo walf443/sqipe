@@ -1481,6 +1481,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// );
     /// ```
     pub fn for_with(&mut self, clause: &str) -> &mut Self {
+        debug_assert!(!clause.is_empty(), "lock clause must not be empty");
         self.lock_for = Some(clause.to_string());
         self
     }
