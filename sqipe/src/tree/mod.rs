@@ -207,6 +207,8 @@ pub struct UpdateTree<V: Clone = crate::Value> {
     pub table_alias: Option<String>,
     pub sets: Vec<(String, V)>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
+    pub order_bys: Vec<OrderByClause>,
+    pub limit: Option<u64>,
 }
 
 impl<V: Clone> UpdateTree<V> {
@@ -221,6 +223,8 @@ impl<V: Clone> UpdateTree<V> {
                 .map(|(col, val)| (col, f(val)))
                 .collect(),
             wheres: self.wheres.into_iter().map(|w| w.map_values(f)).collect(),
+            order_bys: self.order_bys,
+            limit: self.limit,
         }
     }
 }

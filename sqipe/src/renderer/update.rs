@@ -1,4 +1,4 @@
-use super::{RenderConfig, render_wheres};
+use super::{RenderConfig, append_order_by, render_wheres};
 use crate::tree::UpdateTree;
 
 /// Render an UPDATE statement from an `UpdateTree`.
@@ -6,10 +6,7 @@ use crate::tree::UpdateTree;
 /// # Panics
 ///
 /// Panics if `tree.sets` is empty, as an UPDATE with no SET clause is invalid SQL.
-pub(crate) fn render_update<V: Clone>(
-    tree: &UpdateTree<V>,
-    cfg: &RenderConfig,
-) -> (String, Vec<V>) {
+pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (String, Vec<V>) {
     assert!(
         !tree.sets.is_empty(),
         "UPDATE requires at least one SET clause"
@@ -42,5 +39,15 @@ pub(crate) fn render_update<V: Clone>(
         parts.push(format!("WHERE {}", where_sql));
     }
 
-    (parts.join(" "), binds)
+    let mut sql = parts.join(" ");
+
+    // ORDER BY ...
+    append_order_by(&mut sql, &tree.order_bys, cfg, " ");
+
+    // LIMIT ...
+    if let Some(limit) = tree.limit {
+        sql.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    (sql, binds)
 }

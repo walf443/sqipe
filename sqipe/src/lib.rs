@@ -1665,6 +1665,8 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
             table_alias: self.table_alias.clone(),
             sets: self.sets.clone(),
             wheres: self.wheres.clone(),
+            order_bys: Vec::new(),
+            limit: None,
         }
     }
 
@@ -1683,7 +1685,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// Panics if no WHERE conditions are set and [`without_where()`](UpdateQuery::without_where)
     /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        self.assert_where_present();
         let tree = self.to_tree();
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
@@ -1700,7 +1701,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// Panics if no WHERE conditions are set and [`without_where()`](UpdateQuery::without_where)
     /// has not been called.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        self.assert_where_present();
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
@@ -1724,6 +1724,22 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn update(self) -> UpdateQuery<V> {
+        debug_assert!(
+            self.joins.is_empty(),
+            "Query has JOINs which are not supported in UPDATE and will be discarded"
+        );
+        debug_assert!(
+            self.aggregates.is_empty(),
+            "Query has aggregates which are not supported in UPDATE and will be discarded"
+        );
+        debug_assert!(
+            self.order_bys.is_empty(),
+            "Query has ORDER BY which is not supported in UPDATE and will be discarded"
+        );
+        debug_assert!(
+            self.limit_val.is_none(),
+            "Query has LIMIT which is not supported in UPDATE and will be discarded"
+        );
         UpdateQuery {
             table: self.table,
             table_alias: self.table_alias,

@@ -45,9 +45,14 @@ pub struct MysqlUnionQuery<V: Clone + std::fmt::Debug = Value> {
 }
 
 /// MySQL-specific UPDATE query builder.
+///
+/// Extends the core `UpdateQuery` with MySQL-specific features like
+/// `ORDER BY` and `LIMIT` in UPDATE statements.
 #[derive(Debug, Clone)]
 pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
     inner: sqipe::UpdateQuery<V>,
+    order_bys: Vec<sqipe::OrderByClause>,
+    limit_val: Option<u64>,
 }
 
 impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
@@ -78,9 +83,29 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
         self
     }
 
+    /// Add an ORDER BY clause (MySQL extension).
+    pub fn order_by(&mut self, clause: sqipe::OrderByClause) -> &mut Self {
+        self.order_bys.push(clause);
+        self
+    }
+
+    /// Set the LIMIT value (MySQL extension).
+    pub fn limit(&mut self, n: u64) -> &mut Self {
+        self.limit_val = Some(n);
+        self
+    }
+
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        self.inner.to_sql_with(&MySQL)
+        let mut tree = self.inner.to_tree();
+        tree.order_bys = self.order_bys.clone();
+        tree.limit = self.limit_val;
+        let ph = |_: usize| "?".to_string();
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        sqipe::renderer::update::render_update(
+            &tree,
+            &sqipe::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL),
+        )
     }
 }
 
@@ -320,6 +345,8 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     pub fn update(self) -> MysqlUpdateQuery<V> {
         MysqlUpdateQuery {
             inner: self.inner.update(),
+            order_bys: Vec::new(),
+            limit_val: None,
         }
     }
 
@@ -891,6 +918,39 @@ mod tests {
         let (sql, _) = u.to_sql();
         // MySQL does not support AS in UPDATE table alias
         assert_eq!(sql, "UPDATE `users` `u` SET `name` = ? WHERE `id` = ?");
+    }
+
+    #[test]
+    fn test_update_with_order_by_and_limit() {
+        let mut u = sqipe("users").update();
+        u.set("status", "inactive");
+        u.and_where(col("dept").eq("eng"));
+        u.order_by(col("created_at").asc());
+        u.limit(10);
+
+        let (sql, binds) = u.to_sql();
+        assert_eq!(
+            sql,
+            "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                sqipe::Value::String("inactive".to_string()),
+                sqipe::Value::String("eng".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_update_with_limit_only() {
+        let mut u = sqipe("users").update();
+        u.set("flagged", true);
+        u.without_where();
+        u.limit(100);
+
+        let (sql, _) = u.to_sql();
+        assert_eq!(sql, "UPDATE `users` SET `flagged` = ? LIMIT 100");
     }
 
     #[test]
