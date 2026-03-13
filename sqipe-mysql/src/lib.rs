@@ -21,6 +21,10 @@ impl sqipe::Dialect for MySQL {
     fn quote_identifier(&self, name: &str) -> String {
         format!("`{}`", name.replace('`', "``"))
     }
+
+    fn backslash_escape(&self) -> bool {
+        true
+    }
 }
 
 /// MySQL-specific query builder wrapping the core Query.
@@ -242,7 +246,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         let tree = self.to_tree();
         let ph = |n: usize| MySQL.placeholder(n);
         let qi = |name: &str| MySQL.quote_identifier(name);
-        StandardSqlRenderer.render_select(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
     /// Build pipe syntax SQL with MySQL dialect.
@@ -250,7 +254,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         let tree = self.to_tree();
         let ph = |n: usize| MySQL.placeholder(n);
         let qi = |name: &str| MySQL.quote_identifier(name);
-        PipeSqlRenderer.render_select(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        PipeSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
     fn apply_index_hints(&self, tree: &mut SelectTree<V>) {
@@ -323,14 +327,14 @@ impl<V: Clone + std::fmt::Debug> sqipe::UnionQueryOps<V> for MysqlUnionQuery<V> 
         let tree = self.to_tree();
         let ph = |n: usize| MySQL.placeholder(n);
         let qi = |name: &str| MySQL.quote_identifier(name);
-        StandardSqlRenderer.render_union(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        StandardSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
     fn to_pipe_sql(&self) -> (String, Vec<V>) {
         let tree = self.to_tree();
         let ph = |n: usize| MySQL.placeholder(n);
         let qi = |name: &str| MySQL.quote_identifier(name);
-        PipeSqlRenderer.render_union(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        PipeSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 }
 
@@ -671,6 +675,51 @@ mod tests {
             "WITH `_cte_0` AS (SELECT * FROM `users` WHERE `age` > ?) SELECT `id`, `name` FROM `_cte_0` AS `users` INNER JOIN `orders` ON `users`.`id` = `orders`.`user_id` WHERE `orders`.`total` > ?"
         );
         assert_eq!(binds, vec![sqipe::Value::Int(25), sqipe::Value::Int(100)]);
+    }
+
+    #[test]
+    fn test_like_escape_backslash() {
+        use sqipe::LikeExpression;
+
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::contains("test")));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT `id`, `name` FROM `users` WHERE `name` LIKE ? ESCAPE '\\'"#
+        );
+    }
+
+    #[test]
+    fn test_like_custom_escape_char() {
+        use sqipe::LikeExpression;
+
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "test")));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT `id`, `name` FROM `users` WHERE `name` LIKE ? ESCAPE '!'"#
+        );
+    }
+
+    #[test]
+    fn test_not_like_escape_backslash() {
+        use sqipe::LikeExpression;
+
+        let mut q = sqipe("users");
+        q.and_where(col("name").not_like(LikeExpression::contains("test")));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT `id`, `name` FROM `users` WHERE `name` NOT LIKE ? ESCAPE '\\'"#
+        );
     }
 
     #[test]

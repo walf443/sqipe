@@ -988,6 +988,12 @@ pub trait Dialect {
     fn quote_identifier(&self, name: &str) -> String {
         format!("\"{}\"", name.replace('"', "\"\""))
     }
+
+    /// Whether backslashes must be doubled inside SQL string literals.
+    /// MySQL requires this by default (when `NO_BACKSLASH_ESCAPES` is not set).
+    fn backslash_escape(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1375,6 +1381,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
+            backslash_escape: false,
         };
         StandardSqlRenderer.render_select(&tree, &cfg)
     }
@@ -1385,6 +1392,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
+            backslash_escape: false,
         };
         PipeSqlRenderer.render_select(&tree, &cfg)
     }
@@ -1394,7 +1402,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlRenderer.render_select(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 
     /// Build pipe syntax SQL with dialect-specific placeholders and quoting.
@@ -1402,7 +1410,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlRenderer.render_select(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        PipeSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 }
 
@@ -1451,6 +1459,7 @@ impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
+            backslash_escape: false,
         };
         StandardSqlRenderer.render_union(&tree, &cfg)
     }
@@ -1460,6 +1469,7 @@ impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
+            backslash_escape: false,
         };
         PipeSqlRenderer.render_union(&tree, &cfg)
     }
@@ -1475,14 +1485,14 @@ impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlRenderer.render_union(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        StandardSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 
     pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlRenderer.render_union(&tree, &RenderConfig { ph: &ph, qi: &qi })
+        PipeSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 
     /// Returns the parts for dialect wrappers to build SQL with custom rendering per part.
