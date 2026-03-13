@@ -500,6 +500,18 @@ let (sql, binds) = u.to_sql_with(&PgDialect);
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 ```
 
+For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `SetExpression`:
+
+```rust
+# use sqipe::{sqipe, col, SetExpression};
+let mut u = sqipe("employee").update();
+u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+u.and_where(col("id").eq(1));
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
+```
+
 ### MySQL dialect
 
 See [sqipe-mysql](./sqipe-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
