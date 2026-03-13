@@ -580,10 +580,10 @@ pg_test!(test_update_from_query_with_where, |client| {
     assert_eq!(rows[0].get::<_, String>("name"), "Bobby");
 });
 
-pg_test!(test_update_without_where, |client| {
+pg_test!(test_update_allow_without_where, |client| {
     let mut u = sqipe_with::<PgValue>("users").update();
     u.set(col("age"), 99);
-    u.without_where();
+    u.allow_without_where();
     let (sql, binds) = u.to_sql_with(&PostgresDialect);
 
     let params = to_pg_params(&binds);
@@ -626,9 +626,9 @@ pg_test!(test_delete_from_query_with_where, |client| {
     assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
 });
 
-pg_test!(test_delete_without_where, |client| {
+pg_test!(test_delete_allow_without_where, |client| {
     let mut d = sqipe_with::<PgValue>("users").delete();
-    d.without_where();
+    d.allow_without_where();
     let (sql, binds) = d.to_sql_with(&PostgresDialect);
 
     let params = to_pg_params(&binds);

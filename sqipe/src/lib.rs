@@ -1663,7 +1663,7 @@ impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
 ///
 /// By default, WHERE clause is required. Calling `to_sql()` or `to_sql_with()` without
 /// any WHERE conditions will panic to prevent accidental full-table updates.
-/// Use [`without_where()`](UpdateQuery::without_where) to explicitly allow WHERE-less updates.
+/// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
 ///
 /// ```
 /// use sqipe::{sqipe, col};
@@ -1778,11 +1778,11 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     ///
     /// let mut u = sqipe("employee").update();
     /// u.set(col("status"), "inactive");
-    /// u.without_where();
+    /// u.allow_without_where();
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
     /// ```
-    pub fn without_where(&mut self) -> &mut Self {
+    pub fn allow_without_where(&mut self) -> &mut Self {
         self.allow_without_where = true;
         self
     }
@@ -1791,7 +1791,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](UpdateQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
     /// has not been called.
     pub fn to_tree(&self) -> tree::UpdateTree<V> {
         self.assert_where_present();
@@ -1809,7 +1809,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
         assert!(
             self.allow_without_where || !self.wheres.is_empty(),
             "UPDATE without WHERE is dangerous and not allowed by default. \
-             Use .without_where() to explicitly allow full-table updates."
+             Use .allow_without_where() to explicitly allow full-table updates."
         );
     }
 
@@ -1819,7 +1819,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](UpdateQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -1837,7 +1837,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](UpdateQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -1957,11 +1957,11 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     /// use sqipe::sqipe;
     ///
     /// let mut d = sqipe("employee").delete();
-    /// d.without_where();
+    /// d.allow_without_where();
     /// let (sql, _) = d.to_sql();
     /// assert_eq!(sql, r#"DELETE FROM "employee""#);
     /// ```
-    pub fn without_where(&mut self) -> &mut Self {
+    pub fn allow_without_where(&mut self) -> &mut Self {
         self.allow_without_where = true;
         self
     }
@@ -1970,7 +1970,7 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](DeleteQuery::allow_without_where)
     /// has not been called.
     pub fn to_tree(&self) -> tree::DeleteTree<V> {
         self.assert_where_present();
@@ -1987,7 +1987,7 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
         assert!(
             self.allow_without_where || !self.wheres.is_empty(),
             "DELETE without WHERE is dangerous and not allowed by default. \
-             Use .without_where() to explicitly allow full-table deletes."
+             Use .allow_without_where() to explicitly allow full-table deletes."
         );
     }
 
@@ -1995,7 +1995,7 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](DeleteQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -2011,7 +2011,7 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// Panics if no WHERE conditions are set and [`allow_without_where()`](DeleteQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -4461,10 +4461,10 @@ mod tests {
     }
 
     #[test]
-    fn test_update_without_where() {
+    fn test_update_allow_without_where() {
         let mut u = sqipe("employee").update();
         u.set(col("status"), "inactive");
-        u.without_where();
+        u.allow_without_where();
         let (sql, binds) = u.to_sql();
         assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
         assert_eq!(binds, vec![Value::String("inactive".to_string())]);
@@ -4576,7 +4576,7 @@ mod tests {
     #[should_panic(expected = "UPDATE requires at least one SET clause")]
     fn test_update_empty_sets_panics() {
         let mut u = sqipe("employee").update();
-        u.without_where();
+        u.allow_without_where();
         let _ = u.to_sql();
     }
 
@@ -4647,10 +4647,10 @@ mod tests {
     }
 
     #[test]
-    fn test_update_with_set_expr_without_where() {
+    fn test_update_with_set_expr_allow_without_where() {
         let mut u = sqipe("employee").update();
         u.set_expr(SetExpression::new(r#""version" = "version" + 1"#));
-        u.without_where();
+        u.allow_without_where();
         let (sql, binds) = u.to_sql();
         assert_eq!(sql, r#"UPDATE "employee" SET "version" = "version" + 1"#);
         assert_eq!(binds, vec![]);
@@ -4714,9 +4714,9 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_without_where() {
+    fn test_delete_allow_without_where() {
         let mut d = sqipe("employee").delete();
-        d.without_where();
+        d.allow_without_where();
         let (sql, binds) = d.to_sql();
         assert_eq!(sql, r#"DELETE FROM "employee""#);
         assert_eq!(binds, vec![]);

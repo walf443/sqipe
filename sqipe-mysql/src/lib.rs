@@ -90,8 +90,8 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     ///
     /// By default, calling [`to_sql()`](MysqlUpdateQuery::to_sql) without any WHERE
     /// conditions will panic. Call this method to opt in to full-table updates.
-    pub fn without_where(&mut self) -> &mut Self {
-        self.inner.without_where();
+    pub fn allow_without_where(&mut self) -> &mut Self {
+        self.inner.allow_without_where();
         self
     }
 
@@ -151,8 +151,8 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     ///
     /// By default, calling [`to_sql()`](MysqlDeleteQuery::to_sql) without any WHERE
     /// conditions will panic. Call this method to opt in to full-table deletes.
-    pub fn without_where(&mut self) -> &mut Self {
-        self.inner.without_where();
+    pub fn allow_without_where(&mut self) -> &mut Self {
+        self.inner.allow_without_where();
         self
     }
 
@@ -983,10 +983,10 @@ mod tests {
     }
 
     #[test]
-    fn test_update_without_where() {
+    fn test_update_allow_without_where() {
         let mut u = sqipe("users").update();
         u.set(col("age"), 99);
-        u.without_where();
+        u.allow_without_where();
 
         let (sql, _) = u.to_sql();
         assert_eq!(sql, "UPDATE `users` SET `age` = ?");
@@ -1031,7 +1031,7 @@ mod tests {
     fn test_update_with_limit_only() {
         let mut u = sqipe("users").update();
         u.set(col("flagged"), true);
-        u.without_where();
+        u.allow_without_where();
         u.limit(100);
 
         let (sql, _) = u.to_sql();
@@ -1096,9 +1096,9 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_without_where() {
+    fn test_delete_allow_without_where() {
         let mut d = sqipe("users").delete();
-        d.without_where();
+        d.allow_without_where();
 
         let (sql, binds) = d.to_sql();
         assert_eq!(sql, "DELETE FROM `users`");
@@ -1134,7 +1134,7 @@ mod tests {
     #[test]
     fn test_delete_with_limit_only() {
         let mut d = sqipe("users").delete();
-        d.without_where();
+        d.allow_without_where();
         d.limit(100);
 
         let (sql, _) = d.to_sql();

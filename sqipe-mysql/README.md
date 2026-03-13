@@ -73,7 +73,7 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
 ```
 
-By default, UPDATE without WHERE will panic. Use `without_where()` to explicitly allow full-table updates:
+By default, UPDATE without WHERE will panic. Use `allow_without_where()` to explicitly allow full-table updates:
 
 ```rust
 use sqipe_mysql::sqipe;
@@ -81,7 +81,7 @@ use sqipe::col;
 
 let mut u = sqipe("users").update();
 u.set(col("age"), 99);
-u.without_where();
+u.allow_without_where();
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, "UPDATE `users` SET `age` = ?");
@@ -116,13 +116,13 @@ let (sql, binds) = d.to_sql();
 assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ?");
 ```
 
-By default, DELETE without WHERE will panic. Use `without_where()` to explicitly allow full-table deletes:
+By default, DELETE without WHERE will panic. Use `allow_without_where()` to explicitly allow full-table deletes:
 
 ```rust
 use sqipe_mysql::sqipe;
 
 let mut d = sqipe("users").delete();
-d.without_where();
+d.allow_without_where();
 
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, "DELETE FROM `users`");

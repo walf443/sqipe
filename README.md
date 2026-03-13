@@ -472,13 +472,13 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#);
 ```
 
-By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `without_where()` to explicitly opt in:
+By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `allow_without_where()` to explicitly opt in:
 
 ```rust
 # use sqipe::{sqipe, col};
 let mut u = sqipe("employee").update();
 u.set(col("status"), "inactive");
-u.without_where();
+u.allow_without_where();
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
@@ -538,12 +538,12 @@ let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 ```
 
-By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table deletes. Use `without_where()` to explicitly opt in:
+By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table deletes. Use `allow_without_where()` to explicitly opt in:
 
 ```rust
 # use sqipe::sqipe;
 let mut d = sqipe("employee").delete();
-d.without_where();
+d.allow_without_where();
 
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee""#);
