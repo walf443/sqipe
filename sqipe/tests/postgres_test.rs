@@ -1,7 +1,7 @@
 #![cfg(feature = "test-postgres")]
 
 use postgres::{Client, NoTls, types::ToSql};
-use sqipe::{Dialect, col, sqipe_from_subquery_with, sqipe_with, table};
+use sqipe::{Dialect, LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
@@ -43,6 +43,12 @@ impl From<f64> for PgValue {
 impl From<bool> for PgValue {
     fn from(b: bool) -> Self {
         PgValue::Bool(b)
+    }
+}
+
+impl From<String> for PgValue {
+    fn from(s: String) -> Self {
+        PgValue::Text(s)
     }
 }
 
@@ -367,4 +373,48 @@ pg_test!(test_from_subquery_with_outer_where, |client| {
     let rows = client.query(&sql, &param_refs).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<_, i32>("user_id"), 1);
+});
+
+pg_test!(test_like_contains, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
+});
+
+pg_test!(test_like_starts_with, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").like(LikeExpression::starts_with("Al")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+});
+
+pg_test!(test_not_like, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").not_like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Bob");
 });
