@@ -521,7 +521,7 @@ async fn test_update_basic() {
     let (_container, pool) = setup_container().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
-    u.set("name", "Alicia");
+    u.set(col("name"), "Alicia");
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
@@ -542,8 +542,8 @@ async fn test_update_multiple_sets() {
     let (_container, pool) = setup_container().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
-    u.set("name", "Alicia");
-    u.set("age", 31);
+    u.set(col("name"), "Alicia");
+    u.set(col("age"), 31);
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
@@ -567,7 +567,7 @@ async fn test_update_from_query_with_where() {
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("id").eq(2));
     let mut u = q.update();
-    u.set("name", "Bobby");
+    u.set(col("name"), "Bobby");
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -587,7 +587,7 @@ async fn test_update_without_where() {
     let (_container, pool) = setup_container().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
-    u.set("age", 99);
+    u.set(col("age"), 99);
     u.without_where();
     let (sql, binds) = u.to_sql();
 

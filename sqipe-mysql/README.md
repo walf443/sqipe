@@ -66,7 +66,7 @@ use sqipe_mysql::sqipe;
 use sqipe::col;
 
 let mut u = sqipe("users").update();
-u.set("name", "Alice");
+u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();
@@ -77,9 +77,10 @@ By default, UPDATE without WHERE will panic. Use `without_where()` to explicitly
 
 ```rust
 use sqipe_mysql::sqipe;
+use sqipe::col;
 
 let mut u = sqipe("users").update();
-u.set("age", 99);
+u.set(col("age"), 99);
 u.without_where();
 
 let (sql, binds) = u.to_sql();
@@ -93,7 +94,7 @@ use sqipe_mysql::sqipe;
 use sqipe::col;
 
 let mut u = sqipe("users").update();
-u.set("status", "inactive");
+u.set(col("status"), "inactive");
 u.and_where(col("dept").eq("eng"));
 u.order_by(col("created_at").asc());
 u.limit(10);

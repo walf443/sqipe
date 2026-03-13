@@ -451,7 +451,7 @@ assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
 # use sqipe::{sqipe, col};
 // Basic UPDATE
 let mut u = sqipe("employee").update();
-u.set("name", "Alice");
+u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();
@@ -465,8 +465,8 @@ WHERE conditions can be built first, then converted to UPDATE:
 let mut q = sqipe("employee");
 q.and_where(col("id").eq(1));
 let mut u = q.update();
-u.set("name", "Alice");
-u.set("age", 31);
+u.set(col("name"), "Alice");
+u.set(col("age"), 31);
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#);
@@ -475,9 +475,9 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#)
 By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `without_where()` to explicitly opt in:
 
 ```rust
-# use sqipe::sqipe;
+# use sqipe::{sqipe, col};
 let mut u = sqipe("employee").update();
-u.set("status", "inactive");
+u.set(col("status"), "inactive");
 u.without_where();
 
 let (sql, binds) = u.to_sql();
@@ -493,7 +493,7 @@ Dialect support works via `to_sql_with`:
 #     fn placeholder(&self, index: usize) -> String { format!("${}", index) }
 # }
 let mut u = sqipe("employee").update();
-u.set("name", "Alice");
+u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql_with(&PgDialect);

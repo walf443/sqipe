@@ -1600,7 +1600,7 @@ impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
 /// use sqipe::{sqipe, col};
 ///
 /// let mut u = sqipe("employee").update();
-/// u.set("name", "Alice");
+/// u.set(col("name"), "Alice");
 /// u.and_where(col("id").eq(1));
 /// let (sql, _) = u.to_sql();
 /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
@@ -1616,8 +1616,21 @@ pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
 
 impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// Add a SET clause: `SET "col" = ?`.
-    pub fn set(&mut self, col: &str, val: impl Into<V>) -> &mut Self {
-        self.sets.push((col.to_string(), val.into()));
+    ///
+    /// Use [`col()`] to create a column reference for the first argument,
+    /// preventing SQL injection via column names.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, col};
+    ///
+    /// let mut u = sqipe("employee").update();
+    /// u.set(col("name"), "Alice");
+    /// u.and_where(col("id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
+    /// ```
+    pub fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
+        self.sets.push((col.name, val.into()));
         self
     }
 
@@ -1639,10 +1652,10 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// to prevent accidental full-table updates. Call this method to opt in to WHERE-less updates.
     ///
     /// ```
-    /// use sqipe::sqipe;
+    /// use sqipe::{sqipe, col};
     ///
     /// let mut u = sqipe("employee").update();
-    /// u.set("status", "inactive");
+    /// u.set(col("status"), "inactive");
     /// u.without_where();
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
@@ -1719,7 +1732,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// let mut q = sqipe("employee");
     /// q.and_where(col("id").eq(1));
     /// let mut u = q.update();
-    /// u.set("name", "Alice");
+    /// u.set(col("name"), "Alice");
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
@@ -4044,7 +4057,7 @@ mod tests {
     #[test]
     fn test_update_basic() {
         let mut u = sqipe("employee").update();
-        u.set("name", "Alice");
+        u.set(col("name"), "Alice");
         u.and_where(col("id").eq(1));
         let (sql, binds) = u.to_sql();
         assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
@@ -4057,8 +4070,8 @@ mod tests {
     #[test]
     fn test_update_multiple_sets() {
         let mut u = sqipe("employee").update();
-        u.set("name", "Alice");
-        u.set("age", 30);
+        u.set(col("name"), "Alice");
+        u.set(col("age"), 30);
         u.and_where(col("id").eq(1));
         let (sql, binds) = u.to_sql();
         assert_eq!(
@@ -4078,7 +4091,7 @@ mod tests {
     #[test]
     fn test_update_without_where() {
         let mut u = sqipe("employee").update();
-        u.set("status", "inactive");
+        u.set(col("status"), "inactive");
         u.without_where();
         let (sql, binds) = u.to_sql();
         assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
@@ -4090,7 +4103,7 @@ mod tests {
         let mut q = sqipe("employee");
         q.and_where(col("id").eq(1));
         let mut u = q.update();
-        u.set("name", "Alice");
+        u.set(col("name"), "Alice");
         let (sql, binds) = u.to_sql();
         assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
         assert_eq!(
@@ -4109,8 +4122,8 @@ mod tests {
         }
 
         let mut u = sqipe("employee").update();
-        u.set("name", "Alice");
-        u.set("age", 30);
+        u.set(col("name"), "Alice");
+        u.set(col("age"), 30);
         u.and_where(col("id").eq(1));
         let (sql, binds) = u.to_sql_with(&PgDialect);
         assert_eq!(
@@ -4130,7 +4143,7 @@ mod tests {
     #[test]
     fn test_update_with_complex_where() {
         let mut u = sqipe("employee").update();
-        u.set("status", "active");
+        u.set(col("status"), "active");
         u.and_where(col("age").between(20, 60));
         u.and_where(col("role").included(&["admin", "manager"]));
         let (sql, binds) = u.to_sql();
@@ -4153,7 +4166,7 @@ mod tests {
     #[test]
     fn test_update_with_or_where() {
         let mut u = sqipe("employee").update();
-        u.set("reviewed", true);
+        u.set(col("reviewed"), true);
         u.and_where(col("status").eq("pending"));
         u.or_where(col("status").eq("draft"));
         let (sql, binds) = u.to_sql();
@@ -4174,7 +4187,7 @@ mod tests {
     #[test]
     fn test_update_with_like() {
         let mut u = sqipe("employee").update();
-        u.set("flagged", true);
+        u.set(col("flagged"), true);
         u.and_where(col("name").like(LikeExpression::starts_with("test")));
         let (sql, binds) = u.to_sql();
         assert_eq!(
@@ -4199,7 +4212,7 @@ mod tests {
     #[should_panic(expected = "UPDATE without WHERE is dangerous")]
     fn test_update_no_where_panics() {
         let mut u = sqipe("employee").update();
-        u.set("status", "inactive");
+        u.set(col("status"), "inactive");
         let _ = u.to_sql();
     }
 
@@ -4208,7 +4221,7 @@ mod tests {
         let mut q = sqipe("employee");
         q.as_("e");
         let mut u = q.update();
-        u.set("name", "Alice");
+        u.set(col("name"), "Alice");
         u.and_where(col("id").eq(1));
         let (sql, _) = u.to_sql();
         assert_eq!(

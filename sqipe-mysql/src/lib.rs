@@ -57,7 +57,7 @@ pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
 
 impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     /// Add a SET clause: `` SET `col` = ? ``.
-    pub fn set(&mut self, col: &str, val: impl Into<V>) -> &mut Self {
+    pub fn set(&mut self, col: sqipe::Col, val: impl Into<V>) -> &mut Self {
         self.inner.set(col, val);
         self
     }
@@ -850,7 +850,7 @@ mod tests {
     #[test]
     fn test_update_basic() {
         let mut u = sqipe("users").update();
-        u.set("name", "Alicia");
+        u.set(col("name"), "Alicia");
         u.and_where(col("id").eq(1));
 
         let (sql, binds) = u.to_sql();
@@ -867,8 +867,8 @@ mod tests {
     #[test]
     fn test_update_multiple_sets() {
         let mut u = sqipe("users").update();
-        u.set("name", "Alicia");
-        u.set("age", 31);
+        u.set(col("name"), "Alicia");
+        u.set(col("age"), 31);
         u.and_where(col("id").eq(1));
 
         let (sql, binds) = u.to_sql();
@@ -891,7 +891,7 @@ mod tests {
         let mut q = sqipe("users");
         q.and_where(col("id").eq(1));
         let mut u = q.update();
-        u.set("name", "Alicia");
+        u.set(col("name"), "Alicia");
 
         let (sql, _) = u.to_sql();
         assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
@@ -900,7 +900,7 @@ mod tests {
     #[test]
     fn test_update_without_where() {
         let mut u = sqipe("users").update();
-        u.set("age", 99);
+        u.set(col("age"), 99);
         u.without_where();
 
         let (sql, _) = u.to_sql();
@@ -912,7 +912,7 @@ mod tests {
         let mut q = sqipe("users");
         q.as_("u");
         let mut u = q.update();
-        u.set("name", "Alicia");
+        u.set(col("name"), "Alicia");
         u.and_where(col("id").eq(1));
 
         let (sql, _) = u.to_sql();
@@ -923,7 +923,7 @@ mod tests {
     #[test]
     fn test_update_with_order_by_and_limit() {
         let mut u = sqipe("users").update();
-        u.set("status", "inactive");
+        u.set(col("status"), "inactive");
         u.and_where(col("dept").eq("eng"));
         u.order_by(col("created_at").asc());
         u.limit(10);
@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn test_update_with_limit_only() {
         let mut u = sqipe("users").update();
-        u.set("flagged", true);
+        u.set(col("flagged"), true);
         u.without_where();
         u.limit(100);
 
@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn test_update_with_like() {
         let mut u = sqipe("users").update();
-        u.set("flagged", true);
+        u.set(col("flagged"), true);
         u.and_where(col("name").like(sqipe::LikeExpression::starts_with("test")));
 
         let (sql, binds) = u.to_sql();
