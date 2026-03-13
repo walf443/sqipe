@@ -405,6 +405,20 @@ pg_test!(test_like_starts_with, |client| {
     assert_eq!(rows[0].get::<_, String>("name"), "Alice");
 });
 
+pg_test!(test_like_ends_with, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").like(LikeExpression::ends_with("ob")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Bob");
+});
+
 pg_test!(test_not_like, |client| {
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").not_like(LikeExpression::contains("li")));

@@ -467,6 +467,23 @@ async fn test_like_starts_with() {
 }
 
 #[tokio::test]
+async fn test_like_ends_with() {
+    let (_container, client) = setup_container().await;
+
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").like(LikeExpression::ends_with("ob")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Bob");
+}
+
+#[tokio::test]
 async fn test_not_like() {
     let (_container, client) = setup_container().await;
 
