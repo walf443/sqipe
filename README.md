@@ -267,6 +267,36 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" IN (?, 
 
 Empty lists are safely handled as `1 = 0`.
 
+### NOT IN clause
+
+```rust
+# use sqipe::{sqipe, col};
+let mut q = sqipe("users");
+q.and_where(col("status").not_included(&["inactive", "banned"]));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" NOT IN (?, ?)");
+```
+
+Empty lists are safely handled as `1 = 1`.
+
+Subqueries are also supported:
+
+```rust
+# use sqipe::{sqipe, col};
+let mut sub = sqipe("orders");
+sub.select(&["user_id"]);
+sub.and_where(col("status").eq("cancelled"));
+
+let mut q = sqipe("users");
+q.and_where(col("id").not_included(sub));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?)");
+```
+
 ### JOIN
 
 ```rust
