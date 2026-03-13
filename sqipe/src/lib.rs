@@ -420,6 +420,7 @@ pub enum WhereClause<V: Clone = Value> {
     },
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
+    Not(Box<WhereClause<V>>),
 }
 
 impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
@@ -465,7 +466,16 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .finish(),
             WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
             WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
+            WhereClause::Not(clause) => f.debug_tuple("Not").field(clause).finish(),
         }
+    }
+}
+
+impl<V: Clone> std::ops::Not for WhereClause<V> {
+    type Output = WhereClause<V>;
+
+    fn not(self) -> Self::Output {
+        WhereClause::Not(Box::new(self))
     }
 }
 
@@ -510,6 +520,7 @@ impl<V: Clone> WhereClause<V> {
             WhereClause::All(clauses) => {
                 WhereClause::All(clauses.into_iter().map(|c| c.map_values(f)).collect())
             }
+            WhereClause::Not(clause) => WhereClause::Not(Box::new(clause.map_values(f))),
         }
     }
 }
@@ -668,6 +679,11 @@ pub fn any<V: Clone>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
 /// Combine conditions with AND: `all(a, b)` => `(a AND b)`.
 pub fn all<V: Clone>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
     WhereClause::All(vec![a, b])
+}
+
+/// Negate a condition: `not(a)` => `NOT (a)`.
+pub fn not<V: Clone>(clause: WhereClause<V>) -> WhereClause<V> {
+    WhereClause::Not(Box::new(clause))
 }
 
 #[derive(Debug, Clone)]
@@ -1289,6 +1305,81 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT * FROM \"employee\" WHERE (\"role\" = ? AND \"dept\" = ?) OR (\"role\" = ? AND \"dept\" = ?)"
+        );
+    }
+
+    #[test]
+    fn test_not_where() {
+        let mut q = sqipe("employee");
+        q.and_where(not(col("role").eq("admin")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE NOT (\"role\" = ?)"
+        );
+        assert_eq!(binds, vec![Value::String("admin".to_string())]);
+    }
+
+    #[test]
+    fn test_not_where_with_and() {
+        let mut q = sqipe("employee");
+        q.and_where(("name", "Alice"));
+        q.and_where(not(col("role").eq("admin")));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE \"name\" = ? AND NOT (\"role\" = ?)"
+        );
+    }
+
+    #[test]
+    fn test_not_where_with_or() {
+        let mut q = sqipe("employee");
+        q.and_where(("name", "Alice"));
+        q.or_where(not(col("role").eq("admin")));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE \"name\" = ? OR NOT (\"role\" = ?)"
+        );
+    }
+
+    #[test]
+    fn test_not_with_any() {
+        let mut q = sqipe("employee");
+        q.and_where(not(any(col("role").eq("admin"), col("role").eq("manager"))));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE NOT ((\"role\" = ? OR \"role\" = ?))"
+        );
+    }
+
+    #[test]
+    fn test_not_operator() {
+        let mut q = sqipe("employee");
+        q.and_where(!col("role").eq("admin"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"employee\" WHERE NOT (\"role\" = ?)"
+        );
+    }
+
+    #[test]
+    fn test_not_pipe_sql() {
+        let mut q = sqipe("employee");
+        q.and_where(not(col("role").eq("admin")));
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            "FROM \"employee\" |> WHERE NOT (\"role\" = ?) |> SELECT *"
         );
     }
 

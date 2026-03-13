@@ -381,6 +381,10 @@ fn render_where_clause<V: Clone>(
                 format!("({})", joined)
             }
         }
+        WhereClause::Not(clause) => {
+            let inner = render_where_clause(clause, false, cfg, binds);
+            format!("NOT ({})", inner)
+        }
     }
 }
 
