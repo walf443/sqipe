@@ -123,6 +123,65 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     }
 }
 
+/// MySQL-specific DELETE query builder.
+///
+/// Extends the core `DeleteQuery` with MySQL-specific features like
+/// `ORDER BY` and `LIMIT` in DELETE statements.
+#[derive(Debug, Clone)]
+pub struct MysqlDeleteQuery<V: Clone + std::fmt::Debug = Value> {
+    inner: sqipe::DeleteQuery<V>,
+    order_bys: Vec<sqipe::OrderByClause>,
+    limit_val: Option<u64>,
+}
+
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
+    /// Add an AND WHERE condition.
+    pub fn and_where(&mut self, cond: impl sqipe::IntoWhereClause<V>) -> &mut Self {
+        self.inner.and_where(cond);
+        self
+    }
+
+    /// Add an OR WHERE condition.
+    pub fn or_where(&mut self, cond: impl sqipe::IntoWhereClause<V>) -> &mut Self {
+        self.inner.or_where(cond);
+        self
+    }
+
+    /// Explicitly allow DELETE without WHERE clause.
+    ///
+    /// By default, calling [`to_sql()`](MysqlDeleteQuery::to_sql) without any WHERE
+    /// conditions will panic. Call this method to opt in to full-table deletes.
+    pub fn without_where(&mut self) -> &mut Self {
+        self.inner.without_where();
+        self
+    }
+
+    /// Add an ORDER BY clause (MySQL extension).
+    pub fn order_by(&mut self, clause: sqipe::OrderByClause) -> &mut Self {
+        self.order_bys.push(clause);
+        self
+    }
+
+    /// Set the LIMIT value (MySQL extension).
+    pub fn limit(&mut self, n: u64) -> &mut Self {
+        self.limit_val = Some(n);
+        self
+    }
+
+    /// Build standard SQL with MySQL dialect.
+    pub fn to_sql(&self) -> (String, Vec<V>) {
+        let mut tree = self.inner.to_tree();
+        tree.order_bys = self.order_bys.clone();
+        tree.limit = self.limit_val;
+        let ph = |_: usize| "?".to_string();
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        sqipe::renderer::delete::render_delete(
+            &tree,
+            &sqipe::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL),
+        )
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> Deref for MysqlQuery<V> {
     type Target = sqipe::Query<V>;
     fn deref(&self) -> &Self::Target {
@@ -359,6 +418,18 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     pub fn update(self) -> MysqlUpdateQuery<V> {
         MysqlUpdateQuery {
             inner: self.inner.update(),
+            order_bys: Vec::new(),
+            limit_val: None,
+        }
+    }
+
+    /// Convert this MySQL query builder into a DELETE query builder.
+    ///
+    /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
+    /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
+    pub fn delete(self) -> MysqlDeleteQuery<V> {
+        MysqlDeleteQuery {
+            inner: self.inner.delete(),
             order_bys: Vec::new(),
             limit_val: None,
         }
@@ -1002,6 +1073,102 @@ mod tests {
             "UPDATE `users` SET `visit_count` = `visit_count` + 1 WHERE `id` = ?"
         );
         assert_eq!(binds, vec![sqipe::Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_delete_basic() {
+        let mut d = sqipe("users").delete();
+        d.and_where(col("id").eq(1));
+
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ?");
+        assert_eq!(binds, vec![sqipe::Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_delete_from_query_with_where() {
+        let mut q = sqipe("users");
+        q.and_where(col("id").eq(1));
+        let d = q.delete();
+
+        let (sql, _) = d.to_sql();
+        assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ?");
+    }
+
+    #[test]
+    fn test_delete_without_where() {
+        let mut d = sqipe("users").delete();
+        d.without_where();
+
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, "DELETE FROM `users`");
+        assert_eq!(binds, vec![]);
+    }
+
+    #[test]
+    fn test_delete_with_table_alias() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        let mut d = q.delete();
+        d.and_where(col("id").eq(1));
+
+        let (sql, _) = d.to_sql();
+        assert_eq!(sql, "DELETE FROM `users` `u` WHERE `id` = ?");
+    }
+
+    #[test]
+    fn test_delete_with_order_by_and_limit() {
+        let mut d = sqipe("users").delete();
+        d.and_where(col("dept").eq("eng"));
+        d.order_by(col("created_at").asc());
+        d.limit(10);
+
+        let (sql, binds) = d.to_sql();
+        assert_eq!(
+            sql,
+            "DELETE FROM `users` WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10"
+        );
+        assert_eq!(binds, vec![sqipe::Value::String("eng".to_string())]);
+    }
+
+    #[test]
+    fn test_delete_with_limit_only() {
+        let mut d = sqipe("users").delete();
+        d.without_where();
+        d.limit(100);
+
+        let (sql, _) = d.to_sql();
+        assert_eq!(sql, "DELETE FROM `users` LIMIT 100");
+    }
+
+    #[test]
+    fn test_delete_with_like() {
+        let mut d = sqipe("users").delete();
+        d.and_where(col("name").like(sqipe::LikeExpression::starts_with("test")));
+
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, r"DELETE FROM `users` WHERE `name` LIKE ? ESCAPE '\\'");
+        assert_eq!(binds, vec![sqipe::Value::String("test%".to_string())]);
+    }
+
+    #[test]
+    fn test_delete_with_or_where() {
+        let mut d = sqipe("users").delete();
+        d.and_where(col("status").eq("pending"));
+        d.or_where(col("status").eq("draft"));
+
+        let (sql, binds) = d.to_sql();
+        assert_eq!(
+            sql,
+            "DELETE FROM `users` WHERE `status` = ? OR `status` = ?"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                sqipe::Value::String("pending".to_string()),
+                sqipe::Value::String("draft".to_string()),
+            ]
+        );
     }
 
     #[test]

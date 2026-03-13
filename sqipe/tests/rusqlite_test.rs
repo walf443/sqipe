@@ -662,3 +662,72 @@ fn test_update_without_where() {
         .collect();
     assert!(ages.iter().all(|&a| a == 99));
 }
+
+#[test]
+fn test_delete_basic() {
+    let conn = setup_db();
+
+    let mut d = sqipe_with::<SqliteValue>("users").delete();
+    d.and_where(col("id").eq(1));
+    let (sql, binds) = d.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Verify Alice was deleted
+    let mut stmt = conn.prepare(r#"SELECT "id" FROM "users""#).unwrap();
+    let ids: Vec<i64> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(!ids.contains(&1));
+}
+
+#[test]
+fn test_delete_from_query_with_where() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("age").lt(30));
+    let d = q.delete();
+    let (sql, binds) = d.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Only Bob (age=25) should be deleted
+    let mut stmt = conn
+        .prepare(r#"SELECT "name" FROM "users" ORDER BY "name" ASC"#)
+        .unwrap();
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(names, vec!["Alice", "Charlie"]);
+}
+
+#[test]
+fn test_delete_without_where() {
+    let conn = setup_db();
+
+    let mut d = sqipe_with::<SqliteValue>("users").delete();
+    d.without_where();
+    let (sql, binds) = d.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    let mut stmt = conn.prepare(r#"SELECT "id" FROM "users""#).unwrap();
+    let ids: Vec<i64> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(ids.len(), 0);
+}

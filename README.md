@@ -512,6 +512,43 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
 ```
 
+### DELETE
+
+`Query::delete()` converts a SELECT query builder into a DELETE statement builder.
+
+```rust
+# use sqipe::{sqipe, col};
+// Basic DELETE
+let mut d = sqipe("employee").delete();
+d.and_where(col("id").eq(1));
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
+```
+
+WHERE conditions can be built first, then converted to DELETE:
+
+```rust
+# use sqipe::{sqipe, col};
+let mut q = sqipe("employee");
+q.and_where(col("id").eq(1));
+let d = q.delete();
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
+```
+
+By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table deletes. Use `without_where()` to explicitly opt in:
+
+```rust
+# use sqipe::sqipe;
+let mut d = sqipe("employee").delete();
+d.without_where();
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, r#"DELETE FROM "employee""#);
+```
+
 ### MySQL dialect
 
 See [sqipe-mysql](./sqipe-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).

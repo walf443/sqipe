@@ -693,3 +693,58 @@ async fn test_update_without_where() {
     let rows = client.query("SELECT age FROM users", &[]).await.unwrap();
     assert!(rows.iter().all(|r| r.get::<_, i32>("age") == 99));
 }
+
+#[tokio::test]
+async fn test_delete_basic() {
+    let (_container, client) = setup_container().await;
+
+    let mut d = sqipe_with::<PgValue>("users").delete();
+    d.and_where(col("id").eq(1));
+    let (sql, binds) = d.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client.query("SELECT id FROM users", &[]).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.get::<_, i32>("id") != 1));
+}
+
+#[tokio::test]
+async fn test_delete_from_query_with_where() {
+    let (_container, client) = setup_container().await;
+
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("age").lt(30));
+    let d = q.delete();
+    let (sql, binds) = d.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT name FROM users ORDER BY name ASC", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_delete_without_where() {
+    let (_container, client) = setup_container().await;
+
+    let mut d = sqipe_with::<PgValue>("users").delete();
+    d.without_where();
+    let (sql, binds) = d.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client.query("SELECT id FROM users", &[]).await.unwrap();
+    assert_eq!(rows.len(), 0);
+}

@@ -3,6 +3,7 @@ use crate::{
     SortDir, WhereClause, WhereEntry,
 };
 
+pub mod delete;
 pub mod pipe;
 pub mod standard;
 pub mod update;

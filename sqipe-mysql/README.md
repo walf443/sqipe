@@ -102,3 +102,43 @@ u.limit(10);
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10");
 ```
+
+## DELETE
+
+```rust
+use sqipe_mysql::sqipe;
+use sqipe::col;
+
+let mut d = sqipe("users").delete();
+d.and_where(col("id").eq(1));
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ?");
+```
+
+By default, DELETE without WHERE will panic. Use `without_where()` to explicitly allow full-table deletes:
+
+```rust
+use sqipe_mysql::sqipe;
+
+let mut d = sqipe("users").delete();
+d.without_where();
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, "DELETE FROM `users`");
+```
+
+MySQL supports `ORDER BY` and `LIMIT` in DELETE statements (not available in standard SQL):
+
+```rust
+use sqipe_mysql::sqipe;
+use sqipe::col;
+
+let mut d = sqipe("users").delete();
+d.and_where(col("dept").eq("eng"));
+d.order_by(col("created_at").asc());
+d.limit(10);
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, "DELETE FROM `users` WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10");
+```
