@@ -65,6 +65,15 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
         self
     }
 
+    /// Add a raw SQL expression to the SET clause.
+    ///
+    /// Use [`sqipe::SetExpression::new()`] to create the expression, making it explicit
+    /// that raw SQL is being injected.
+    pub fn set_expr(&mut self, expr: sqipe::SetExpression) -> &mut Self {
+        self.inner.set_expr(expr);
+        self
+    }
+
     /// Add an AND WHERE condition.
     pub fn and_where(&mut self, cond: impl sqipe::IntoWhereClause<V>) -> &mut Self {
         self.inner.and_where(cond);
@@ -977,6 +986,22 @@ mod tests {
                 sqipe::Value::String("test%".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn test_update_with_set_expr() {
+        let mut u = sqipe("users").update();
+        u.set_expr(sqipe::SetExpression::new(
+            "`visit_count` = `visit_count` + 1",
+        ));
+        u.and_where(col("id").eq(1));
+
+        let (sql, binds) = u.to_sql();
+        assert_eq!(
+            sql,
+            "UPDATE `users` SET `visit_count` = `visit_count` + 1 WHERE `id` = ?"
+        );
+        assert_eq!(binds, vec![sqipe::Value::Int(1)]);
     }
 
     #[test]

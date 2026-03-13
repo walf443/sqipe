@@ -1605,11 +1605,40 @@ impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
 /// let (sql, _) = u.to_sql();
 /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 /// ```
+/// A raw SQL expression for use in SET clauses.
+///
+/// This type exists to make it explicit that the caller is injecting raw SQL.
+/// The expression is inserted verbatim — it is **not** parameterized or quoted.
+///
+/// ```
+/// use sqipe::SetExpression;
+///
+/// let expr = SetExpression::new(r#""visit_count" = "visit_count" + 1"#);
+/// ```
+#[derive(Debug, Clone)]
+pub struct SetExpression(String);
+
+impl SetExpression {
+    /// Create a new raw SQL SET expression.
+    pub fn new(expr: &str) -> Self {
+        Self(expr.to_string())
+    }
+}
+
+/// A single SET clause entry in an UPDATE statement.
+#[derive(Debug, Clone)]
+pub enum SetClause<V: Clone> {
+    /// `"col" = ?` — identifier-quoted column with a bind value.
+    Value(String, V),
+    /// Raw SQL expression via [`SetExpression`].
+    Expr(SetExpression),
+}
+
 #[derive(Debug, Clone)]
 pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
     table: String,
     table_alias: Option<String>,
-    sets: Vec<(String, V)>,
+    sets: Vec<SetClause<V>>,
     wheres: Vec<WhereEntry<V>>,
     allow_without_where: bool,
 }
@@ -1631,7 +1660,26 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
-        self.sets.push((col.name, val.into()));
+        self.sets.push(SetClause::Value(col.name, val.into()));
+        self
+    }
+
+    /// Add a raw SQL expression to the SET clause.
+    ///
+    /// Use [`SetExpression::new()`] to create the expression, making it explicit
+    /// that raw SQL is being injected.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, col, SetExpression};
+    ///
+    /// let mut u = sqipe("employee").update();
+    /// u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    /// u.and_where(col("id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
+    /// ```
+    pub fn set_expr(&mut self, expr: SetExpression) -> &mut Self {
+        self.sets.push(SetClause::Expr(expr));
         self
     }
 
@@ -4232,6 +4280,36 @@ mod tests {
         assert_eq!(
             sql,
             r#"UPDATE "employee" "e" SET "name" = ? WHERE "id" = ?"#
+        );
+    }
+
+    #[test]
+    fn test_update_with_set_expr() {
+        let mut u = sqipe("employee").update();
+        u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+        u.and_where(col("id").eq(1));
+        let (sql, binds) = u.to_sql();
+        assert_eq!(
+            sql,
+            r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#
+        );
+        assert_eq!(binds, vec![Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_update_with_set_and_set_expr_mixed() {
+        let mut u = sqipe("employee").update();
+        u.set(col("name"), "Alice");
+        u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+        u.and_where(col("id").eq(1));
+        let (sql, binds) = u.to_sql();
+        assert_eq!(
+            sql,
+            r#"UPDATE "employee" SET "name" = ?, "visit_count" = "visit_count" + 1 WHERE "id" = ?"#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("Alice".to_string()), Value::Int(1)]
         );
     }
 }

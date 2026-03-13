@@ -205,7 +205,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 pub struct UpdateTree<V: Clone = crate::Value> {
     pub table: String,
     pub table_alias: Option<String>,
-    pub sets: Vec<(String, V)>,
+    pub sets: Vec<crate::SetClause<V>>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub order_bys: Vec<OrderByClause>,
     pub limit: Option<u64>,
@@ -220,7 +220,10 @@ impl<V: Clone> UpdateTree<V> {
             sets: self
                 .sets
                 .into_iter()
-                .map(|(col, val)| (col, f(val)))
+                .map(|s| match s {
+                    crate::SetClause::Value(col, val) => crate::SetClause::Value(col, f(val)),
+                    crate::SetClause::Expr(e) => crate::SetClause::Expr(e),
+                })
                 .collect(),
             wheres: self.wheres.into_iter().map(|w| w.map_values(f)).collect(),
             order_bys: self.order_bys,

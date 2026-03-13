@@ -1,4 +1,5 @@
 use super::{RenderConfig, append_order_by, render_wheres};
+use crate::SetClause;
 use crate::tree::UpdateTree;
 
 /// Render an UPDATE statement from an `UpdateTree`.
@@ -22,14 +23,17 @@ pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (Str
     };
     parts.push(table);
 
-    // SET "col1" = ?, "col2" = ?
+    // SET "col1" = ?, "col2" = ?, raw_expr
     let set_items: Vec<String> = tree
         .sets
         .iter()
-        .map(|(col, val)| {
-            binds.push(val.clone());
-            let placeholder = (cfg.ph)(binds.len());
-            format!("{} = {}", (cfg.qi)(col), placeholder)
+        .map(|clause| match clause {
+            SetClause::Value(col, val) => {
+                binds.push(val.clone());
+                let placeholder = (cfg.ph)(binds.len());
+                format!("{} = {}", (cfg.qi)(col), placeholder)
+            }
+            SetClause::Expr(expr) => expr.0.clone(),
         })
         .collect();
     parts.push(format!("SET {}", set_items.join(", ")));
