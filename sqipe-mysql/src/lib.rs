@@ -10,7 +10,8 @@ use sqipe::renderer::{RenderConfig, Renderer};
 use sqipe::tree::SelectTree;
 use std::ops::{Deref, DerefMut};
 
-struct MySQL;
+/// MySQL dialect: `?` placeholders and backtick identifier quoting.
+pub struct MySQL;
 
 impl sqipe::Dialect for MySQL {
     fn placeholder(&self, _index: usize) -> String {
@@ -68,6 +69,12 @@ impl<V: Clone + std::fmt::Debug> sqipe::IntoIncluded<V> for MysqlQuery<V> {
     }
 }
 
+impl<V: Clone + std::fmt::Debug> sqipe::IntoSelectTree<V> for MysqlQuery<V> {
+    fn into_select_tree(self) -> sqipe::tree::SelectTree<V> {
+        self.into_tree()
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlQuery<V> {
     type Query = MysqlQuery<V>;
     fn as_union_parts(&self) -> Vec<(sqipe::SetOp, MysqlQuery<V>)> {
@@ -84,12 +91,7 @@ impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlUnionQuery<V> {
 
 /// Create a MySQL-specific query builder for the given table.
 pub fn sqipe(table: &str) -> MysqlQuery<Value> {
-    MysqlQuery {
-        inner: sqipe::sqipe(table),
-        force_indexes: Vec::new(),
-        use_indexes: Vec::new(),
-        ignore_indexes: Vec::new(),
-    }
+    MysqlQuery::wrap(sqipe::sqipe(table))
 }
 
 fn apply_index_hints_to<V: Clone>(
@@ -115,17 +117,37 @@ fn apply_index_hints_to<V: Clone>(
     }
 }
 
+/// Create a MySQL-specific query that selects from a subquery.
+pub fn sqipe_from_subquery(
+    sub: impl sqipe::IntoSelectTree<Value>,
+    alias: &str,
+) -> MysqlQuery<Value> {
+    MysqlQuery::wrap(sqipe::Query::from_subquery(sub, alias))
+}
+
+/// Create a MySQL-specific query that selects from a subquery with a custom value type.
+pub fn sqipe_from_subquery_with<V: Clone + std::fmt::Debug>(
+    sub: impl sqipe::IntoSelectTree<V>,
+    alias: &str,
+) -> MysqlQuery<V> {
+    MysqlQuery::wrap(sqipe::Query::from_subquery(sub, alias))
+}
+
 /// Create a MySQL-specific query builder with a custom value type.
 pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: &str) -> MysqlQuery<V> {
-    MysqlQuery {
-        inner: sqipe::sqipe_with(table),
-        force_indexes: Vec::new(),
-        use_indexes: Vec::new(),
-        ignore_indexes: Vec::new(),
-    }
+    MysqlQuery::wrap(sqipe::sqipe_with(table))
 }
 
 impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
+    fn wrap(inner: sqipe::Query<V>) -> Self {
+        MysqlQuery {
+            inner,
+            force_indexes: Vec::new(),
+            use_indexes: Vec::new(),
+            ignore_indexes: Vec::new(),
+        }
+    }
+
     pub fn force_index(&mut self, indexes: &[&str]) -> &mut Self {
         self.force_indexes = indexes.iter().map(|s| s.to_string()).collect();
         self

@@ -614,6 +614,21 @@ impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
     }
 }
 
+/// Trait for types that can be converted into a `SelectTree` for use as a FROM subquery.
+///
+/// Implement this trait to allow your custom query type (e.g., `MysqlQuery`)
+/// to be passed to `sqipe_from_subquery_with()`.
+pub trait IntoSelectTree<V: Clone> {
+    /// Consume this query and produce a `SelectTree` AST node.
+    fn into_select_tree(self) -> tree::SelectTree<V>;
+}
+
+impl<V: Clone + std::fmt::Debug> IntoSelectTree<V> for Query<V> {
+    fn into_select_tree(self) -> tree::SelectTree<V> {
+        tree::SelectTree::from_query_owned(self)
+    }
+}
+
 /// Trait for types that can be used as a source for `included` (IN clause).
 ///
 /// Implemented for slices (value list) and `Query` (subquery).
@@ -836,8 +851,11 @@ use tree::{SelectTree, UnionTree, default_quote_identifier};
 /// The query builder, generic over the bind value type `V`.
 #[derive(Debug, Clone)]
 pub struct Query<V: Clone + std::fmt::Debug = Value> {
+    /// Table name for table-based queries. Empty when using `from_subquery`.
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
+    /// When set, the query selects from this subquery instead of `table`.
+    pub(crate) from_subquery: Option<Box<tree::SelectTree<V>>>,
     pub(crate) selects: Vec<ColRef>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
@@ -882,6 +900,19 @@ pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: &str) -> Query<V> {
     Query::new(table)
 }
 
+/// Create a query that selects from a subquery instead of a table.
+pub fn sqipe_from_subquery(sub: impl IntoSelectTree<Value>, alias: &str) -> Query<Value> {
+    Query::from_subquery(sub, alias)
+}
+
+/// Create a query that selects from a subquery with a custom value type.
+pub fn sqipe_from_subquery_with<V: Clone + std::fmt::Debug>(
+    sub: impl IntoSelectTree<V>,
+    alias: &str,
+) -> Query<V> {
+    Query::from_subquery(sub, alias)
+}
+
 /// Trait for types that can specify a join target table.
 pub trait IntoJoinTable {
     fn into_join_table(self) -> (String, Option<String>);
@@ -920,6 +951,42 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         Query {
             table: table.to_string(),
             table_alias: None,
+            from_subquery: None,
+            selects: Vec::new(),
+            wheres: Vec::new(),
+            havings: Vec::new(),
+            aggregates: Vec::new(),
+            group_bys: Vec::new(),
+            joins: Vec::new(),
+            order_bys: Vec::new(),
+            limit_val: None,
+            offset_val: None,
+        }
+    }
+
+    /// Create a query that selects from a subquery instead of a table.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, sqipe_from_subquery, col};
+    ///
+    /// let mut sub = sqipe("orders");
+    /// sub.select(&["user_id", "amount"]);
+    /// sub.and_where(col("status").eq("completed"));
+    ///
+    /// let mut q = sqipe_from_subquery(sub, "t");
+    /// q.select(&["user_id"]);
+    ///
+    /// let (sql, binds) = q.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t""#
+    /// );
+    /// ```
+    pub fn from_subquery(sub: impl IntoSelectTree<V>, alias: &str) -> Self {
+        Query {
+            table: String::new(),
+            table_alias: Some(alias.to_string()),
+            from_subquery: Some(Box::new(sub.into_select_tree())),
             selects: Vec::new(),
             wheres: Vec::new(),
             havings: Vec::new(),
@@ -2793,6 +2860,131 @@ mod tests {
         assert_eq!(
             binds,
             vec![Value::Int(20), Value::String("shipped".to_string())]
+        );
+    }
+
+    // ── FROM subquery tests ──
+
+    #[test]
+    fn test_from_subquery() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "amount"]);
+        sub.and_where(col("status").eq("completed"));
+
+        let mut q = sqipe_from_subquery(sub, "t");
+        q.select(&["user_id"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t""#
+        );
+        assert_eq!(binds, vec![Value::String("completed".to_string())]);
+    }
+
+    #[test]
+    fn test_from_subquery_with_outer_where() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "amount"]);
+        sub.and_where(col("status").eq("completed"));
+
+        let mut q = sqipe_from_subquery(sub, "t");
+        q.select(&["user_id"]);
+        q.and_where(col("amount").gt(100));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t" WHERE "amount" > ?"#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("completed".to_string()), Value::Int(100),]
+        );
+    }
+
+    #[test]
+    fn test_from_subquery_pipe_sql() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "amount"]);
+        sub.and_where(col("status").eq("completed"));
+
+        let mut q = sqipe_from_subquery(sub, "t");
+        q.select(&["user_id"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            r#"FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t" |> SELECT "user_id""#
+        );
+        assert_eq!(binds, vec![Value::String("completed".to_string())]);
+    }
+
+    #[test]
+    fn test_from_subquery_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id"]);
+        sub.and_where(col("status").eq("completed"));
+
+        let mut q = sqipe_from_subquery(sub, "t");
+        q.select(&["user_id"]);
+        q.and_where(col("user_id").gt(10));
+
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+        assert_eq!(
+            sql,
+            r#"SELECT "user_id" FROM (SELECT "user_id" FROM "orders" WHERE "status" = $1) AS "t" WHERE "user_id" > $2"#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("completed".to_string()), Value::Int(10),]
+        );
+    }
+
+    #[test]
+    fn test_from_subquery_with_limit() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "amount"]);
+        sub.limit(10);
+
+        let mut q = sqipe_from_subquery(sub, "t");
+        q.select(&["user_id"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" LIMIT 10) AS "t""#
+        );
+    }
+
+    #[test]
+    fn test_from_subquery_nested() {
+        let mut inner = sqipe("orders");
+        inner.select(&["user_id", "amount"]);
+        inner.and_where(col("status").eq("completed"));
+
+        let mut mid = sqipe_from_subquery(inner, "t1");
+        mid.select(&["user_id", "amount"]);
+        mid.and_where(col("amount").gt(100));
+
+        let mut outer = sqipe_from_subquery(mid, "t2");
+        outer.select(&["user_id"]);
+
+        let (sql, binds) = outer.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t1" WHERE "amount" > ?) AS "t2""#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("completed".to_string()), Value::Int(100),]
         );
     }
 }

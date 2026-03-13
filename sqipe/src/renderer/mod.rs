@@ -6,7 +6,7 @@ use crate::{
 pub mod pipe;
 pub mod standard;
 
-use crate::tree::{FromClause, SelectTree, UnionTree};
+use crate::tree::{FromClause, FromSource, SelectTree, UnionTree};
 
 /// Configuration for rendering SQL from trees.
 pub struct RenderConfig<'a> {
@@ -112,8 +112,18 @@ pub(super) fn render_aggregate_expr(expr: &AggregateExpr, cfg: &RenderConfig) ->
     }
 }
 
-pub(super) fn render_from(from: &FromClause, cfg: &RenderConfig) -> String {
-    let mut s = format!("FROM {}", (cfg.qi)(&from.table));
+pub(super) fn render_from<V: Clone>(
+    from: &FromClause<V>,
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> String {
+    let mut s = match &from.source {
+        FromSource::Table(table) => format!("FROM {}", (cfg.qi)(table)),
+        FromSource::Subquery(sub) => {
+            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            format!("FROM ({})", sub_sql)
+        }
+    };
     if let Some(alias) = &from.alias {
         s.push_str(&format!(" AS {}", (cfg.qi)(alias)));
     }
@@ -238,7 +248,7 @@ pub(super) fn render_select_core<V: Clone>(
         }
     }
 
-    parts.push(render_from(&tree.from, cfg));
+    parts.push(render_from(&tree.from, cfg, binds));
 
     for join_sql in render_joins(&tree.joins, cfg) {
         parts.push(join_sql);

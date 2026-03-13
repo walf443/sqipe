@@ -15,7 +15,7 @@ impl PipeSqlRenderer {
     ) -> String {
         let mut parts = Vec::new();
 
-        parts.push(render_from(&tree.from, cfg));
+        parts.push(render_from(&tree.from, cfg, binds));
 
         for join_sql in render_joins(&tree.joins, cfg) {
             parts.push(join_sql);

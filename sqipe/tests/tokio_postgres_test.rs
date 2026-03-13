@@ -1,6 +1,6 @@
 #![cfg(feature = "test-tokio-postgres")]
 
-use sqipe::{Dialect, col, sqipe_with, table};
+use sqipe::{Dialect, col, sqipe_from_subquery_with, sqipe_with, table};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
@@ -332,4 +332,48 @@ async fn test_not_in_subquery() {
     // Charlie (id=3) is not in shipped orders (user_id 1,2)
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<_, String>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_from_subquery() {
+    let (_container, client) = setup_container().await;
+
+    let mut sub = sqipe_with::<PgValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.order_by(col("total").desc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, i32>("user_id"), 1); // Alice, total=100
+    assert_eq!(rows[1].get::<_, i32>("user_id"), 2); // Bob, total=50
+}
+
+#[tokio::test]
+async fn test_from_subquery_with_outer_where() {
+    let (_container, client) = setup_container().await;
+
+    let mut sub = sqipe_with::<PgValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.and_where(col("total").gt(60.0));
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    // Only Alice's order (total=100) passes total > 60
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, i32>("user_id"), 1);
 }

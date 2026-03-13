@@ -1,7 +1,7 @@
 #![cfg(feature = "test-rusqlite")]
 
 use rusqlite::{Connection, params_from_iter};
-use sqipe::{col, sqipe_with, table};
+use sqipe::{col, sqipe_from_subquery_with, sqipe_with, table};
 
 #[derive(Debug, Clone)]
 enum SqliteValue {
@@ -359,4 +359,60 @@ fn test_not_in_subquery() {
 
     // Charlie (id=3) is not in shipped orders (user_id 1,2)
     assert_eq!(names, vec!["Charlie"]);
+}
+
+#[test]
+fn test_from_subquery() {
+    let conn = setup_db();
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.order_by(col("total").desc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, f64)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].0, 1); // Alice, total=100
+    assert_eq!(rows[1].0, 2); // Bob, total=50
+}
+
+#[test]
+fn test_from_subquery_with_outer_where() {
+    let conn = setup_db();
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.and_where(col("total").gt(60.0));
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, f64)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Only Alice's order (total=100) passes total > 60
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].0, 1);
 }

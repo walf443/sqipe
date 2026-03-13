@@ -1,6 +1,6 @@
 #![cfg(feature = "test-sqlx")]
 
-use sqipe::{col, not, sqipe_with, table};
+use sqipe::{col, not, sqipe_from_subquery_with, sqipe_with, table};
 use sqlx::{Row, SqlitePool};
 
 #[derive(Debug, Clone)]
@@ -373,4 +373,48 @@ async fn test_not_where_with_and() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].get::<String, _>("name"), "Bob");
     assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_from_subquery() {
+    let pool = setup_db().await;
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.order_by(col("total").desc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<i64, _>("user_id"), 1); // Alice, total=100
+    assert_eq!(rows[1].get::<i64, _>("user_id"), 2); // Bob, total=50
+}
+
+#[tokio::test]
+async fn test_from_subquery_with_outer_where() {
+    let pool = setup_db().await;
+
+    let mut sub = sqipe_with::<SqliteValue>("orders");
+    sub.select(&["user_id", "total"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = sqipe_from_subquery_with(sub, "t");
+    q.select(&["user_id", "total"]);
+    q.and_where(col("total").gt(60.0));
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // Only Alice's order (total=100) passes total > 60
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64, _>("user_id"), 1);
 }
