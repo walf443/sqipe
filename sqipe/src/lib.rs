@@ -94,6 +94,15 @@ pub struct LikeExpression {
 impl LikeExpression {
     const DEFAULT_ESCAPE: char = '\\';
 
+    /// Panics if `esc` is a LIKE wildcard (`%`, `_`) or a single quote (`'`).
+    fn validate_escape_char(esc: char) {
+        assert!(
+            esc != '%' && esc != '_' && esc != '\'',
+            "escape character must not be '%', '_', or '\\'' (got '{}')",
+            esc
+        );
+    }
+
     /// Escape LIKE wildcards in user input using the given escape character.
     fn escape_with(input: &str, esc: char) -> String {
         let esc_s = esc.to_string();
@@ -113,7 +122,12 @@ impl LikeExpression {
     /// Match rows that contain the given text anywhere, using a custom escape character.
     ///
     /// `LikeExpression::contains_escaped_by("foo", '!')` → pattern `%foo%`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
     pub fn contains_escaped_by(input: &str, esc: char) -> Self {
+        Self::validate_escape_char(esc);
         Self {
             pattern: format!("%{}%", Self::escape_with(input, esc)),
             escape_char: esc,
@@ -130,7 +144,12 @@ impl LikeExpression {
     /// Match rows that start with the given text, using a custom escape character.
     ///
     /// `LikeExpression::starts_with_escaped_by("foo", '!')` → pattern `foo%`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
     pub fn starts_with_escaped_by(input: &str, esc: char) -> Self {
+        Self::validate_escape_char(esc);
         Self {
             pattern: format!("{}%", Self::escape_with(input, esc)),
             escape_char: esc,
@@ -147,7 +166,12 @@ impl LikeExpression {
     /// Match rows that end with the given text, using a custom escape character.
     ///
     /// `LikeExpression::ends_with_escaped_by("foo", '!')` → pattern `%foo`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
     pub fn ends_with_escaped_by(input: &str, esc: char) -> Self {
+        Self::validate_escape_char(esc);
         Self {
             pattern: format!("%{}", Self::escape_with(input, esc)),
             escape_char: esc,
@@ -548,12 +572,16 @@ pub enum WhereClause<V: Clone = Value> {
     },
     Like {
         col: ColRef,
+        /// Preserved for ESCAPE clause rendering.
         expr: LikeExpression,
+        /// Bind parameter value (always `expr.to_pattern()` at construction).
         val: V,
     },
     NotLike {
         col: ColRef,
+        /// Preserved for ESCAPE clause rendering.
         expr: LikeExpression,
+        /// Bind parameter value (always `expr.to_pattern()` at construction).
         val: V,
     },
     Any(Vec<WhereClause<V>>),
@@ -3537,5 +3565,23 @@ mod tests {
             r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '!'"#
         );
         assert_eq!(binds, vec![Value::String("%x!%y".to_string())]);
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_percent_as_escape() {
+        LikeExpression::contains_escaped_by("foo", '%');
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_underscore_as_escape() {
+        LikeExpression::starts_with_escaped_by("foo", '_');
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_single_quote_as_escape() {
+        LikeExpression::ends_with_escaped_by("foo", '\'');
     }
 }
