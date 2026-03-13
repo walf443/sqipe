@@ -641,4 +641,49 @@ mod tests {
             "SELECT `id`, `name` FROM `users` AS `u` STRAIGHT_JOIN `orders` AS `o` ON `u`.`id` = `o`.`user_id`"
         );
     }
+
+    #[test]
+    fn test_cte_where_then_join() {
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "WITH `_cte_0` AS (SELECT * FROM `users` WHERE `age` > ?) SELECT `id`, `name` FROM `_cte_0` AS `users` INNER JOIN `orders` ON `users`.`id` = `orders`.`user_id`"
+        );
+        assert_eq!(binds, vec![sqipe::Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_where_join_then_where() {
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(table("orders").col("total").gt(100));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "WITH `_cte_0` AS (SELECT * FROM `users` WHERE `age` > ?) SELECT `id`, `name` FROM `_cte_0` AS `users` INNER JOIN `orders` ON `users`.`id` = `orders`.`user_id` WHERE `orders`.`total` > ?"
+        );
+        assert_eq!(binds, vec![sqipe::Value::Int(25), sqipe::Value::Int(100)]);
+    }
+
+    #[test]
+    fn test_cte_pipe_sql_no_cte() {
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        // Pipe SQL should NOT generate CTE
+        assert!(!sql.starts_with("WITH"));
+        assert!(sql.contains("|> WHERE"));
+        assert!(sql.contains("|> INNER JOIN"));
+    }
 }

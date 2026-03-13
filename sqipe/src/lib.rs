@@ -865,6 +865,8 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
     pub(crate) order_bys: Vec<OrderByClause>,
     pub(crate) limit_val: Option<u64>,
     pub(crate) offset_val: Option<u64>,
+    /// Records the order of WHERE and JOIN operations for CTE generation.
+    pub(crate) stage_order: Vec<tree::StageRef>,
 }
 
 /// A combined query built from UNION / UNION ALL operations.
@@ -961,6 +963,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
+            stage_order: Vec::new(),
         }
     }
 
@@ -996,6 +999,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
+            stage_order: Vec::new(),
         }
     }
 
@@ -1006,6 +1010,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
 
     pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
         if self.aggregates.is_empty() {
+            self.stage_order
+                .push(tree::StageRef::Where(self.wheres.len()));
             self.wheres.push(WhereEntry::And(cond.into_where_clause()));
         } else {
             self.havings.push(WhereEntry::And(cond.into_where_clause()));
@@ -1015,6 +1021,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
 
     pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
         if self.aggregates.is_empty() {
+            self.stage_order
+                .push(tree::StageRef::Where(self.wheres.len()));
             self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
         } else {
             self.havings.push(WhereEntry::Or(cond.into_where_clause()));
@@ -1054,6 +1062,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let resolve_name = alias.as_deref().unwrap_or(&name);
         let mut condition = condition;
         resolve_join_condition(&mut condition, resolve_name);
+        self.stage_order
+            .push(tree::StageRef::Join(self.joins.len()));
         self.joins.push(JoinClause {
             join_type: JoinType::Inner,
             table: name,
@@ -1068,6 +1078,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let resolve_name = alias.as_deref().unwrap_or(&name);
         let mut condition = condition;
         resolve_join_condition(&mut condition, resolve_name);
+        self.stage_order
+            .push(tree::StageRef::Join(self.joins.len()));
         self.joins.push(JoinClause {
             join_type: JoinType::Left,
             table: name,
@@ -1089,6 +1101,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         let resolve_name = alias.as_deref().unwrap_or(&name);
         let mut condition = condition;
         resolve_join_condition(&mut condition, resolve_name);
+        self.stage_order
+            .push(tree::StageRef::Join(self.joins.len()));
         self.joins.push(JoinClause {
             join_type,
             table: name,
@@ -2962,6 +2976,113 @@ mod tests {
             sql,
             r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" LIMIT 10) AS "t""#
         );
+    }
+
+    // ── CTE generation tests (WHERE before JOIN) ──
+
+    #[test]
+    fn test_cte_where_then_join_standard() {
+        // Case 1: WHERE → JOIN should generate a CTE in standard SQL
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_where_then_join_pipe() {
+        // Case 1: WHERE → JOIN should NOT generate CTE in pipe SQL
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            r#"FROM "users" |> WHERE "age" > ? |> INNER JOIN "orders" ON "users"."id" = "orders"."user_id" |> SELECT "id", "name""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_where_join_then_where() {
+        // Case 2: WHERE → JOIN → WHERE → CTE + main WHERE
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(table("orders").col("total").gt(100));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" WHERE "orders"."total" > ?"#
+        );
+        assert_eq!(binds, vec![Value::Int(25), Value::Int(100)]);
+    }
+
+    #[test]
+    fn test_cte_multiple_boundaries() {
+        // Case 3: WHERE → JOIN → WHERE → JOIN → multiple CTEs
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(table("orders").col("total").gt(100));
+        q.join(
+            "payments",
+            table("orders").col("id").eq_col("order_id"),
+        );
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?), "_cte_1" AS (SELECT * FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" WHERE "orders"."total" > ?) SELECT "id", "name" FROM "_cte_1" AS "users" INNER JOIN "payments" ON "orders"."id" = "payments"."order_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25), Value::Int(100)]);
+    }
+
+    #[test]
+    fn test_join_then_where_no_cte() {
+        // JOIN → WHERE (normal case) should NOT generate CTE
+        let mut q = sqipe("users");
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.and_where(table("orders").col("total").gt(100));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" WHERE "orders"."total" > ?"#
+        );
+    }
+
+    #[test]
+    fn test_cte_with_alias() {
+        // WHERE → JOIN with aliased table
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.and_where(col("age").gt(25));
+        q.join(
+            table("orders").as_("o"),
+            table("u").col("id").eq_col("user_id"),
+        );
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" AS "u" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "u" INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
     }
 
     #[test]

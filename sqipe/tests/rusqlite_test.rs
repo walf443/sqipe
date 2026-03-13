@@ -390,6 +390,67 @@ fn test_from_subquery() {
 }
 
 #[test]
+fn test_cte_where_then_join() {
+    let conn = setup_db();
+
+    // WHERE → JOIN: CTE should be generated and query should work correctly
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("age").gt(26));
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, binds) = q.to_sql();
+
+    // Verify CTE is generated
+    assert!(sql.starts_with("WITH"));
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String, f64)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Alice (age=30 > 26) has 2 orders, Bob (age=25) filtered out, Charlie (age=35) has no orders
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].1, "Alice");
+}
+
+#[test]
+fn test_cte_where_join_then_where() {
+    let conn = setup_db();
+
+    // WHERE → JOIN → WHERE: CTE + main WHERE
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("age").gt(26));
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.and_where(table("orders").col("total").gt(150.0));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, binds) = q.to_sql();
+
+    assert!(sql.starts_with("WITH"));
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String, f64)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Alice (age=30 > 26), only order with total=200 > 150 passes
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].1, "Alice");
+    assert_eq!(rows[0].2, 200.0);
+}
+
+#[test]
 fn test_from_subquery_with_outer_where() {
     let conn = setup_db();
 

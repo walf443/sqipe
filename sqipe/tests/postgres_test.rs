@@ -310,6 +310,46 @@ pg_test!(test_from_subquery, |client| {
     assert_eq!(rows[1].get::<_, i32>("user_id"), 2); // Bob, total=50
 });
 
+pg_test!(test_cte_where_then_join, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("age").gt(26));
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    assert!(sql.starts_with("WITH"));
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    // Alice (age=30 > 26) has 2 orders
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+});
+
+pg_test!(test_cte_where_join_then_where, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("age").gt(26));
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.and_where(table("orders").col("total").gt(150.0));
+    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.add_select(table("orders").col("total"));
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    assert!(sql.starts_with("WITH"));
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    // Alice (age=30 > 26), only order with total=200 > 150 passes
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[0].get::<_, f64>("total"), 200.0);
+});
+
 pg_test!(test_from_subquery_with_outer_where, |client| {
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id", "total"]);
