@@ -1620,8 +1620,33 @@ pub struct SetExpression(String);
 
 impl SetExpression {
     /// Create a new raw SQL SET expression.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the expression contains placeholder characters (`?` or `$1`, `$2`, …),
+    /// since `SetExpression` does not support bind parameters.
     pub fn new(expr: &str) -> Self {
+        assert!(
+            !expr.contains('?'),
+            "SetExpression must not contain placeholder '?'. \
+             Use set() for parameterized values."
+        );
+        assert!(
+            !Self::contains_numbered_placeholder(expr),
+            "SetExpression must not contain numbered placeholders like '$1'. \
+             Use set() for parameterized values."
+        );
         Self(expr.to_string())
+    }
+
+    fn contains_numbered_placeholder(expr: &str) -> bool {
+        let bytes = expr.as_bytes();
+        for i in 0..bytes.len() {
+            if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -4381,5 +4406,24 @@ mod tests {
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(1)]
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "must not contain placeholder '?'")]
+    fn test_set_expression_rejects_question_mark() {
+        SetExpression::new(r#""price" = "price" + ?"#);
+    }
+
+    #[test]
+    #[should_panic(expected = "must not contain numbered placeholders")]
+    fn test_set_expression_rejects_numbered_placeholder() {
+        SetExpression::new(r#""price" = "price" + $1"#);
+    }
+
+    #[test]
+    fn test_set_expression_allows_dollar_without_digit() {
+        // "$" not followed by a digit is allowed (e.g. column names)
+        let expr = SetExpression::new(r#""price$" = "price$" + 1"#);
+        assert_eq!(expr.0, r#""price$" = "price$" + 1"#);
     }
 }
