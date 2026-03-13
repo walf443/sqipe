@@ -58,3 +58,17 @@ q.select(&["id", "name"]);
 let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT `id`, `name` FROM `users` STRAIGHT_JOIN `orders` ON `users`.`id` = `orders`.`user_id`");
 ```
+
+## UPDATE
+
+```rust
+use sqipe_mysql::sqipe;
+use sqipe::col;
+
+let mut u = sqipe("users").update();
+u.set("name", "Alice");
+u.and_where(col("id").eq(1));
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
+```
