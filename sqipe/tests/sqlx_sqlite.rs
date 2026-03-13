@@ -494,3 +494,22 @@ async fn test_not_like() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<String, _>("name"), "Bob");
 }
+
+#[tokio::test]
+async fn test_like_custom_escape_char() {
+    let pool = setup_db().await;
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
+}

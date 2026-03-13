@@ -418,3 +418,19 @@ pg_test!(test_not_like, |client| {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<_, String>("name"), "Bob");
 });
+
+pg_test!(test_like_custom_escape_char, |client| {
+    let mut q = sqipe_with::<PgValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
+});

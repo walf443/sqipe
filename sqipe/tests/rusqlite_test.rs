@@ -550,3 +550,26 @@ fn test_not_like() {
 
     assert_eq!(names, vec!["Bob"]);
 }
+
+#[test]
+fn test_like_custom_escape_char() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Alice", "Charlie"]);
+}

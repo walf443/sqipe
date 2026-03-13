@@ -1,6 +1,6 @@
 #![cfg(feature = "test-sqlx")]
 
-use sqipe::{col, table};
+use sqipe::{LikeExpression, col, table};
 use sqipe_mysql::sqipe_with;
 use sqlx::{MySqlPool, Row};
 use testcontainers::runners::AsyncRunner;
@@ -36,6 +36,12 @@ impl From<f64> for MysqlValue {
 impl From<bool> for MysqlValue {
     fn from(b: bool) -> Self {
         MysqlValue::Bool(b)
+    }
+}
+
+impl From<String> for MysqlValue {
+    fn from(s: String) -> Self {
+        MysqlValue::Text(s)
     }
 }
 
@@ -419,4 +425,76 @@ async fn test_from_subquery_with_outer_where() {
     // Only Alice's order (total=100) passes total > 60
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<i64, _>("user_id"), 1);
+}
+
+#[tokio::test]
+async fn test_like_contains() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe_with::<MysqlValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_like_starts_with() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe_with::<MysqlValue>("users");
+    q.and_where(col("name").like(LikeExpression::starts_with("Al")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_not_like() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe_with::<MysqlValue>("users");
+    q.and_where(col("name").not_like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Bob");
+}
+
+#[tokio::test]
+async fn test_like_custom_escape_char() {
+    let (_container, pool) = setup_container().await;
+
+    let mut q = sqipe_with::<MysqlValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
 }

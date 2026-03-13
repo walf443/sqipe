@@ -116,17 +116,17 @@ impl LikeExpression {
     ///
     /// `LikeExpression::contains("foo")` → pattern `%foo%`
     pub fn contains(input: &str) -> Self {
-        Self::contains_escaped_by(input, Self::DEFAULT_ESCAPE)
+        Self::contains_escaped_by(Self::DEFAULT_ESCAPE, input)
     }
 
     /// Match rows that contain the given text anywhere, using a custom escape character.
     ///
-    /// `LikeExpression::contains_escaped_by("foo", '!')` → pattern `%foo%`, escape `!`
+    /// `LikeExpression::contains_escaped_by('!', "foo")` → pattern `%foo%`, escape `!`
     ///
     /// # Panics
     ///
     /// Panics if `esc` is `%`, `_`, or `'`.
-    pub fn contains_escaped_by(input: &str, esc: char) -> Self {
+    pub fn contains_escaped_by(esc: char, input: &str) -> Self {
         Self::validate_escape_char(esc);
         Self {
             pattern: format!("%{}%", Self::escape_with(input, esc)),
@@ -138,17 +138,17 @@ impl LikeExpression {
     ///
     /// `LikeExpression::starts_with("foo")` → pattern `foo%`
     pub fn starts_with(input: &str) -> Self {
-        Self::starts_with_escaped_by(input, Self::DEFAULT_ESCAPE)
+        Self::starts_with_escaped_by(Self::DEFAULT_ESCAPE, input)
     }
 
     /// Match rows that start with the given text, using a custom escape character.
     ///
-    /// `LikeExpression::starts_with_escaped_by("foo", '!')` → pattern `foo%`, escape `!`
+    /// `LikeExpression::starts_with_escaped_by('!', "foo")` → pattern `foo%`, escape `!`
     ///
     /// # Panics
     ///
     /// Panics if `esc` is `%`, `_`, or `'`.
-    pub fn starts_with_escaped_by(input: &str, esc: char) -> Self {
+    pub fn starts_with_escaped_by(esc: char, input: &str) -> Self {
         Self::validate_escape_char(esc);
         Self {
             pattern: format!("{}%", Self::escape_with(input, esc)),
@@ -160,17 +160,17 @@ impl LikeExpression {
     ///
     /// `LikeExpression::ends_with("foo")` → pattern `%foo`
     pub fn ends_with(input: &str) -> Self {
-        Self::ends_with_escaped_by(input, Self::DEFAULT_ESCAPE)
+        Self::ends_with_escaped_by(Self::DEFAULT_ESCAPE, input)
     }
 
     /// Match rows that end with the given text, using a custom escape character.
     ///
-    /// `LikeExpression::ends_with_escaped_by("foo", '!')` → pattern `%foo`, escape `!`
+    /// `LikeExpression::ends_with_escaped_by('!', "foo")` → pattern `%foo`, escape `!`
     ///
     /// # Panics
     ///
     /// Panics if `esc` is `%`, `_`, or `'`.
-    pub fn ends_with_escaped_by(input: &str, esc: char) -> Self {
+    pub fn ends_with_escaped_by(esc: char, input: &str) -> Self {
         Self::validate_escape_char(esc);
         Self {
             pattern: format!("%{}", Self::escape_with(input, esc)),
@@ -3531,7 +3531,7 @@ mod tests {
     #[test]
     fn test_like_custom_escape_char() {
         let mut q = sqipe("users");
-        q.and_where(col("name").like(LikeExpression::contains_escaped_by("100%", '!')));
+        q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "100%")));
 
         let (sql, binds) = q.to_sql();
         assert_eq!(
@@ -3544,7 +3544,7 @@ mod tests {
     #[test]
     fn test_like_custom_escape_starts_with() {
         let mut q = sqipe("users");
-        q.and_where(col("name").like(LikeExpression::starts_with_escaped_by("a_b", '!')));
+        q.and_where(col("name").like(LikeExpression::starts_with_escaped_by('!', "a_b")));
 
         let (sql, binds) = q.to_sql();
         assert_eq!(
@@ -3557,7 +3557,7 @@ mod tests {
     #[test]
     fn test_like_custom_escape_ends_with() {
         let mut q = sqipe("users");
-        q.and_where(col("name").like(LikeExpression::ends_with_escaped_by("x%y", '!')));
+        q.and_where(col("name").like(LikeExpression::ends_with_escaped_by('!', "x%y")));
 
         let (sql, binds) = q.to_sql();
         assert_eq!(
@@ -3570,18 +3570,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "escape character must not be")]
     fn test_like_rejects_percent_as_escape() {
-        LikeExpression::contains_escaped_by("foo", '%');
+        LikeExpression::contains_escaped_by('%', "foo");
     }
 
     #[test]
     #[should_panic(expected = "escape character must not be")]
     fn test_like_rejects_underscore_as_escape() {
-        LikeExpression::starts_with_escaped_by("foo", '_');
+        LikeExpression::starts_with_escaped_by('_', "foo");
     }
 
     #[test]
     #[should_panic(expected = "escape character must not be")]
     fn test_like_rejects_single_quote_as_escape() {
-        LikeExpression::ends_with_escaped_by("foo", '\'');
+        LikeExpression::ends_with_escaped_by('\'', "foo");
     }
 }
