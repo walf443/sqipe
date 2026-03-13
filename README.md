@@ -472,6 +472,18 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#);
 ```
 
+By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `without_where()` to explicitly opt in:
+
+```rust
+# use sqipe::sqipe;
+let mut u = sqipe("employee").update();
+u.set("status", "inactive");
+u.without_where();
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
+```
+
 Dialect support works via `to_sql_with`:
 
 ```rust

@@ -72,3 +72,16 @@ u.and_where(col("id").eq(1));
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
 ```
+
+By default, UPDATE without WHERE will panic. Use `without_where()` to explicitly allow full-table updates:
+
+```rust
+use sqipe_mysql::sqipe;
+
+let mut u = sqipe("users").update();
+u.set("age", 99);
+u.without_where();
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, "UPDATE `users` SET `age` = ?");
+```
