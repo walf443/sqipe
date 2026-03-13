@@ -375,17 +375,6 @@ async fn test_not_in_subquery() {
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
 }
 
-struct MysqlDialect;
-
-impl sqipe::Dialect for MysqlDialect {
-    fn placeholder(&self, _index: usize) -> String {
-        "?".to_string()
-    }
-    fn quote_identifier(&self, name: &str) -> String {
-        format!("`{}`", name.replace('`', "``"))
-    }
-}
-
 #[tokio::test]
 async fn test_from_subquery() {
     let (_container, pool) = setup_container().await;
@@ -397,7 +386,7 @@ async fn test_from_subquery() {
     let mut q = sqipe::sqipe_from_subquery_with(sub, "t");
     q.select(&["user_id", "total"]);
     q.order_by(col("total").desc());
-    let (sql, binds) = q.to_sql_with(&MysqlDialect);
+    let (sql, binds) = q.to_sql_with(&sqipe_mysql::MySQL);
 
     let rows = bind_params(sqlx::query(&sql), &binds)
         .fetch_all(&pool)
@@ -419,7 +408,7 @@ async fn test_from_subquery_with_outer_where() {
     let mut q = sqipe::sqipe_from_subquery_with(sub, "t");
     q.select(&["user_id", "total"]);
     q.and_where(col("total").gt(60));
-    let (sql, binds) = q.to_sql_with(&MysqlDialect);
+    let (sql, binds) = q.to_sql_with(&sqipe_mysql::MySQL);
 
     let rows = bind_params(sqlx::query(&sql), &binds)
         .fetch_all(&pool)

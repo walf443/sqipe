@@ -10,7 +10,8 @@ use sqipe::renderer::{RenderConfig, Renderer};
 use sqipe::tree::SelectTree;
 use std::ops::{Deref, DerefMut};
 
-struct MySQL;
+/// MySQL dialect: `?` placeholders and backtick identifier quoting.
+pub struct MySQL;
 
 impl sqipe::Dialect for MySQL {
     fn placeholder(&self, _index: usize) -> String {
