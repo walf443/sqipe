@@ -379,7 +379,8 @@ async fn test_not_in_subquery() {
 async fn test_from_subquery() {
     let (_container, pool) = setup_container().await;
 
-    let mut sub = sqipe::sqipe_with::<MysqlValue>("orders");
+    // Use MysqlQuery as subquery source via IntoSelectTree
+    let mut sub = sqipe_with::<MysqlValue>("orders");
     sub.select(&["user_id", "total"]);
     sub.and_where(col("status").eq("shipped"));
 
@@ -401,7 +402,8 @@ async fn test_from_subquery() {
 async fn test_from_subquery_with_outer_where() {
     let (_container, pool) = setup_container().await;
 
-    let mut sub = sqipe::sqipe_with::<MysqlValue>("orders");
+    // Use MysqlQuery as subquery source via IntoSelectTree
+    let mut sub = sqipe_with::<MysqlValue>("orders");
     sub.select(&["user_id", "total"]);
     sub.and_where(col("status").eq("shipped"));
 

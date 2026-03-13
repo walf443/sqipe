@@ -614,6 +614,17 @@ impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
     }
 }
 
+/// Trait for types that can be converted into a `SelectTree` for use as a FROM subquery.
+pub trait IntoSelectTree<V: Clone> {
+    fn into_select_tree(self) -> tree::SelectTree<V>;
+}
+
+impl<V: Clone + std::fmt::Debug> IntoSelectTree<V> for Query<V> {
+    fn into_select_tree(self) -> tree::SelectTree<V> {
+        tree::SelectTree::from_query_owned(self)
+    }
+}
+
 /// Trait for types that can be used as a source for `included` (IN clause).
 ///
 /// Implemented for slices (value list) and `Query` (subquery).
@@ -838,7 +849,7 @@ use tree::{SelectTree, UnionTree, default_quote_identifier};
 pub struct Query<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
-    pub(crate) from_subquery: Option<Box<Query<V>>>,
+    pub(crate) from_subquery: Option<Box<tree::SelectTree<V>>>,
     pub(crate) selects: Vec<ColRef>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
@@ -884,13 +895,13 @@ pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: &str) -> Query<V> {
 }
 
 /// Create a query that selects from a subquery instead of a table.
-pub fn sqipe_from_subquery(sub: Query<Value>, alias: &str) -> Query<Value> {
+pub fn sqipe_from_subquery(sub: impl IntoSelectTree<Value>, alias: &str) -> Query<Value> {
     Query::from_subquery(sub, alias)
 }
 
 /// Create a query that selects from a subquery with a custom value type.
 pub fn sqipe_from_subquery_with<V: Clone + std::fmt::Debug>(
-    sub: Query<V>,
+    sub: impl IntoSelectTree<V>,
     alias: &str,
 ) -> Query<V> {
     Query::from_subquery(sub, alias)
@@ -965,11 +976,11 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     ///     r#"SELECT "user_id" FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t""#
     /// );
     /// ```
-    pub fn from_subquery(sub: Query<V>, alias: &str) -> Self {
+    pub fn from_subquery(sub: impl IntoSelectTree<V>, alias: &str) -> Self {
         Query {
             table: String::new(),
             table_alias: Some(alias.to_string()),
-            from_subquery: Some(Box::new(sub)),
+            from_subquery: Some(Box::new(sub.into_select_tree())),
             selects: Vec::new(),
             wheres: Vec::new(),
             havings: Vec::new(),

@@ -91,10 +91,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 alias: query.table_alias.clone(),
                 table_suffix: Vec::new(),
             },
-            from_subquery: query
-                .from_subquery
-                .as_ref()
-                .map(|sq| Box::new(SelectTree::from_query(sq))),
+            from_subquery: query.from_subquery.clone(),
             joins: query.joins.clone(),
             wheres: query.wheres.clone(),
             havings: query.havings.clone(),
@@ -122,9 +119,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 alias: query.table_alias,
                 table_suffix: Vec::new(),
             },
-            from_subquery: query
-                .from_subquery
-                .map(|sq| Box::new(SelectTree::from_query_owned(*sq))),
+            from_subquery: query.from_subquery,
             joins: query.joins,
             wheres: query.wheres,
             havings: query.havings,

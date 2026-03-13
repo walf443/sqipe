@@ -69,6 +69,12 @@ impl<V: Clone + std::fmt::Debug> sqipe::IntoIncluded<V> for MysqlQuery<V> {
     }
 }
 
+impl<V: Clone + std::fmt::Debug> sqipe::IntoSelectTree<V> for MysqlQuery<V> {
+    fn into_select_tree(self) -> sqipe::tree::SelectTree<V> {
+        self.into_tree()
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlQuery<V> {
     type Query = MysqlQuery<V>;
     fn as_union_parts(&self) -> Vec<(sqipe::SetOp, MysqlQuery<V>)> {
