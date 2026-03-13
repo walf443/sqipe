@@ -459,7 +459,9 @@ pg_test!(test_update_basic, |client| {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).unwrap();
 
-    let rows = client.query("SELECT name FROM users WHERE id = 1", &[]).unwrap();
+    let rows = client
+        .query("SELECT name FROM users WHERE id = 1", &[])
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Alicia");
 });
 
@@ -474,7 +476,9 @@ pg_test!(test_update_multiple_sets, |client| {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).unwrap();
 
-    let rows = client.query("SELECT name, age FROM users WHERE id = 1", &[]).unwrap();
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 1", &[])
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Alicia");
     assert_eq!(rows[0].get::<_, i32>("age"), 31);
 });
@@ -490,6 +494,8 @@ pg_test!(test_update_from_query_with_where, |client| {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).unwrap();
 
-    let rows = client.query("SELECT name FROM users WHERE id = 2", &[]).unwrap();
+    let rows = client
+        .query("SELECT name FROM users WHERE id = 2", &[])
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Bobby");
 });

@@ -532,7 +532,10 @@ async fn test_update_basic() {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).await.unwrap();
 
-    let rows = client.query("SELECT name FROM users WHERE id = 1", &[]).await.unwrap();
+    let rows = client
+        .query("SELECT name FROM users WHERE id = 1", &[])
+        .await
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Alicia");
 }
 
@@ -550,7 +553,10 @@ async fn test_update_multiple_sets() {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).await.unwrap();
 
-    let rows = client.query("SELECT name, age FROM users WHERE id = 1", &[]).await.unwrap();
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 1", &[])
+        .await
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Alicia");
     assert_eq!(rows[0].get::<_, i32>("age"), 31);
 }
@@ -569,6 +575,9 @@ async fn test_update_from_query_with_where() {
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).await.unwrap();
 
-    let rows = client.query("SELECT name FROM users WHERE id = 2", &[]).await.unwrap();
+    let rows = client
+        .query("SELECT name FROM users WHERE id = 2", &[])
+        .await
+        .unwrap();
     assert_eq!(rows[0].get::<_, String>("name"), "Bobby");
 }

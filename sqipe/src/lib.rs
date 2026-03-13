@@ -3980,10 +3980,7 @@ mod tests {
         u.set("name", "Alice");
         u.and_where(col("id").eq(1));
         let (sql, binds) = u.to_sql();
-        assert_eq!(
-            sql,
-            r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#
-        );
+        assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
         assert_eq!(
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(1)]
@@ -4027,10 +4024,7 @@ mod tests {
         let mut u = q.update();
         u.set("name", "Alice");
         let (sql, binds) = u.to_sql();
-        assert_eq!(
-            sql,
-            r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#
-        );
+        assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
         assert_eq!(
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(1)]
@@ -4121,10 +4115,7 @@ mod tests {
         );
         assert_eq!(
             binds,
-            vec![
-                Value::Bool(true),
-                Value::String("test%".to_string()),
-            ]
+            vec![Value::Bool(true), Value::String("test%".to_string()),]
         );
     }
 }

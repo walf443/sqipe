@@ -588,7 +588,9 @@ fn test_update_basic() {
         .unwrap();
 
     // Verify the update
-    let mut stmt = conn.prepare(r#"SELECT "name" FROM "users" WHERE "id" = 1"#).unwrap();
+    let mut stmt = conn
+        .prepare(r#"SELECT "name" FROM "users" WHERE "id" = 1"#)
+        .unwrap();
     let name: String = stmt.query_row([], |row| row.get(0)).unwrap();
     assert_eq!(name, "Alicia");
 }
@@ -610,7 +612,9 @@ fn test_update_multiple_sets() {
     let mut stmt = conn
         .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" = 1"#)
         .unwrap();
-    let (name, age): (String, i64) = stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+    let (name, age): (String, i64) = stmt
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
     assert_eq!(name, "Alicia");
     assert_eq!(age, 31);
 }
@@ -629,7 +633,9 @@ fn test_update_from_query_with_where() {
     conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
         .unwrap();
 
-    let mut stmt = conn.prepare(r#"SELECT "name" FROM "users" WHERE "id" = 2"#).unwrap();
+    let mut stmt = conn
+        .prepare(r#"SELECT "name" FROM "users" WHERE "id" = 2"#)
+        .unwrap();
     let name: String = stmt.query_row([], |row| row.get(0)).unwrap();
     assert_eq!(name, "Bobby");
 }
