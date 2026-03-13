@@ -40,13 +40,11 @@ impl StandardSqlRenderer {
         cfg: &RenderConfig,
         binds: &mut Vec<V>,
     ) -> String {
-        let mut sql = render_select_core(tree, cfg, binds);
-        let has_extra =
-            !tree.order_bys.is_empty() || tree.limit.is_some() || tree.offset.is_some();
+        // Use CTE-aware rendering so UNION members with WHERE→JOIN get CTEs too
+        let mut sql = self.render_select_with_cte(tree, cfg, binds);
+        let has_extra = !tree.order_bys.is_empty() || tree.limit.is_some() || tree.offset.is_some();
 
         if has_extra {
-            append_order_by(&mut sql, &tree.order_bys, cfg, " ");
-            append_limit_offset_flat(&mut sql, tree.limit, tree.offset);
             sql = format!("({})", sql);
         }
 
@@ -67,7 +65,10 @@ impl StandardSqlRenderer {
             return sql;
         }
 
-        // Determine the base table name and the alias used in JOIN conditions
+        // Determine the base table name and the alias used in JOIN conditions.
+        // For subquery sources, base_table is empty but is never used directly
+        // because subqueries always have an alias (effective_name comes from alias).
+        // The first CTE uses render_from() which handles subqueries correctly.
         let base_table = match &tree.from.source {
             FromSource::Table(t) => t.clone(),
             FromSource::Subquery(_) => String::new(),
@@ -114,22 +115,18 @@ impl StandardSqlRenderer {
                                 (cfg.qi)(&effective_name)
                             ));
                             for &ji in &pending_joins {
-                                if let Some(join) = tree.joins.get(ji) {
-                                    for js in render_joins(std::slice::from_ref(join), cfg) {
-                                        cte_sql.push(' ');
-                                        cte_sql.push_str(&js);
-                                    }
+                                let join = &tree.joins[ji];
+                                for js in render_joins(std::slice::from_ref(join), cfg) {
+                                    cte_sql.push(' ');
+                                    cte_sql.push_str(&js);
                                 }
                             }
                         }
 
                         // WHERE clauses
-                        if let Some(where_sql) = render_wheres_for_indices(
-                            &tree.wheres,
-                            &pending_wheres,
-                            cfg,
-                            binds,
-                        ) {
+                        if let Some(where_sql) =
+                            render_wheres_for_indices(&tree.wheres, &pending_wheres, cfg, binds)
+                        {
                             cte_sql.push_str(&format!(" WHERE {}", where_sql));
                         }
 
@@ -160,7 +157,12 @@ impl StandardSqlRenderer {
 
         let mut main_sql = select_str;
 
-        // FROM: use previous CTE aliased to effective name
+        // FROM: use previous CTE aliased to effective name.
+        // NOTE: In multi-CTE cases (W→J→W→J), the last CTE may contain joined data
+        // from multiple tables, but we alias it to the original table name so that
+        // JOIN conditions referencing the original table still resolve. Column
+        // references to other joined tables (e.g., "orders"."id") won't resolve
+        // through this alias — this is a known limitation of multi-CTE generation.
         if let Some(ref cte_name) = prev_cte_name {
             main_sql.push_str(&format!(
                 " FROM {} AS {}",
@@ -171,29 +173,27 @@ impl StandardSqlRenderer {
 
         // Pending joins go to the main query
         for &ji in &pending_joins {
-            if let Some(join) = tree.joins.get(ji) {
-                for js in render_joins(std::slice::from_ref(join), cfg) {
-                    main_sql.push(' ');
-                    main_sql.push_str(&js);
-                }
+            let join = &tree.joins[ji];
+            for js in render_joins(std::slice::from_ref(join), cfg) {
+                main_sql.push(' ');
+                main_sql.push_str(&js);
             }
         }
 
         // Remaining pending wheres go to the main WHERE clause
-        if !pending_wheres.is_empty() {
-            if let Some(where_sql) =
+        if !pending_wheres.is_empty()
+            && let Some(where_sql) =
                 render_wheres_for_indices(&tree.wheres, &pending_wheres, cfg, binds)
-            {
-                main_sql.push_str(&format!(" WHERE {}", where_sql));
-            }
+        {
+            main_sql.push_str(&format!(" WHERE {}", where_sql));
         }
 
         // GROUP BY / HAVING
-        if let SelectClause::Aggregate { group_bys, .. } = &tree.select {
-            if !group_bys.is_empty() {
-                let cols: Vec<String> = group_bys.iter().map(|c| (cfg.qi)(c)).collect();
-                main_sql.push_str(&format!(" GROUP BY {}", cols.join(", ")));
-            }
+        if let SelectClause::Aggregate { group_bys, .. } = &tree.select
+            && !group_bys.is_empty()
+        {
+            let cols: Vec<String> = group_bys.iter().map(|c| (cfg.qi)(c)).collect();
+            main_sql.push_str(&format!(" GROUP BY {}", cols.join(", ")));
         }
 
         if let Some(having_sql) = super::render_wheres(&tree.havings, cfg, binds) {

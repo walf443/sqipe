@@ -3036,10 +3036,7 @@ mod tests {
         q.and_where(col("age").gt(25));
         q.join("orders", table("users").col("id").eq_col("user_id"));
         q.and_where(table("orders").col("total").gt(100));
-        q.join(
-            "payments",
-            table("orders").col("id").eq_col("order_id"),
-        );
+        q.join("payments", table("orders").col("id").eq_col("order_id"));
         q.select(&["id", "name"]);
 
         let (sql, binds) = q.to_sql();
@@ -3081,6 +3078,119 @@ mod tests {
         assert_eq!(
             sql,
             r#"WITH "_cte_0" AS (SELECT * FROM "users" AS "u" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "u" INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_or_where_then_join() {
+        // or_where → JOIN should also generate CTE
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.or_where(col("name").eq("Alice"));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ? OR "name" = ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id""#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(25), Value::String("Alice".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_cte_left_join_after_where() {
+        // WHERE → LEFT JOIN should generate CTE
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.left_join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" LEFT JOIN "orders" ON "users"."id" = "orders"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_add_join_after_where() {
+        // WHERE → add_join (custom join type) should generate CTE
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.add_join(
+            JoinType::Custom("CROSS JOIN".to_string()),
+            "orders",
+            table("users").col("id").eq_col("user_id"),
+        );
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" CROSS JOIN "orders" ON "users"."id" = "orders"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_with_order_by_and_limit() {
+        // CTE query with ORDER BY and LIMIT
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+        q.order_by(col("name").asc());
+        q.limit(10);
+        q.offset(5);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" ORDER BY "name" ASC LIMIT 10 OFFSET 5"#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_cte_union_with_cte_member() {
+        // UNION where one member has WHERE→JOIN should generate CTE
+        let mut q1 = sqipe("users");
+        q1.and_where(col("age").gt(25));
+        q1.join("orders", table("users").col("id").eq_col("user_id"));
+        q1.select(&["id", "name"]);
+
+        let mut q2 = sqipe("users");
+        q2.and_where(col("age").lt(20));
+        q2.select(&["id", "name"]);
+
+        let uq = q1.union(&q2);
+        let (sql, binds) = uq.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" UNION SELECT "id", "name" FROM "users" WHERE "age" < ?"#
+        );
+        assert_eq!(binds, vec![Value::Int(25), Value::Int(20)]);
+    }
+
+    #[test]
+    fn test_cte_with_aggregate() {
+        // WHERE → JOIN with aggregate query
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join("orders", table("users").col("id").eq_col("user_id"));
+        q.aggregate(&[aggregate::count_all().as_("order_count")]);
+        q.group_by(&["name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "name", COUNT(*) AS "order_count" FROM "_cte_0" AS "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" GROUP BY "name""#
         );
         assert_eq!(binds, vec![Value::Int(25)]);
     }
