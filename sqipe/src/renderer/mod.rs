@@ -374,6 +374,22 @@ fn render_where_clause<V: Clone>(
             let sub_sql = render_subquery_sql(sub, cfg, binds);
             format!("{} NOT IN ({})", render_col_ref(col, cfg), sub_sql)
         }
+        WhereClause::Like { col, expr, val } | WhereClause::NotLike { col, expr, val } => {
+            binds.push(val.clone());
+            let placeholder = (cfg.ph)(binds.len());
+            let keyword = if matches!(clause, WhereClause::Like { .. }) {
+                "LIKE"
+            } else {
+                "NOT LIKE"
+            };
+            format!(
+                "{} {} {} ESCAPE '{}'",
+                render_col_ref(col, cfg),
+                keyword,
+                placeholder,
+                expr.escape_char()
+            )
+        }
         WhereClause::Any(clauses) => {
             let parts: Vec<String> = clauses
                 .iter()

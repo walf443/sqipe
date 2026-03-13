@@ -71,6 +71,124 @@ impl Op {
     }
 }
 
+/// A safe LIKE pattern expression.
+///
+/// Wildcards (`%`, `_`) in user input are escaped automatically, so the
+/// resulting pattern matches the literal text.  Use the constructor methods
+/// to add wildcards in controlled positions.
+///
+/// ```
+/// use sqipe::LikeExpression;
+///
+/// assert_eq!(LikeExpression::contains("foo").to_pattern(), "%foo%");
+/// assert_eq!(LikeExpression::starts_with("foo").to_pattern(), "foo%");
+/// assert_eq!(LikeExpression::ends_with("foo").to_pattern(), "%foo");
+/// assert_eq!(LikeExpression::contains("100%").to_pattern(), "%100\\%%");
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct LikeExpression {
+    pattern: String,
+    escape_char: char,
+}
+
+impl LikeExpression {
+    const DEFAULT_ESCAPE: char = '\\';
+
+    /// Panics if `esc` is a LIKE wildcard (`%`, `_`) or a single quote (`'`).
+    fn validate_escape_char(esc: char) {
+        assert!(
+            esc != '%' && esc != '_' && esc != '\'',
+            "escape character must not be '%', '_', or '\\'' (got '{}')",
+            esc
+        );
+    }
+
+    /// Escape LIKE wildcards in user input using the given escape character.
+    fn escape_with(input: &str, esc: char) -> String {
+        let esc_s = esc.to_string();
+        input
+            .replace(&esc_s, &format!("{}{}", esc, esc))
+            .replace('%', &format!("{}%", esc))
+            .replace('_', &format!("{}_", esc))
+    }
+
+    /// Match rows that contain the given text anywhere.
+    ///
+    /// `LikeExpression::contains("foo")` → pattern `%foo%`
+    pub fn contains(input: &str) -> Self {
+        Self::contains_escaped_by(Self::DEFAULT_ESCAPE, input)
+    }
+
+    /// Match rows that contain the given text anywhere, using a custom escape character.
+    ///
+    /// `LikeExpression::contains_escaped_by('!', "foo")` → pattern `%foo%`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
+    pub fn contains_escaped_by(esc: char, input: &str) -> Self {
+        Self::validate_escape_char(esc);
+        Self {
+            pattern: format!("%{}%", Self::escape_with(input, esc)),
+            escape_char: esc,
+        }
+    }
+
+    /// Match rows that start with the given text.
+    ///
+    /// `LikeExpression::starts_with("foo")` → pattern `foo%`
+    pub fn starts_with(input: &str) -> Self {
+        Self::starts_with_escaped_by(Self::DEFAULT_ESCAPE, input)
+    }
+
+    /// Match rows that start with the given text, using a custom escape character.
+    ///
+    /// `LikeExpression::starts_with_escaped_by('!', "foo")` → pattern `foo%`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
+    pub fn starts_with_escaped_by(esc: char, input: &str) -> Self {
+        Self::validate_escape_char(esc);
+        Self {
+            pattern: format!("{}%", Self::escape_with(input, esc)),
+            escape_char: esc,
+        }
+    }
+
+    /// Match rows that end with the given text.
+    ///
+    /// `LikeExpression::ends_with("foo")` → pattern `%foo`
+    pub fn ends_with(input: &str) -> Self {
+        Self::ends_with_escaped_by(Self::DEFAULT_ESCAPE, input)
+    }
+
+    /// Match rows that end with the given text, using a custom escape character.
+    ///
+    /// `LikeExpression::ends_with_escaped_by('!', "foo")` → pattern `%foo`, escape `!`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `esc` is `%`, `_`, or `'`.
+    pub fn ends_with_escaped_by(esc: char, input: &str) -> Self {
+        Self::validate_escape_char(esc);
+        Self {
+            pattern: format!("%{}", Self::escape_with(input, esc)),
+            escape_char: esc,
+        }
+    }
+
+    /// Return the constructed LIKE pattern string.
+    pub fn to_pattern(&self) -> String {
+        self.pattern.clone()
+    }
+
+    /// Return the escape character used in this expression.
+    pub fn escape_char(&self) -> char {
+        self.escape_char
+    }
+}
+
 /// A table reference for building qualified column references and join targets.
 #[derive(Debug, Clone)]
 pub struct TableRef {
@@ -254,6 +372,40 @@ macro_rules! impl_col_methods {
                 }
             }
 
+            /// Generate a `LIKE` condition.
+            ///
+            /// Accepts a [`LikeExpression`] to ensure safe pattern construction:
+            /// - `col("name").like(LikeExpression::contains("foo"))` → `"name" LIKE '%foo%' ESCAPE '\'`
+            /// - `col("name").like(LikeExpression::starts_with("foo"))` → `"name" LIKE 'foo%' ESCAPE '\'`
+            /// - `col("name").like(LikeExpression::ends_with("foo"))` → `"name" LIKE '%foo' ESCAPE '\'`
+            ///
+            /// User input is automatically escaped (`%` and `_` are treated as literals).
+            /// The `ESCAPE` clause is derived from the [`LikeExpression`].
+            pub fn like(self, expr: LikeExpression) -> WhereClause<String> {
+                let val = expr.to_pattern();
+                WhereClause::Like {
+                    col: self.into_col_ref(),
+                    expr,
+                    val,
+                }
+            }
+
+            /// Generate a `NOT LIKE` condition.
+            ///
+            /// Accepts a [`LikeExpression`] to ensure safe pattern construction:
+            /// - `col("name").not_like(LikeExpression::contains("foo"))` → `"name" NOT LIKE '%foo%' ESCAPE '\'`
+            ///
+            /// User input is automatically escaped (`%` and `_` are treated as literals).
+            /// The `ESCAPE` clause is derived from the [`LikeExpression`].
+            pub fn not_like(self, expr: LikeExpression) -> WhereClause<String> {
+                let val = expr.to_pattern();
+                WhereClause::NotLike {
+                    col: self.into_col_ref(),
+                    expr,
+                    val,
+                }
+            }
+
             /// Generate an `IN (...)` condition.
             ///
             /// Accepts a slice of values or a `&Query` for subqueries:
@@ -418,6 +570,20 @@ pub enum WhereClause<V: Clone = Value> {
         col: ColRef,
         sub: Box<tree::SelectTree<V>>,
     },
+    Like {
+        col: ColRef,
+        /// Preserved for ESCAPE clause rendering.
+        expr: LikeExpression,
+        /// Bind parameter value (always `expr.to_pattern()` at construction).
+        val: V,
+    },
+    NotLike {
+        col: ColRef,
+        /// Preserved for ESCAPE clause rendering.
+        expr: LikeExpression,
+        /// Bind parameter value (always `expr.to_pattern()` at construction).
+        val: V,
+    },
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
     Not(Box<WhereClause<V>>),
@@ -463,6 +629,18 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .debug_struct("NotInSubQuery")
                 .field("col", col)
                 .field("sub", sub)
+                .finish(),
+            WhereClause::Like { col, expr, val } => f
+                .debug_struct("Like")
+                .field("col", col)
+                .field("expr", expr)
+                .field("val", val)
+                .finish(),
+            WhereClause::NotLike { col, expr, val } => f
+                .debug_struct("NotLike")
+                .field("col", col)
+                .field("expr", expr)
+                .field("val", val)
                 .finish(),
             WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
             WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
@@ -513,6 +691,16 @@ impl<V: Clone> WhereClause<V> {
             WhereClause::NotInSubQuery { col, sub } => WhereClause::NotInSubQuery {
                 col,
                 sub: Box::new(sub.map_values(f)),
+            },
+            WhereClause::Like { col, expr, val } => WhereClause::Like {
+                col,
+                expr,
+                val: f(val),
+            },
+            WhereClause::NotLike { col, expr, val } => WhereClause::NotLike {
+                col,
+                expr,
+                val: f(val),
             },
             WhereClause::Any(clauses) => {
                 WhereClause::Any(clauses.into_iter().map(|c| c.map_values(f)).collect())
@@ -3230,5 +3418,170 @@ mod tests {
             binds,
             vec![Value::String("completed".to_string()), Value::Int(100),]
         );
+    }
+
+    #[test]
+    fn test_like_contains() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::contains("Ali")));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("%Ali%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_starts_with() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::starts_with("Ali")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("Ali%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_ends_with() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::ends_with("ice")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("%ice".to_string())]);
+    }
+
+    #[test]
+    fn test_not_like() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").not_like(LikeExpression::contains("Bob")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" NOT LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("%Bob%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_escapes_wildcards() {
+        let mut q = sqipe("products");
+        q.and_where(col("name").like(LikeExpression::contains("100%")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "products" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("%100\\%%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_escapes_underscore() {
+        let mut q = sqipe("products");
+        q.and_where(col("name").like(LikeExpression::starts_with("a_b")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "products" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("a\\_b%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_qualified_col() {
+        let mut q = sqipe("users");
+        q.as_("u");
+        q.and_where(table("u").col("name").like(LikeExpression::contains("Ali")));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" AS "u" WHERE "u"."name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("%Ali%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_pipe_sql() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::contains("Ali")));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            r#"FROM "users" |> WHERE "name" LIKE ? ESCAPE '\' |> SELECT "id", "name""#
+        );
+        assert_eq!(binds, vec![Value::String("%Ali%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_custom_escape_char() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "100%")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '!'"#
+        );
+        assert_eq!(binds, vec![Value::String("%100!%%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_custom_escape_starts_with() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::starts_with_escaped_by('!', "a_b")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '!'"#
+        );
+        assert_eq!(binds, vec![Value::String("a!_b%".to_string())]);
+    }
+
+    #[test]
+    fn test_like_custom_escape_ends_with() {
+        let mut q = sqipe("users");
+        q.and_where(col("name").like(LikeExpression::ends_with_escaped_by('!', "x%y")));
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '!'"#
+        );
+        assert_eq!(binds, vec![Value::String("%x!%y".to_string())]);
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_percent_as_escape() {
+        LikeExpression::contains_escaped_by('%', "foo");
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_underscore_as_escape() {
+        LikeExpression::starts_with_escaped_by('_', "foo");
+    }
+
+    #[test]
+    #[should_panic(expected = "escape character must not be")]
+    fn test_like_rejects_single_quote_as_escape() {
+        LikeExpression::ends_with_escaped_by('\'', "foo");
     }
 }

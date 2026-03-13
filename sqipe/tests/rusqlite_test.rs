@@ -1,7 +1,7 @@
 #![cfg(feature = "test-rusqlite")]
 
 use rusqlite::{Connection, params_from_iter};
-use sqipe::{col, sqipe_from_subquery_with, sqipe_with, table};
+use sqipe::{LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
 
 #[derive(Debug, Clone)]
 enum SqliteValue {
@@ -25,6 +25,12 @@ impl From<i32> for SqliteValue {
 impl From<f64> for SqliteValue {
     fn from(n: f64) -> Self {
         SqliteValue::Real(n)
+    }
+}
+
+impl From<String> for SqliteValue {
+    fn from(s: String) -> Self {
+        SqliteValue::Text(s)
     }
 }
 
@@ -476,4 +482,94 @@ fn test_from_subquery_with_outer_where() {
     // Only Alice's order (total=100) passes total > 60
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].0, 1);
+}
+
+#[test]
+fn test_like_contains() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Alice", "Charlie"]);
+}
+
+#[test]
+fn test_like_starts_with() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").like(LikeExpression::starts_with("Al")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Alice"]);
+}
+
+#[test]
+fn test_not_like() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").not_like(LikeExpression::contains("li")));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Bob"]);
+}
+
+#[test]
+fn test_like_custom_escape_char() {
+    let conn = setup_db();
+
+    let mut q = sqipe_with::<SqliteValue>("users");
+    q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Alice", "Charlie"]);
 }
