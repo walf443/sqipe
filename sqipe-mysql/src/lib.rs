@@ -954,6 +954,27 @@ mod tests {
     }
 
     #[test]
+    fn test_update_with_like() {
+        let mut u = sqipe("users").update();
+        u.set("flagged", true);
+        u.and_where(col("name").like(sqipe::LikeExpression::starts_with("test")));
+
+        let (sql, binds) = u.to_sql();
+        // MySQL doubles backslash in ESCAPE clause due to backslash_escape
+        assert_eq!(
+            sql,
+            r"UPDATE `users` SET `flagged` = ? WHERE `name` LIKE ? ESCAPE '\\'"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                sqipe::Value::Bool(true),
+                sqipe::Value::String("test%".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn test_straight_join_subquery() {
         let mut sub = sqipe::sqipe("orders");
         sub.select(&["user_id", "total"]);

@@ -1724,19 +1724,19 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn update(self) -> UpdateQuery<V> {
-        debug_assert!(
+        assert!(
             self.joins.is_empty(),
             "Query has JOINs which are not supported in UPDATE and will be discarded"
         );
-        debug_assert!(
+        assert!(
             self.aggregates.is_empty(),
             "Query has aggregates which are not supported in UPDATE and will be discarded"
         );
-        debug_assert!(
+        assert!(
             self.order_bys.is_empty(),
             "Query has ORDER BY which is not supported in UPDATE and will be discarded"
         );
-        debug_assert!(
+        assert!(
             self.limit_val.is_none(),
             "Query has LIMIT which is not supported in UPDATE and will be discarded"
         );

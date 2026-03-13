@@ -85,3 +85,19 @@ u.without_where();
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, "UPDATE `users` SET `age` = ?");
 ```
+
+MySQL supports `ORDER BY` and `LIMIT` in UPDATE statements (not available in standard SQL):
+
+```rust
+use sqipe_mysql::sqipe;
+use sqipe::col;
+
+let mut u = sqipe("users").update();
+u.set("status", "inactive");
+u.and_where(col("dept").eq("eng"));
+u.order_by(col("created_at").asc());
+u.limit(10);
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10");
+```
