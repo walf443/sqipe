@@ -264,9 +264,14 @@ impl From<&str> for JoinCol {
 /// A JOIN ON condition.
 #[derive(Debug, Clone)]
 pub enum JoinCondition {
-    ColEq { left: QualifiedCol, right: JoinCol },
+    ColEq {
+        left: QualifiedCol,
+        right: JoinCol,
+    },
     And(Vec<JoinCondition>),
     Using(Vec<String>),
+    /// Raw SQL expression for arbitrary ON conditions (e.g., `"a.text LIKE b.pattern"`).
+    Expr(String),
 }
 
 /// JOIN condition helpers.
@@ -281,6 +286,22 @@ pub mod join {
     /// Create a USING join condition with multiple columns.
     pub fn using_cols(cols: &[&str]) -> JoinCondition {
         JoinCondition::Using(cols.iter().map(|c| c.to_string()).collect())
+    }
+
+    /// Create a raw SQL ON condition for arbitrary join expressions.
+    ///
+    /// The `raw` string is embedded directly into the SQL output without escaping.
+    /// **Never** interpolate user input into this string — doing so creates a SQL
+    /// injection vulnerability.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, join};
+    ///
+    /// let mut q = sqipe("texts");
+    /// q.join("patterns", join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#));
+    /// ```
+    pub fn on_expr(raw: &str) -> JoinCondition {
+        JoinCondition::Expr(raw.to_string())
     }
 }
 
@@ -1056,6 +1077,8 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
     pub(crate) aggregates: Vec<AggregateExpr>,
     pub(crate) group_bys: Vec<String>,
     pub(crate) joins: Vec<JoinClause>,
+    /// Subquery sources for joins, aligned with `joins` by index.
+    pub(crate) join_subqueries: Vec<Option<Box<tree::SelectTree<V>>>>,
     pub(crate) order_bys: Vec<OrderByClause>,
     pub(crate) limit_val: Option<u64>,
     pub(crate) offset_val: Option<u64>,
@@ -1138,7 +1161,7 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
                 resolve_join_condition(c, join_table);
             }
         }
-        JoinCondition::Using(_) => {}
+        JoinCondition::Using(_) | JoinCondition::Expr(_) => {}
     }
 }
 
@@ -1154,6 +1177,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             aggregates: Vec::new(),
             group_bys: Vec::new(),
             joins: Vec::new(),
+            join_subqueries: Vec::new(),
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
@@ -1190,6 +1214,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             aggregates: Vec::new(),
             group_bys: Vec::new(),
             joins: Vec::new(),
+            join_subqueries: Vec::new(),
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
@@ -1270,6 +1295,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             alias,
             condition,
         });
+        self.join_subqueries.push(None);
         self
     }
 
@@ -1290,6 +1316,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             alias,
             condition,
         });
+        self.join_subqueries.push(None);
         self
     }
 
@@ -1316,6 +1343,66 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             alias,
             condition,
         });
+        self.join_subqueries.push(None);
+        self
+    }
+
+    /// Add an INNER JOIN with a subquery as the join target.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, col, table};
+    ///
+    /// let mut sub = sqipe("orders");
+    /// sub.select(&["user_id", "total"]);
+    /// sub.and_where(col("status").eq("shipped"));
+    ///
+    /// let mut q = sqipe("users");
+    /// q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    /// let (sql, _) = q.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"SELECT * FROM "users" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id""#
+    /// );
+    /// ```
+    pub fn join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        self.add_join_subquery(JoinType::Inner, sub, alias, condition)
+    }
+
+    /// Add a LEFT JOIN with a subquery as the join target.
+    pub fn left_join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        self.add_join_subquery(JoinType::Left, sub, alias, condition)
+    }
+
+    /// Add a JOIN with a subquery and a custom join type.
+    pub fn add_join_subquery(
+        &mut self,
+        join_type: JoinType,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        let tree = sub.into_select_tree();
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, alias);
+        self.stage_order
+            .push(tree::StageRef::Join(self.joins.len()));
+        self.joins.push(JoinClause {
+            join_type,
+            table: String::new(),
+            alias: Some(alias.to_string()),
+            condition,
+        });
+        self.join_subqueries.push(Some(Box::new(tree)));
         self
     }
 
@@ -3593,5 +3680,200 @@ mod tests {
     #[should_panic(expected = "escape character must not be")]
     fn test_like_rejects_single_quote_as_escape() {
         LikeExpression::ends_with_escaped_by('\'', "foo");
+    }
+
+    // ── join_subquery tests ──
+
+    #[test]
+    fn test_join_subquery_standard() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_left_join_subquery_standard() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+
+        let mut q = sqipe("users");
+        q.left_join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" LEFT JOIN (SELECT "user_id", "total" FROM "orders") AS "o" ON "users"."id" = "o"."user_id""#
+        );
+    }
+
+    #[test]
+    fn test_join_subquery_pipe_sql() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            r#"FROM "users" |> INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id" |> SELECT "id", "name""#
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_join_subquery_with_outer_where() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.and_where(col("age").gt(25));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id" WHERE "age" > ?"#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::String("shipped".to_string()), Value::Int(25)]
+        );
+    }
+
+    #[test]
+    fn test_join_subquery_numbered_placeholders() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql_with(&PgDialect);
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > $1) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = $2) AS "o" ON "users"."id" = "o"."user_id""#
+        );
+        assert_eq!(
+            binds,
+            vec![Value::Int(25), Value::String("shipped".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_cte_where_then_join_subquery() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+
+        let mut q = sqipe("users");
+        q.and_where(col("age").gt(25));
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"WITH "_cte_0" AS (SELECT * FROM "users" WHERE "age" > ?) SELECT "id", "name" FROM "_cte_0" AS "users" INNER JOIN (SELECT "user_id", "total" FROM "orders") AS "o" ON "users"."id" = "o"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::Int(25)]);
+    }
+
+    #[test]
+    fn test_join_subquery_mixed_with_table_join() {
+        let mut sub = sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.join("profiles", table("users").col("id").eq_col("user_id"));
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "name" FROM "users" INNER JOIN "profiles" ON "users"."id" = "profiles"."user_id" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id""#
+        );
+        assert_eq!(binds, vec![Value::String("shipped".to_string())]);
+    }
+
+    // ── JoinCondition::Expr tests ──
+
+    #[test]
+    fn test_join_condition_expr_standard() {
+        let mut q = sqipe("texts");
+        q.join(
+            "patterns",
+            join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+        );
+        q.select(&["id", "text"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "text" FROM "texts" INNER JOIN "patterns" ON "texts"."text" LIKE "patterns"."pattern""#
+        );
+    }
+
+    #[test]
+    fn test_join_condition_expr_pipe() {
+        let mut q = sqipe("texts");
+        q.join(
+            "patterns",
+            join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+        );
+        q.select(&["id", "text"]);
+
+        let (sql, _) = q.to_pipe_sql();
+        assert_eq!(
+            sql,
+            r#"FROM "texts" |> INNER JOIN "patterns" ON "texts"."text" LIKE "patterns"."pattern" |> SELECT "id", "text""#
+        );
+    }
+
+    #[test]
+    fn test_join_condition_expr_inside_and() {
+        let mut q = sqipe("texts");
+        q.join(
+            "patterns",
+            JoinCondition::And(vec![
+                table("texts").col("category").eq_col("category"),
+                join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+            ]),
+        );
+        q.select(&["id", "text"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            r#"SELECT "id", "text" FROM "texts" INNER JOIN "patterns" ON "texts"."category" = "patterns"."category" AND "texts"."text" LIKE "patterns"."pattern""#
+        );
     }
 }

@@ -178,6 +178,7 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
             parts.join(" AND ")
         }
         JoinCondition::Using(_) => unreachable!("Using is handled in render_joins"),
+        JoinCondition::Expr(raw) => raw.clone(),
     }
 }
 
@@ -188,16 +189,30 @@ fn render_join_table(table: &str, alias: &Option<String>, cfg: &RenderConfig) ->
     }
 }
 
-pub(super) fn render_joins(joins: &[JoinClause], cfg: &RenderConfig) -> Vec<String> {
+pub(super) fn render_joins<V: Clone>(
+    joins: &[JoinClause],
+    join_subqueries: &[Option<Box<SelectTree<V>>>],
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> Vec<String> {
     joins
         .iter()
-        .map(|j| {
+        .enumerate()
+        .map(|(i, j)| {
             let keyword = match &j.join_type {
                 JoinType::Inner => "INNER JOIN",
                 JoinType::Left => "LEFT JOIN",
                 JoinType::Custom(s) => s.as_str(),
             };
-            let table = render_join_table(&j.table, &j.alias, cfg);
+            let table = if let Some(Some(sub)) = join_subqueries.get(i) {
+                let sub_sql = render_subquery_sql(sub, cfg, binds);
+                match &j.alias {
+                    Some(a) => format!("({}) AS {}", sub_sql, (cfg.qi)(a)),
+                    None => format!("({})", sub_sql),
+                }
+            } else {
+                render_join_table(&j.table, &j.alias, cfg)
+            };
             if let JoinCondition::Using(cols) = &j.condition {
                 let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
                 return format!("{} {} USING ({})", keyword, table, quoted.join(", "));
@@ -276,7 +291,7 @@ pub(super) fn render_select_core<V: Clone>(
 
     parts.push(render_from(&tree.from, cfg, binds));
 
-    for join_sql in render_joins(&tree.joins, cfg) {
+    for join_sql in render_joins(&tree.joins, &tree.join_subqueries, cfg, binds) {
         parts.push(join_sql);
     }
 

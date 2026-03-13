@@ -53,7 +53,8 @@ impl PipeSqlRenderer {
                             binds,
                         );
                         let join = &tree.joins[*idx];
-                        for js in render_joins(std::slice::from_ref(join), cfg) {
+                        let sub_slice = tree.join_subqueries.get(*idx..*idx + 1).unwrap_or(&[]);
+                        for js in render_joins(std::slice::from_ref(join), sub_slice, cfg, binds) {
                             parts.push(js);
                         }
                     }
@@ -68,7 +69,7 @@ impl PipeSqlRenderer {
             );
         } else {
             // Fallback: original behavior (JOINs then WHEREs)
-            for join_sql in render_joins(&tree.joins, cfg) {
+            for join_sql in render_joins(&tree.joins, &tree.join_subqueries, cfg, binds) {
                 parts.push(join_sql);
             }
 

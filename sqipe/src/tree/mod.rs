@@ -65,6 +65,10 @@ pub enum SelectClause {
 pub struct SelectTree<V: Clone = crate::Value> {
     pub from: FromClause<V>,
     pub joins: Vec<JoinClause>,
+    /// Subquery sources for joins, keyed by join index.
+    /// When `join_subqueries[i]` is `Some(...)`, the renderer uses the subquery
+    /// instead of `joins[i].table`.
+    pub join_subqueries: Vec<Option<Box<SelectTree<V>>>>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
     pub select: SelectClause,
@@ -94,6 +98,11 @@ impl<V: Clone> SelectTree<V> {
         SelectTree {
             from: self.from.map_values(f),
             joins: self.joins,
+            join_subqueries: self
+                .join_subqueries
+                .into_iter()
+                .map(|opt| opt.map(|sq| Box::new(sq.map_values(f))))
+                .collect(),
             wheres: self.wheres.into_iter().map(|w| w.map_values(f)).collect(),
             havings: self.havings.into_iter().map(|w| w.map_values(f)).collect(),
             select: self.select,
@@ -123,6 +132,13 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             None => FromSource::Table(query.table.clone()),
         };
 
+        debug_assert!(
+            query.join_subqueries.len() <= query.joins.len(),
+            "join_subqueries must not exceed joins length"
+        );
+        let mut join_subqueries = query.join_subqueries.clone();
+        join_subqueries.resize_with(query.joins.len(), || None);
+
         SelectTree {
             from: FromClause {
                 source,
@@ -130,6 +146,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 table_suffix: Vec::new(),
             },
             joins: query.joins.clone(),
+            join_subqueries,
             wheres: query.wheres.clone(),
             havings: query.havings.clone(),
             select,
@@ -156,6 +173,14 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             None => FromSource::Table(query.table),
         };
 
+        let join_count = query.joins.len();
+        debug_assert!(
+            query.join_subqueries.len() <= join_count,
+            "join_subqueries must not exceed joins length"
+        );
+        let mut join_subqueries = query.join_subqueries;
+        join_subqueries.resize_with(join_count, || None);
+
         SelectTree {
             from: FromClause {
                 source,
@@ -163,6 +188,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 table_suffix: Vec::new(),
             },
             joins: query.joins,
+            join_subqueries,
             wheres: query.wheres,
             havings: query.havings,
             select,

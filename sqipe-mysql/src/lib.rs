@@ -180,6 +180,22 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         self
     }
 
+    /// Add a STRAIGHT_JOIN with a subquery as the join target.
+    pub fn straight_join_subquery(
+        &mut self,
+        sub: impl sqipe::IntoSelectTree<V>,
+        alias: &str,
+        condition: sqipe::JoinCondition,
+    ) -> &mut Self {
+        self.inner.add_join_subquery(
+            sqipe::JoinType::Custom("STRAIGHT_JOIN".to_string()),
+            sub,
+            alias,
+            condition,
+        );
+        self
+    }
+
     pub fn union<T: sqipe::AsUnionParts<Query = MysqlQuery<V>>>(
         &self,
         other: &T,
@@ -734,5 +750,39 @@ mod tests {
         assert!(!sql.starts_with("WITH"));
         assert!(sql.contains("|> WHERE"));
         assert!(sql.contains("|> INNER JOIN"));
+    }
+
+    #[test]
+    fn test_join_subquery() {
+        let mut sub = sqipe::sqipe("orders");
+        sub.select(&["user_id", "total"]);
+        sub.and_where(col("status").eq("shipped"));
+
+        let mut q = sqipe("users");
+        q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, binds) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `users` INNER JOIN (SELECT `user_id`, `total` FROM `orders` WHERE `status` = ?) AS `o` ON `users`.`id` = `o`.`user_id`"
+        );
+        assert_eq!(binds, vec![sqipe::Value::String("shipped".to_string())]);
+    }
+
+    #[test]
+    fn test_straight_join_subquery() {
+        let mut sub = sqipe::sqipe("orders");
+        sub.select(&["user_id", "total"]);
+
+        let mut q = sqipe("users");
+        q.straight_join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `users` STRAIGHT_JOIN (SELECT `user_id`, `total` FROM `orders`) AS `o` ON `users`.`id` = `o`.`user_id`"
+        );
     }
 }
