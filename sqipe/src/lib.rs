@@ -1887,6 +1887,138 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             allow_without_where: false,
         }
     }
+
+    /// Convert this SELECT query builder into a DELETE query builder.
+    ///
+    /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, col};
+    ///
+    /// let mut q = sqipe("employee");
+    /// q.and_where(col("id").eq(1));
+    /// let d = q.delete();
+    /// let (sql, _) = d.to_sql();
+    /// assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
+    /// ```
+    pub fn delete(self) -> DeleteQuery<V> {
+        assert!(
+            self.joins.is_empty(),
+            "Query has JOINs which are not supported in DELETE and will be discarded"
+        );
+        assert!(
+            self.aggregates.is_empty(),
+            "Query has aggregates which are not supported in DELETE and will be discarded"
+        );
+        assert!(
+            self.order_bys.is_empty(),
+            "Query has ORDER BY which is not supported in DELETE and will be discarded"
+        );
+        assert!(
+            self.limit_val.is_none(),
+            "Query has LIMIT which is not supported in DELETE and will be discarded"
+        );
+        DeleteQuery {
+            table: self.table,
+            table_alias: self.table_alias,
+            wheres: self.wheres,
+            allow_without_where: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteQuery<V: Clone + std::fmt::Debug = Value> {
+    table: String,
+    table_alias: Option<String>,
+    wheres: Vec<WhereEntry<V>>,
+    allow_without_where: bool,
+}
+
+impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
+    /// Add an AND WHERE condition.
+    pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    /// Add an OR WHERE condition.
+    pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    /// Explicitly allow this DELETE to have no WHERE clause.
+    ///
+    /// By default, `to_sql()` and `to_sql_with()` panic if no WHERE conditions are set,
+    /// to prevent accidental full-table deletes. Call this method to opt in to WHERE-less deletes.
+    ///
+    /// ```
+    /// use sqipe::sqipe;
+    ///
+    /// let mut d = sqipe("employee").delete();
+    /// d.without_where();
+    /// let (sql, _) = d.to_sql();
+    /// assert_eq!(sql, r#"DELETE FROM "employee""#);
+    /// ```
+    pub fn without_where(&mut self) -> &mut Self {
+        self.allow_without_where = true;
+        self
+    }
+
+    /// Build a DeleteTree AST from this query.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// has not been called.
+    pub fn to_tree(&self) -> tree::DeleteTree<V> {
+        self.assert_where_present();
+        tree::DeleteTree {
+            table: self.table.clone(),
+            table_alias: self.table_alias.clone(),
+            wheres: self.wheres.clone(),
+            order_bys: Vec::new(),
+            limit: None,
+        }
+    }
+
+    fn assert_where_present(&self) {
+        assert!(
+            self.allow_without_where || !self.wheres.is_empty(),
+            "DELETE without WHERE is dangerous and not allowed by default. \
+             Use .without_where() to explicitly allow full-table deletes."
+        );
+    }
+
+    /// Build standard SQL with `?` placeholders and double-quote identifiers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// has not been called.
+    pub fn to_sql(&self) -> (String, Vec<V>) {
+        let tree = self.to_tree();
+        let cfg = RenderConfig {
+            ph: &|_| "?".to_string(),
+            qi: &default_quote_identifier,
+            backslash_escape: false,
+        };
+        renderer::delete::render_delete(&tree, &cfg)
+    }
+
+    /// Build standard SQL with dialect-specific placeholders and quoting.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no WHERE conditions are set and [`without_where()`](DeleteQuery::without_where)
+    /// has not been called.
+    pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
+        let tree = self.to_tree();
+        let ph = |n: usize| dialect.placeholder(n);
+        let qi = |name: &str| dialect.quote_identifier(name);
+        renderer::delete::render_delete(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
+    }
 }
 
 #[cfg(test)]
@@ -4568,5 +4700,120 @@ mod tests {
             binds,
             vec![Value::String("Alice".to_string()), Value::Int(1)]
         );
+    }
+
+    // ── DELETE tests ──
+
+    #[test]
+    fn test_delete_basic() {
+        let mut d = sqipe("employee").delete();
+        d.and_where(col("id").eq(1));
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
+        assert_eq!(binds, vec![Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_delete_without_where() {
+        let mut d = sqipe("employee").delete();
+        d.without_where();
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, r#"DELETE FROM "employee""#);
+        assert_eq!(binds, vec![]);
+    }
+
+    #[test]
+    fn test_delete_from_query_with_where() {
+        let mut q = sqipe("employee");
+        q.and_where(col("id").eq(1));
+        let d = q.delete();
+        let (sql, binds) = d.to_sql();
+        assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
+        assert_eq!(binds, vec![Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_delete_with_dialect() {
+        struct PgDialect;
+        impl Dialect for PgDialect {
+            fn placeholder(&self, index: usize) -> String {
+                format!("${}", index)
+            }
+        }
+
+        let mut d = sqipe("employee").delete();
+        d.and_where(col("id").eq(1));
+        let (sql, binds) = d.to_sql_with(&PgDialect);
+        assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = $1"#);
+        assert_eq!(binds, vec![Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_delete_with_complex_where() {
+        let mut d = sqipe("employee").delete();
+        d.and_where(col("age").between(20, 60));
+        d.and_where(col("role").included(&["admin", "manager"]));
+        let (sql, binds) = d.to_sql();
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "employee" WHERE "age" BETWEEN ? AND ? AND "role" IN (?, ?)"#
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::Int(20),
+                Value::Int(60),
+                Value::String("admin".to_string()),
+                Value::String("manager".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_delete_with_or_where() {
+        let mut d = sqipe("employee").delete();
+        d.and_where(col("status").eq("pending"));
+        d.or_where(col("status").eq("draft"));
+        let (sql, binds) = d.to_sql();
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "employee" WHERE "status" = ? OR "status" = ?"#
+        );
+        assert_eq!(
+            binds,
+            vec![
+                Value::String("pending".to_string()),
+                Value::String("draft".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_delete_with_like() {
+        let mut d = sqipe("employee").delete();
+        d.and_where(col("name").like(LikeExpression::starts_with("test")));
+        let (sql, binds) = d.to_sql();
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "employee" WHERE "name" LIKE ? ESCAPE '\'"#
+        );
+        assert_eq!(binds, vec![Value::String("test%".to_string())]);
+    }
+
+    #[test]
+    #[should_panic(expected = "DELETE without WHERE is dangerous")]
+    fn test_delete_no_where_panics() {
+        let d = sqipe("employee").delete();
+        let _ = d.to_sql();
+    }
+
+    #[test]
+    fn test_delete_with_table_alias() {
+        let mut q = sqipe("employee");
+        q.as_("e");
+        let mut d = q.delete();
+        d.and_where(col("id").eq(1));
+        let (sql, _) = d.to_sql();
+        assert_eq!(sql, r#"DELETE FROM "employee" "e" WHERE "id" = ?"#);
     }
 }

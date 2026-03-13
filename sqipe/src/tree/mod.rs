@@ -237,6 +237,29 @@ impl<V: Clone> UpdateTree<V> {
     }
 }
 
+/// AST for a DELETE statement, generic over bind value type.
+#[derive(Debug, Clone)]
+pub struct DeleteTree<V: Clone = crate::Value> {
+    pub table: String,
+    pub table_alias: Option<String>,
+    pub(crate) wheres: Vec<WhereEntry<V>>,
+    pub order_bys: Vec<OrderByClause>,
+    pub limit: Option<u64>,
+}
+
+impl<V: Clone> DeleteTree<V> {
+    /// Transform all bind values in this tree.
+    pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> DeleteTree<U> {
+        DeleteTree {
+            table: self.table,
+            table_alias: self.table_alias,
+            wheres: self.wheres.into_iter().map(|w| w.map_values(f)).collect(),
+            order_bys: self.order_bys,
+            limit: self.limit,
+        }
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> UnionTree<V> {
     pub fn from_union_query(union: &crate::UnionQuery<V>) -> Self {
         let parts = union
