@@ -221,21 +221,16 @@ fn render_select_item(col: &ColRef, cfg: &RenderConfig) -> String {
     }
 }
 
-/// Render the core of a SELECT statement (SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING)
-/// without ORDER BY / LIMIT / OFFSET. Shared by StandardSqlRenderer and subquery rendering.
-pub(super) fn render_select_core<V: Clone>(
-    tree: &SelectTree<V>,
+/// Render the SELECT clause (columns or aggregate expressions) as a string.
+/// Shared by `render_select_core` and CTE-aware rendering in `standard.rs`.
+pub(super) fn render_select_clause(
+    select: &crate::tree::SelectClause,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
 ) -> String {
     use crate::tree::SelectClause;
 
-    let mut parts = Vec::new();
-
-    match &tree.select {
-        SelectClause::Columns(cols) => {
-            parts.push(render_select_columns(cols, cfg));
-        }
+    match select {
+        SelectClause::Columns(cols) => render_select_columns(cols, cfg),
         SelectClause::Aggregate { group_bys, exprs } => {
             let mut items = Vec::new();
             for col in group_bys {
@@ -244,9 +239,21 @@ pub(super) fn render_select_core<V: Clone>(
             for expr in exprs {
                 items.push(render_aggregate_expr(expr, cfg));
             }
-            parts.push(format!("SELECT {}", items.join(", ")));
+            format!("SELECT {}", items.join(", "))
         }
     }
+}
+
+/// Render the core of a SELECT statement (SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING)
+/// without ORDER BY / LIMIT / OFFSET. Shared by StandardSqlRenderer and subquery rendering.
+pub(super) fn render_select_core<V: Clone>(
+    tree: &SelectTree<V>,
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> String {
+    let mut parts = Vec::new();
+
+    parts.push(render_select_clause(&tree.select, cfg));
 
     parts.push(render_from(&tree.from, cfg, binds));
 
@@ -258,7 +265,7 @@ pub(super) fn render_select_core<V: Clone>(
         parts.push(format!("WHERE {}", where_sql));
     }
 
-    if let SelectClause::Aggregate { group_bys, .. } = &tree.select
+    if let crate::tree::SelectClause::Aggregate { group_bys, .. } = &tree.select
         && !group_bys.is_empty()
     {
         let cols: Vec<String> = group_bys.iter().map(|c| (cfg.qi)(c)).collect();

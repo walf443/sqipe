@@ -1,8 +1,8 @@
 use super::{
     RenderConfig, Renderer, append_limit_offset_flat, append_order_by, render_from, render_joins,
-    render_select_columns, render_select_core, set_op_keyword,
+    render_select_clause, render_select_core, set_op_keyword,
 };
-use crate::tree::{FromSource, SelectClause, SelectTree, StageRef, UnionTree};
+use crate::tree::{FromSource, SelectTree, StageRef, UnionTree};
 
 pub struct StandardSqlRenderer;
 
@@ -64,6 +64,13 @@ impl StandardSqlRenderer {
             append_limit_offset_flat(&mut sql, tree.limit, tree.offset);
             return sql;
         }
+
+        // Subquery sources must have an alias; without one, effective_name would
+        // be empty and the generated SQL would be invalid.
+        debug_assert!(
+            !matches!(&tree.from.source, FromSource::Subquery(_)) || tree.from.alias.is_some(),
+            "CTE generation requires subquery FROM to have an alias"
+        );
 
         // Determine the base table name and the alias used in JOIN conditions.
         // For subquery sources, base_table is empty but is never used directly
@@ -141,21 +148,7 @@ impl StandardSqlRenderer {
         }
 
         // Build the main query
-        let select_str = match &tree.select {
-            SelectClause::Columns(cols) => render_select_columns(cols, cfg),
-            SelectClause::Aggregate { group_bys, exprs } => {
-                let mut items = Vec::new();
-                for c in group_bys {
-                    items.push((cfg.qi)(c));
-                }
-                for expr in exprs {
-                    items.push(super::render_aggregate_expr(expr, cfg));
-                }
-                format!("SELECT {}", items.join(", "))
-            }
-        };
-
-        let mut main_sql = select_str;
+        let mut main_sql = render_select_clause(&tree.select, cfg);
 
         // FROM: use previous CTE aliased to effective name.
         // NOTE: In multi-CTE cases (W→J→W→J), the last CTE may contain joined data
@@ -189,7 +182,7 @@ impl StandardSqlRenderer {
         }
 
         // GROUP BY / HAVING
-        if let SelectClause::Aggregate { group_bys, .. } = &tree.select
+        if let crate::tree::SelectClause::Aggregate { group_bys, .. } = &tree.select
             && !group_bys.is_empty()
         {
             let cols: Vec<String> = group_bys.iter().map(|c| (cfg.qi)(c)).collect();
