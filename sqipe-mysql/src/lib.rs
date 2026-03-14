@@ -1193,6 +1193,59 @@ mod tests {
     }
 
     #[test]
+    fn test_order_by_expr() {
+        let mut q = sqipe("users");
+        q.select(&["id", "name"]);
+        q.order_by_expr(sqipe::RawSql::new("RAND()"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(sql, "SELECT `id`, `name` FROM `users` ORDER BY RAND()");
+    }
+
+    #[test]
+    fn test_order_by_expr_mixed_with_col() {
+        let mut q = sqipe("users");
+        q.select(&["id", "name"]);
+        q.order_by(col("name").asc());
+        q.order_by_expr(sqipe::RawSql::new("RAND()"));
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `users` ORDER BY `name` ASC, RAND()"
+        );
+    }
+
+    #[test]
+    fn test_update_order_by_expr() {
+        let mut u = sqipe("users").into_update();
+        u.set(col("status"), "inactive");
+        u.and_where(col("dept").eq("eng"));
+        u.order_by_expr(sqipe::RawSql::new("RAND()"));
+        u.limit(10);
+
+        let (sql, _) = u.to_sql();
+        assert_eq!(
+            sql,
+            "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY RAND() LIMIT 10"
+        );
+    }
+
+    #[test]
+    fn test_delete_order_by_expr() {
+        let mut d = sqipe("users").into_delete();
+        d.and_where(col("dept").eq("eng"));
+        d.order_by_expr(sqipe::RawSql::new("RAND()"));
+        d.limit(10);
+
+        let (sql, _) = d.to_sql();
+        assert_eq!(
+            sql,
+            "DELETE FROM `users` WHERE `dept` = ? ORDER BY RAND() LIMIT 10"
+        );
+    }
+
+    #[test]
     fn test_straight_join_subquery() {
         let mut sub = sqipe::sqipe("orders");
         sub.select(&["user_id", "total"]);

@@ -482,7 +482,7 @@ fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<St
                 };
                 format!("{} {}", render_col_ref(col, cfg), dir_str)
             }
-            OrderByClause::Expr(raw) => raw.as_str().to_string(),
+            OrderByClause::Expr(raw) => raw.to_string(),
         })
         .collect();
     Some(format!("ORDER BY {}", clauses.join(", ")))

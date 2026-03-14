@@ -31,7 +31,9 @@ pub trait UnionQueryOps<V: Clone + std::fmt::Debug = Value>: AsUnionParts {
     fn union<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
     fn union_all<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
     fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
-    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self;
+    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
+        self.order_by(OrderByClause::Expr(raw))
+    }
     fn limit(&mut self, n: u64) -> &mut Self;
     fn offset(&mut self, n: u64) -> &mut Self;
     fn to_sql(&self) -> (String, Vec<V>);
