@@ -96,6 +96,10 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
+        debug_assert!(
+            col.table.is_none(),
+            "SET clause does not support table-qualified columns; use col(\"name\") instead of table(\"t\").col(\"name\")"
+        );
         self.sets.push(SetClause::Value(col.column, val.into()));
         self
     }

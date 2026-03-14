@@ -340,6 +340,12 @@ fn test_join_with_unqualified_col_eq_col() {
         sql,
         r#"SELECT "id", "name" FROM "users" INNER JOIN "orders" ON "id" = "orders"."user_id""#
     );
+
+    let (sql, _) = q.to_pipe_sql();
+    assert_eq!(
+        sql,
+        r#"FROM "users" |> INNER JOIN "orders" ON "id" = "orders"."user_id" |> SELECT "id", "name""#
+    );
 }
 
 #[test]

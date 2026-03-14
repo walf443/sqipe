@@ -261,6 +261,10 @@ impl Col {
         }
     }
 
+    /// Create a JOIN ON condition comparing two columns.
+    ///
+    /// When `self` has no table qualifier (created via `col()`), the left side
+    /// is rendered without a table prefix (e.g., `"id" = "orders"."user_id"`).
     pub fn eq_col(self, other: impl Into<JoinCol>) -> JoinCondition {
         JoinCondition::ColEq {
             left: self,
