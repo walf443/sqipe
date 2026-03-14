@@ -36,7 +36,7 @@ pub use aggregate::AggregateExpr;
     note = "Use `Col` instead. `Col` now supports both qualified and unqualified columns."
 )]
 pub use column::QualifiedCol;
-pub use column::{Col, ColRef, IntoColRef, OrderByClause, SortDir, TableRef, col, table};
+pub use column::{Col, ColRef, OrderByClause, SelectItem, SortDir, TableRef, col, table};
 pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;

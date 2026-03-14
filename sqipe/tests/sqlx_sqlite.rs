@@ -141,7 +141,7 @@ async fn test_join() {
     let mut q = sqipe_with::<SqliteValue>("users");
     q.join("orders", table("users").col("id").eq_col("user_id"));
     q.and_where(table("orders").col("status").eq("shipped"));
-    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.select(&table("users").cols(&["id", "name"]));
     q.add_select(table("orders").col("total"));
     let (sql, binds) = q.to_sql();
 
@@ -165,7 +165,7 @@ async fn test_join_with_alias() {
     q.and_where(table("o").col("status").eq("shipped"));
     let mut cols = table("u").cols(&["id", "name"]);
     cols.extend(table("o").cols(&["total"]));
-    q.select_cols(&cols);
+    q.select(&cols);
     let (sql, binds) = q.to_sql();
 
     let rows = bind_params(sqlx::query(&sql), &binds)
@@ -186,7 +186,7 @@ async fn test_left_join() {
         table("orders").as_("o"),
         table("u").col("id").eq_col("user_id"),
     );
-    q.select_cols(&table("u").cols(&["id", "name"]));
+    q.select(&table("u").cols(&["id", "name"]));
     q.add_select(table("o").col("total").as_("order_total"));
     let (sql, _) = q.to_sql();
 

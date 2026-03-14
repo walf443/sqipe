@@ -75,7 +75,7 @@ fn test_select_cols_from_table() {
     let u = table("users");
     let mut q = sqipe("users");
     q.join("orders", u.col("id").eq_col("user_id"));
-    q.select_cols(&u.cols(&["id", "name"]));
+    q.select(&u.cols(&["id", "name"]));
 
     let (sql, _) = q.to_sql();
     assert_eq!(
