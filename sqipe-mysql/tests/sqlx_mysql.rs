@@ -3,7 +3,7 @@
 use sqipe::{LikeExpression, col, table};
 use sqipe_mysql::sqipe_with;
 use sqlx::{MySqlPool, Row};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
@@ -70,7 +70,7 @@ async fn get_shared_container() -> &'static SharedContainer {
 
 async fn setup_pool() -> MySqlPool {
     let shared = get_shared_container().await;
-    let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
     let db_name = format!("test_{}", db_id);
 
     let root_url = format!("mysql://root@127.0.0.1:{}", shared.host_port);

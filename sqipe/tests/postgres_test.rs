@@ -2,7 +2,7 @@
 
 use postgres::{Client, NoTls, types::ToSql};
 use sqipe::{Dialect, LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
@@ -92,7 +92,7 @@ async fn get_shared_container() -> &'static SharedContainer {
 /// Get a sync Client connected to a fresh per-test database.
 async fn setup_client() -> Client {
     let shared = get_shared_container().await;
-    let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
     let db_name = format!("test_{}", db_id);
     let host_port = shared.host_port;
 
@@ -104,7 +104,7 @@ async fn setup_client() -> Client {
         );
         let mut admin_client = Client::connect(&admin_conn_str, NoTls).unwrap();
         admin_client
-            .execute(&format!("CREATE DATABASE {}", db_name), &[])
+            .execute(&format!("CREATE DATABASE \"{}\"", db_name), &[])
             .unwrap();
 
         let conn_str = format!(

@@ -1,7 +1,7 @@
 #![cfg(feature = "test-tokio-postgres")]
 
 use sqipe::{Dialect, LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
@@ -92,7 +92,7 @@ async fn get_shared_container() -> &'static SharedContainer {
 
 async fn setup_client() -> tokio_postgres::Client {
     let shared = get_shared_container().await;
-    let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
     let db_name = format!("test_{}", db_id);
 
     // Connect to default database to create test database
@@ -107,7 +107,7 @@ async fn setup_client() -> tokio_postgres::Client {
         }
     });
     admin_client
-        .execute(&format!("CREATE DATABASE {}", db_name), &[])
+        .execute(&format!("CREATE DATABASE \"{}\"", db_name), &[])
         .await
         .unwrap();
 
