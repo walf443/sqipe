@@ -287,13 +287,12 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
-    /// Set the select list, replacing any previously added columns or expressions.
+    /// Append columns to the select list.
     ///
     /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
-    /// To append items without clearing, use [`add_select`](Self::add_select) or
-    /// [`add_select_expr`](Self::add_select_expr).
+    /// Can be called multiple times — each call appends to the existing list.
     pub fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self {
-        self.selects = cols.iter().map(|c| c.clone().into()).collect();
+        self.selects.extend(cols.iter().map(|c| c.clone().into()));
         self
     }
 

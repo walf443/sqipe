@@ -302,6 +302,20 @@ fn test_add_select_expr_without_alias() {
 }
 
 #[test]
+fn test_select_appends() {
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.add_select_expr("UPPER(\"email\")", Some("upper_email"));
+    q.select(&["age"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name", UPPER("email") AS "upper_email", "age" FROM "users""#
+    );
+}
+
+#[test]
 fn test_add_select_expr_preserves_order() {
     let mut q = sqipe("users");
     q.add_select(col("id"));
