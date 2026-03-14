@@ -204,7 +204,7 @@ fn test_update_set_with_qualified_col() {
 #[test]
 fn test_update_with_set_expr() {
     let mut u = sqipe("employee").into_update();
-    u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
     assert_eq!(
@@ -218,7 +218,7 @@ fn test_update_with_set_expr() {
 fn test_update_with_set_and_set_expr_mixed() {
     let mut u = sqipe("employee").into_update();
     u.set(col("name"), "Alice");
-    u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
     assert_eq!(
@@ -234,8 +234,8 @@ fn test_update_with_set_and_set_expr_mixed() {
 #[test]
 fn test_update_with_multiple_set_exprs() {
     let mut u = sqipe("employee").into_update();
-    u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
-    u.set_expr(SetExpression::new(r#""updated_at" = NOW()"#));
+    u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
+    u.set_expr(RawSql::new(r#""updated_at" = NOW()"#));
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
     assert_eq!(
@@ -248,7 +248,7 @@ fn test_update_with_multiple_set_exprs() {
 #[test]
 fn test_update_with_set_expr_allow_without_where() {
     let mut u = sqipe("employee").into_update();
-    u.set_expr(SetExpression::new(r#""version" = "version" + 1"#));
+    u.set_expr(RawSql::new(r#""version" = "version" + 1"#));
     u.allow_without_where();
     let (sql, binds) = u.to_sql();
     assert_eq!(sql, r#"UPDATE "employee" SET "version" = "version" + 1"#);
@@ -259,7 +259,7 @@ fn test_update_with_set_expr_allow_without_where() {
 fn test_update_with_set_expr_bind_order() {
     let mut u = sqipe("employee").into_update();
     u.set(col("name"), "Alice");
-    u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
     u.set(col("status"), "active");
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
@@ -288,7 +288,7 @@ fn test_update_with_set_expr_dialect() {
 
     let mut u = sqipe("employee").into_update();
     u.set(col("name"), "Alice");
-    u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
     u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql_with(&PgDialect);
     assert_eq!(

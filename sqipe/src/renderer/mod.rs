@@ -125,7 +125,7 @@ pub(super) fn render_aggregate_expr(expr: &AggregateExpr, cfg: &RenderConfig) ->
         AggregateFunc::Avg(col) => format!("AVG({})", (cfg.qi)(col)),
         AggregateFunc::Min(col) => format!("MIN({})", (cfg.qi)(col)),
         AggregateFunc::Max(col) => format!("MAX({})", (cfg.qi)(col)),
-        AggregateFunc::Expr(raw) => raw.clone(),
+        AggregateFunc::Expr(raw) => raw.to_string(),
     };
     match &expr.alias {
         Some(alias) => format!("{} AS {}", func_str, (cfg.qi)(alias)),
@@ -179,7 +179,7 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
             parts.join(" AND ")
         }
         JoinCondition::Using(_) => unreachable!("Using is handled in render_joins"),
-        JoinCondition::Expr(raw) => raw.clone(),
+        JoinCondition::Expr(raw) => raw.to_string(),
     }
 }
 
@@ -257,7 +257,7 @@ fn render_select_item(item: &SelectItem, cfg: &RenderConfig) -> String {
         }
         SelectItem::Expr { raw, alias } => match alias {
             Some(alias) => format!("{} AS {}", raw, (cfg.qi)(alias)),
-            None => raw.clone(),
+            None => raw.to_string(),
         },
     }
 }

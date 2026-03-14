@@ -3,6 +3,7 @@ use crate::column::OrderByClause;
 use crate::column::{Col, SelectItem, TableRef};
 use crate::delete::DeleteQuery;
 use crate::join::{JoinClause, JoinCondition, JoinType};
+use crate::raw_sql::RawSql;
 use crate::update::UpdateQuery;
 use crate::value::Value;
 use crate::where_clause::{IntoIncluded, IntoWhereClause, WhereClause, WhereEntry};
@@ -327,17 +328,17 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// application-controlled expressions.
     ///
     /// ```
-    /// use sqipe::sqipe;
+    /// use sqipe::{sqipe, RawSql};
     ///
     /// let mut q = sqipe("users");
-    /// q.add_select_expr("COUNT(*)", Some("cnt"));
+    /// q.add_select_expr(RawSql::new("COUNT(*)"), Some("cnt"));
     ///
     /// let (sql, _) = q.to_sql();
     /// assert_eq!(sql, r#"SELECT COUNT(*) AS "cnt" FROM "users""#);
     /// ```
-    pub fn add_select_expr(&mut self, raw: &str, alias: Option<&str>) -> &mut Self {
+    pub fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self {
         self.selects.push(SelectItem::Expr {
-            raw: raw.to_string(),
+            raw,
             alias: alias.map(|a| a.to_string()),
         });
         self

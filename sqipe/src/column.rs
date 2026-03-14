@@ -260,7 +260,10 @@ pub enum SelectItem {
     ///
     /// **Warning:** `raw` is embedded into SQL without escaping.
     /// Never pass user-supplied input — see [`Query::add_select_expr`](crate::Query::add_select_expr).
-    Expr { raw: String, alias: Option<String> },
+    Expr {
+        raw: crate::raw_sql::RawSql,
+        alias: Option<String>,
+    },
 }
 
 impl From<Col> for SelectItem {

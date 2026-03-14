@@ -13,7 +13,7 @@ pub(crate) enum AggregateFunc {
     Avg(String),
     Min(String),
     Max(String),
-    Expr(String),
+    Expr(crate::raw_sql::RawSql),
 }
 
 impl AggregateExpr {
@@ -66,9 +66,9 @@ pub fn max(col: &str) -> AggregateExpr {
 }
 
 /// Raw SQL expression for dialect-specific aggregate functions.
-pub fn expr(raw: &str) -> AggregateExpr {
+pub fn expr(raw: crate::raw_sql::RawSql) -> AggregateExpr {
     AggregateExpr {
-        expr: AggregateFunc::Expr(raw.to_string()),
+        expr: AggregateFunc::Expr(raw),
         alias: None,
     }
 }

@@ -478,11 +478,11 @@ Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in t
 The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
 
 ```rust
-# use sqipe::{sqipe, col};
+# use sqipe::{sqipe, col, RawSql};
 let mut q = sqipe("users");
 q.add_select(col("id"));
-q.add_select_expr("UPPER(\"name\")", Some("upper_name"));
-q.add_select_expr("COALESCE(\"nickname\", \"name\")", Some("display_name"));
+q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
+q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display_name"));
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
@@ -545,12 +545,12 @@ let (sql, binds) = u.to_sql_with(&PgDialect);
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 ```
 
-For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `SetExpression`:
+For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSql`:
 
 ```rust
-# use sqipe::{sqipe, col, SetExpression};
+# use sqipe::{sqipe, col, RawSql};
 let mut u = sqipe("employee").into_update();
-u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();

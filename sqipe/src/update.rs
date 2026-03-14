@@ -1,42 +1,19 @@
 use crate::Dialect;
 use crate::column::Col;
+use crate::raw_sql::RawSql;
 use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 
 use crate::renderer::RenderConfig;
 use crate::tree::default_quote_identifier;
 
-/// A raw SQL expression for use in SET clauses.
-///
-/// This type exists to make it explicit that the caller is injecting raw SQL.
-/// The expression is inserted verbatim — it is **not** parameterized or quoted.
-///
-/// ```
-/// use sqipe::{sqipe, col, SetExpression};
-///
-/// let mut u = sqipe("employee").into_update();
-/// u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
-/// u.and_where(col("id").eq(1));
-/// let (sql, _) = u.to_sql();
-/// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
-/// ```
-#[derive(Debug, Clone)]
-pub struct SetExpression(pub(crate) String);
-
-impl SetExpression {
-    /// Create a new raw SQL SET expression.
-    pub fn new(expr: &str) -> Self {
-        Self(expr.to_string())
-    }
-}
-
 /// A single SET clause entry in an UPDATE statement.
 #[derive(Debug, Clone)]
 pub enum SetClause<V: Clone> {
     /// `"col" = ?` — identifier-quoted column with a bind value.
     Value(String, V),
-    /// Raw SQL expression via [`SetExpression`].
-    Expr(SetExpression),
+    /// Raw SQL expression via [`RawSql`].
+    Expr(RawSql),
 }
 
 /// An UPDATE query builder, generic over the bind value type `V`.
@@ -106,19 +83,19 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
 
     /// Add a raw SQL expression to the SET clause.
     ///
-    /// Use [`SetExpression::new()`] to create the expression, making it explicit
+    /// Use [`RawSql::new()`] to create the expression, making it explicit
     /// that raw SQL is being injected.
     ///
     /// ```
-    /// use sqipe::{sqipe, col, SetExpression};
+    /// use sqipe::{sqipe, col, RawSql};
     ///
     /// let mut u = sqipe("employee").into_update();
-    /// u.set_expr(SetExpression::new(r#""visit_count" = "visit_count" + 1"#));
+    /// u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
     /// u.and_where(col("id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
     /// ```
-    pub fn set_expr(&mut self, expr: SetExpression) -> &mut Self {
+    pub fn set_expr(&mut self, expr: RawSql) -> &mut Self {
         self.sets.push(SetClause::Expr(expr));
         self
     }

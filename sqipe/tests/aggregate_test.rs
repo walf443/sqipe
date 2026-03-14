@@ -88,7 +88,7 @@ fn test_aggregate_expr_raw() {
     let mut q = sqipe("employee");
     q.aggregate(&[
         aggregate::count_all().as_("cnt"),
-        aggregate::expr("APPROX_COUNT_DISTINCT(user_id)").as_("approx_users"),
+        aggregate::expr(RawSql::new("APPROX_COUNT_DISTINCT(user_id)")).as_("approx_users"),
     ]);
 
     let (sql, _) = q.to_sql();

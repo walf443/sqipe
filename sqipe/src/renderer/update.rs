@@ -33,7 +33,7 @@ pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (Str
                 let placeholder = (cfg.ph)(binds.len());
                 format!("{} = {}", (cfg.qi)(col), placeholder)
             }
-            SetClause::Expr(expr) => expr.0.clone(),
+            SetClause::Expr(expr) => expr.to_string(),
         })
         .collect();
     parts.push(format!("SET {}", set_items.join(", ")));

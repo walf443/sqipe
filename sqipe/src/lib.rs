@@ -46,7 +46,7 @@ pub use query::{
     UnionQueryOps, sqipe, sqipe_from_subquery, sqipe_from_subquery_with, sqipe_with,
 };
 pub use raw_sql::RawSql;
-pub use update::{SetClause, SetExpression, UpdateQuery};
+pub use update::{SetClause, UpdateQuery};
 pub use value::{Op, Value};
 pub use where_clause::{
     IntoIncluded, IntoRangeClause, IntoWhereClause, WhereClause, all, any, not,
