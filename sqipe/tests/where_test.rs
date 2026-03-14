@@ -291,3 +291,27 @@ fn test_range_to_inclusive_with_in_range() {
     assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"age\" <= ?");
     assert_eq!(binds, vec![Value::Int(30)]);
 }
+
+#[test]
+fn test_col_alias_ignored_in_where() {
+    let mut q = sqipe("employee");
+    q.and_where(col("name").as_("n").eq("Alice"));
+
+    let (sql, _) = q.to_sql();
+    // alias is ignored in WHERE — only the column name is rendered
+    assert_eq!(sql, r#"SELECT * FROM "employee" WHERE "name" = ?"#);
+}
+
+#[test]
+fn test_qualified_col_alias_ignored_in_where() {
+    let mut q = sqipe("employee");
+    q.join("dept", table("employee").col("dept_id").eq_col("id"));
+    q.and_where(table("employee").col("name").as_("n").eq("Alice"));
+
+    let (sql, _) = q.to_sql();
+    // alias is ignored in WHERE — only table.column is rendered
+    assert_eq!(
+        sql,
+        r#"SELECT * FROM "employee" INNER JOIN "dept" ON "employee"."dept_id" = "dept"."id" WHERE "employee"."name" = ?"#
+    );
+}
