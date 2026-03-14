@@ -270,4 +270,5 @@ impl Col {
 }
 
 /// Backwards-compatible alias for `Col`.
+#[deprecated(since = "0.2.0", note = "Use `Col` instead. `Col` now supports both qualified and unqualified columns.")]
 pub type QualifiedCol = Col;
