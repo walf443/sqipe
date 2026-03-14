@@ -336,10 +336,7 @@ fn test_order_by_expr() {
     q.order_by_expr(RawSql::new("RAND()"));
 
     let (sql, _) = q.to_sql();
-    assert_eq!(
-        sql,
-        r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#
-    );
+    assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
 
     let (sql, _) = q.to_pipe_sql();
     assert_eq!(

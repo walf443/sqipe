@@ -38,7 +38,6 @@ pub use aggregate::AggregateExpr;
 )]
 pub use column::QualifiedCol;
 pub use column::{Col, ColRef, OrderByClause, SelectItem, SortDir, TableRef, col, table};
-pub use raw_sql::RawSql;
 pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
@@ -46,6 +45,7 @@ pub use query::{
     AsUnionParts, IntoFromTable, IntoJoinTable, IntoSelectTree, Query, SetOp, UnionQuery,
     UnionQueryOps, sqipe, sqipe_from_subquery, sqipe_from_subquery_with, sqipe_with,
 };
+pub use raw_sql::RawSql;
 pub use update::{SetClause, SetExpression, UpdateQuery};
 pub use value::{Op, Value};
 pub use where_clause::{
