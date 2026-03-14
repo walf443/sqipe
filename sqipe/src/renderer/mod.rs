@@ -474,7 +474,7 @@ fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<St
                 SortDir::Asc => "ASC",
                 SortDir::Desc => "DESC",
             };
-            format!("{} {}", (cfg.qi)(&o.col), dir)
+            format!("{} {}", render_col_ref(&o.col, cfg), dir)
         })
         .collect();
     Some(format!("ORDER BY {}", clauses.join(", ")))

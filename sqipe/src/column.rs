@@ -11,7 +11,7 @@ pub enum SortDir {
 
 #[derive(Debug, Clone)]
 pub struct OrderByClause {
-    pub col: String,
+    pub col: ColRef,
     pub dir: SortDir,
 }
 
@@ -251,14 +251,14 @@ impl Col {
 
     pub fn asc(self) -> OrderByClause {
         OrderByClause {
-            col: self.name,
+            col: self.into_col_ref(),
             dir: SortDir::Asc,
         }
     }
 
     pub fn desc(self) -> OrderByClause {
         OrderByClause {
-            col: self.name,
+            col: self.into_col_ref(),
             dir: SortDir::Desc,
         }
     }
@@ -280,6 +280,20 @@ impl QualifiedCol {
         ColRef::Aliased {
             col: Box::new(self.into_col_ref()),
             alias: alias.to_string(),
+        }
+    }
+
+    pub fn asc(self) -> OrderByClause {
+        OrderByClause {
+            col: self.into_col_ref(),
+            dir: SortDir::Asc,
+        }
+    }
+
+    pub fn desc(self) -> OrderByClause {
+        OrderByClause {
+            col: self.into_col_ref(),
+            dir: SortDir::Desc,
         }
     }
 

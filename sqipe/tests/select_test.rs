@@ -226,6 +226,30 @@ fn test_for_update_with_order_by_and_limit() {
 }
 
 #[test]
+fn test_qualified_col_order_by() {
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.join(
+        "orders",
+        table("users").col("id").eq_col("user_id"),
+    );
+    q.order_by(table("users").col("name").asc());
+    q.order_by(table("orders").col("created_at").desc());
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" ORDER BY "users"."name" ASC, "orders"."created_at" DESC"#
+    );
+
+    let (sql, _) = q.to_pipe_sql();
+    assert_eq!(
+        sql,
+        r#"FROM "users" |> INNER JOIN "orders" ON "users"."id" = "orders"."user_id" |> SELECT "id", "name" |> ORDER BY "users"."name" ASC, "orders"."created_at" DESC"#
+    );
+}
+
+#[test]
 fn test_for_update_with_order_by_and_limit_pipe() {
     let mut q = sqipe("users");
     q.select(&["id", "name"]);

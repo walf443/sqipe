@@ -133,10 +133,7 @@ fn test_delete_from_query_with_aggregates_panics() {
 #[should_panic(expected = "ORDER BY which is not supported in DELETE")]
 fn test_delete_from_query_with_order_by_panics() {
     let mut q = sqipe("employee");
-    q.order_by(OrderByClause {
-        col: "id".to_string(),
-        dir: SortDir::Asc,
-    });
+    q.order_by(col("id").asc());
     let _ = q.into_delete();
 }
 
