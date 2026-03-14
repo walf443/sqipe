@@ -46,20 +46,31 @@ pub trait IntoSelectTree<V: Clone> {
     fn into_select_tree(self) -> crate::tree::SelectTree<V>;
 }
 
+/// Trait for types that can specify a FROM table source.
+pub trait IntoFromTable {
+    fn into_from_table(self) -> (String, Option<String>);
+}
+
+impl IntoFromTable for &str {
+    fn into_from_table(self) -> (String, Option<String>) {
+        (self.to_string(), None)
+    }
+}
+
+impl IntoFromTable for TableRef {
+    fn into_from_table(self) -> (String, Option<String>) {
+        (self.name, self.alias)
+    }
+}
+
 /// Trait for types that can specify a join target table.
 pub trait IntoJoinTable {
     fn into_join_table(self) -> (String, Option<String>);
 }
 
-impl IntoJoinTable for &str {
+impl<T: IntoFromTable> IntoJoinTable for T {
     fn into_join_table(self) -> (String, Option<String>) {
-        (self.to_string(), None)
-    }
-}
-
-impl IntoJoinTable for TableRef {
-    fn into_join_table(self) -> (String, Option<String>) {
-        (self.name, self.alias)
+        self.into_from_table()
     }
 }
 
@@ -112,12 +123,28 @@ impl<V: Clone + std::fmt::Debug> AsUnionParts for UnionQuery<V> {
 }
 
 /// Create a new query builder for the given table.
-pub fn sqipe(table: &str) -> Query<Value> {
+///
+/// Accepts a table name (`&str`) or a [`TableRef`] (created with [`table()`]):
+///
+/// ```
+/// use sqipe::{sqipe, table};
+///
+/// // Simple table name
+/// let q = sqipe("users");
+/// let (sql, _) = q.to_sql();
+/// assert_eq!(sql, r#"SELECT * FROM "users""#);
+///
+/// // TableRef with alias
+/// let q = sqipe(table("users").as_("u"));
+/// let (sql, _) = q.to_sql();
+/// assert_eq!(sql, r#"SELECT * FROM "users" AS "u""#);
+/// ```
+pub fn sqipe(table: impl IntoFromTable) -> Query<Value> {
     Query::new(table)
 }
 
 /// Create a new query builder with a custom value type.
-pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: &str) -> Query<V> {
+pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: impl IntoFromTable) -> Query<V> {
     Query::new(table)
 }
 
@@ -174,10 +201,11 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
 }
 
 impl<V: Clone + std::fmt::Debug> Query<V> {
-    pub fn new(table: &str) -> Self {
+    pub fn new(table: impl IntoFromTable) -> Self {
+        let (name, alias) = table.into_from_table();
         Query {
-            table: table.to_string(),
-            table_alias: None,
+            table: name,
+            table_alias: alias,
             from_subquery: None,
             selects: Vec::new(),
             wheres: Vec::new(),

@@ -381,6 +381,28 @@ fn test_join_condition_expr_pipe() {
 }
 
 #[test]
+fn test_sqipe_table_ref_with_join() {
+    let mut q = sqipe(table("users").as_("u"));
+    q.join(
+        table("orders").as_("o"),
+        table("u").col("id").eq_col("user_id"),
+    );
+    q.select(&["id", "name"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" AS "u" INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id""#
+    );
+
+    let (sql, _) = q.to_pipe_sql();
+    assert_eq!(
+        sql,
+        r#"FROM "users" AS "u" |> INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id" |> SELECT "id", "name""#
+    );
+}
+
+#[test]
 fn test_join_condition_expr_inside_and() {
     let mut q = sqipe("texts");
     q.join(

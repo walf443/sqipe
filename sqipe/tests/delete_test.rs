@@ -104,6 +104,14 @@ fn test_delete_no_where_panics() {
 }
 
 #[test]
+fn test_delete_with_table_ref_alias() {
+    let mut d = sqipe(table("employee").as_("e")).into_delete();
+    d.and_where(col("id").eq(1));
+    let (sql, _) = d.to_sql();
+    assert_eq!(sql, r#"DELETE FROM "employee" "e" WHERE "id" = ?"#);
+}
+
+#[test]
 fn test_delete_with_table_alias() {
     let mut q = sqipe("employee");
     q.as_("e");

@@ -127,6 +127,39 @@ fn test_table_alias() {
 }
 
 #[test]
+fn test_sqipe_with_table_ref() {
+    let q = sqipe(table("users"));
+    let (sql, _) = q.to_sql();
+    assert_eq!(sql, r#"SELECT * FROM "users""#);
+}
+
+#[test]
+fn test_sqipe_with_table_ref_alias() {
+    let mut q = sqipe(table("employee").as_("e"));
+    q.select(&["id", "name"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(sql, r#"SELECT "id", "name" FROM "employee" AS "e""#);
+
+    let (sql, _) = q.to_pipe_sql();
+    assert_eq!(sql, r#"FROM "employee" AS "e" |> SELECT "id", "name""#);
+}
+
+#[test]
+fn test_sqipe_with_table_ref_alias_where() {
+    let mut q = sqipe(table("employee").as_("e"));
+    q.and_where(("name", "Alice"));
+    q.select(&["id", "name"]);
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "employee" AS "e" WHERE "name" = ?"#
+    );
+    assert_eq!(binds, vec![Value::String("Alice".to_string())]);
+}
+
+#[test]
 fn test_for_update() {
     let mut q = sqipe("users");
     q.select(&["id", "name"]);

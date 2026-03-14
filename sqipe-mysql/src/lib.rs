@@ -232,7 +232,9 @@ impl<V: Clone + std::fmt::Debug> sqipe::AsUnionParts for MysqlUnionQuery<V> {
 }
 
 /// Create a MySQL-specific query builder for the given table.
-pub fn sqipe(table: &str) -> MysqlQuery<Value> {
+///
+/// Accepts a table name (`&str`) or a [`sqipe::TableRef`] (created with [`sqipe::table()`]).
+pub fn sqipe(table: impl sqipe::IntoFromTable) -> MysqlQuery<Value> {
     MysqlQuery::wrap(sqipe::sqipe(table))
 }
 
@@ -276,7 +278,9 @@ pub fn sqipe_from_subquery_with<V: Clone + std::fmt::Debug>(
 }
 
 /// Create a MySQL-specific query builder with a custom value type.
-pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: &str) -> MysqlQuery<V> {
+///
+/// Accepts a table name (`&str`) or a [`sqipe::TableRef`] (created with [`sqipe::table()`]).
+pub fn sqipe_with<V: Clone + std::fmt::Debug>(table: impl sqipe::IntoFromTable) -> MysqlQuery<V> {
     MysqlQuery::wrap(sqipe::sqipe_with(table))
 }
 
