@@ -41,8 +41,8 @@ pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
-    AsUnionParts, IntoJoinTable, IntoSelectTree, Query, SetOp, UnionQuery, UnionQueryOps, sqipe,
-    sqipe_from_subquery, sqipe_from_subquery_with, sqipe_with,
+    AsUnionParts, IntoFromTable, IntoJoinTable, IntoSelectTree, Query, SetOp, UnionQuery,
+    UnionQueryOps, sqipe, sqipe_from_subquery, sqipe_from_subquery_with, sqipe_with,
 };
 pub use update::{SetClause, SetExpression, UpdateQuery};
 pub use value::{Op, Value};
