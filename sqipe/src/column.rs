@@ -267,5 +267,15 @@ impl From<Col> for SelectItem {
     }
 }
 
+impl<'a> From<&'a str> for SelectItem {
+    fn from(s: &'a str) -> Self {
+        SelectItem::Col(Col {
+            table: None,
+            column: s.to_string(),
+            alias: None,
+        })
+    }
+}
+
 /// Backwards-compatible alias for `Col`.
 pub type QualifiedCol = Col;

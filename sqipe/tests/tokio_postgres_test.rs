@@ -199,7 +199,7 @@ async fn test_join() {
     let mut q = sqipe_with::<PgValue>("users");
     q.join("orders", table("users").col("id").eq_col("user_id"));
     q.and_where(table("orders").col("status").eq("shipped"));
-    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.select(&table("users").cols(&["id", "name"]));
     q.add_select(table("orders").col("total"));
     let (sql, binds) = q.to_sql_with(&PostgresDialect);
 
@@ -223,7 +223,7 @@ async fn test_join_with_alias() {
     q.and_where(table("o").col("status").eq("shipped"));
     let mut cols = table("u").cols(&["id", "name"]);
     cols.extend(table("o").cols(&["total"]));
-    q.select_cols(&cols);
+    q.select(&cols);
     let (sql, binds) = q.to_sql_with(&PostgresDialect);
 
     let params = to_pg_params(&binds);
@@ -244,7 +244,7 @@ async fn test_left_join() {
         table("orders").as_("o"),
         table("u").col("id").eq_col("user_id"),
     );
-    q.select_cols(&table("u").cols(&["id", "name"]));
+    q.select(&table("u").cols(&["id", "name"]));
     q.add_select(table("o").col("total").as_("order_total"));
     let (sql, _) = q.to_sql_with(&PostgresDialect);
 
@@ -384,7 +384,7 @@ async fn test_cte_where_then_join() {
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("age").gt(26));
     q.join("orders", table("users").col("id").eq_col("user_id"));
-    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.select(&table("users").cols(&["id", "name"]));
     q.add_select(table("orders").col("total"));
     let (sql, binds) = q.to_sql_with(&PostgresDialect);
 
@@ -407,7 +407,7 @@ async fn test_cte_where_join_then_where() {
     q.and_where(col("age").gt(26));
     q.join("orders", table("users").col("id").eq_col("user_id"));
     q.and_where(table("orders").col("total").gt(150.0));
-    q.select_cols(&table("users").cols(&["id", "name"]));
+    q.select(&table("users").cols(&["id", "name"]));
     q.add_select(table("orders").col("total"));
     let (sql, binds) = q.to_sql_with(&PostgresDialect);
 
