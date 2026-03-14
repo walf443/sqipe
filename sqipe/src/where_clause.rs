@@ -1,4 +1,4 @@
-use crate::column::ColRef;
+use crate::column::Col;
 use crate::like::LikeExpression;
 use crate::value::{Op, Value};
 
@@ -12,45 +12,45 @@ use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 #[derive(Clone)]
 pub enum WhereClause<V: Clone = Value> {
     Condition {
-        col: ColRef,
+        col: Col,
         op: Op,
         val: V,
     },
     Between {
-        col: ColRef,
+        col: Col,
         low: V,
         high: V,
     },
     NotBetween {
-        col: ColRef,
+        col: Col,
         low: V,
         high: V,
     },
     In {
-        col: ColRef,
+        col: Col,
         vals: Vec<V>,
     },
     InSubQuery {
-        col: ColRef,
+        col: Col,
         sub: Box<crate::tree::SelectTree<V>>,
     },
     NotIn {
-        col: ColRef,
+        col: Col,
         vals: Vec<V>,
     },
     NotInSubQuery {
-        col: ColRef,
+        col: Col,
         sub: Box<crate::tree::SelectTree<V>>,
     },
     Like {
-        col: ColRef,
+        col: Col,
         /// Preserved for ESCAPE clause rendering.
         expr: LikeExpression,
         /// Bind parameter value (always `expr.to_pattern()` at construction).
         val: V,
     },
     NotLike {
-        col: ColRef,
+        col: Col,
         /// Preserved for ESCAPE clause rendering.
         expr: LikeExpression,
         /// Bind parameter value (always `expr.to_pattern()` at construction).
@@ -201,7 +201,11 @@ impl<V: Clone, T: Clone + Into<V>> IntoWhereClause<V> for WhereClause<T> {
 impl<V: Clone, T: Into<V>> IntoWhereClause<V> for (&str, T) {
     fn into_where_clause(self) -> WhereClause<V> {
         WhereClause::Condition {
-            col: ColRef::Simple(self.0.to_string()),
+            col: Col {
+                table: None,
+                column: self.0.to_string(),
+                alias: None,
+            },
             op: Op::Eq,
             val: self.1.into(),
         }
@@ -210,12 +214,12 @@ impl<V: Clone, T: Into<V>> IntoWhereClause<V> for (&str, T) {
 
 /// Trait for converting Rust range types into WhereClause.
 pub trait IntoRangeClause<V: Clone> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V>;
+    fn into_where_clause(self, col: Col) -> WhereClause<V>;
 }
 
 /// `20..=30` → `col BETWEEN 20 AND 30`
 impl<V: Clone> IntoRangeClause<V> for RangeInclusive<V> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_where_clause(self, col: Col) -> WhereClause<V> {
         let (low, high) = self.into_inner();
         WhereClause::Between { col, low, high }
     }
@@ -223,7 +227,7 @@ impl<V: Clone> IntoRangeClause<V> for RangeInclusive<V> {
 
 /// `20..30` → `col >= 20 AND col < 30`
 impl<V: Clone> IntoRangeClause<V> for Range<V> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_where_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::All(vec![
             WhereClause::Condition {
                 col: col.clone(),
@@ -241,7 +245,7 @@ impl<V: Clone> IntoRangeClause<V> for Range<V> {
 
 /// `20..` → `col >= 20`
 impl<V: Clone> IntoRangeClause<V> for RangeFrom<V> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_where_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::Condition {
             col,
             op: Op::Gte,
@@ -252,7 +256,7 @@ impl<V: Clone> IntoRangeClause<V> for RangeFrom<V> {
 
 /// `..30` → `col < 30`
 impl<V: Clone> IntoRangeClause<V> for RangeTo<V> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_where_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::Condition {
             col,
             op: Op::Lt,
@@ -263,7 +267,7 @@ impl<V: Clone> IntoRangeClause<V> for RangeTo<V> {
 
 /// `..=30` → `col <= 30`
 impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
-    fn into_where_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_where_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::Condition {
             col,
             op: Op::Lte,
@@ -276,19 +280,19 @@ impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
 ///
 /// Implemented for slices (value list) and `Query` (subquery).
 pub trait IntoIncluded<V: Clone> {
-    fn into_in_clause(self, col: ColRef) -> WhereClause<V>;
-    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V>;
+    fn into_in_clause(self, col: Col) -> WhereClause<V>;
+    fn into_not_in_clause(self, col: Col) -> WhereClause<V>;
 }
 
 impl<V: Clone> IntoIncluded<V> for &[V] {
-    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::In {
             col,
             vals: self.to_vec(),
         }
     }
 
-    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_not_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::NotIn {
             col,
             vals: self.to_vec(),
@@ -297,14 +301,14 @@ impl<V: Clone> IntoIncluded<V> for &[V] {
 }
 
 impl<V: Clone, const N: usize> IntoIncluded<V> for &[V; N] {
-    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::In {
             col,
             vals: self.to_vec(),
         }
     }
 
-    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_not_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::NotIn {
             col,
             vals: self.to_vec(),

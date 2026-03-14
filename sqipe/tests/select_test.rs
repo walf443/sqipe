@@ -280,6 +280,45 @@ fn test_qualified_col_order_by() {
 }
 
 #[test]
+fn test_add_select_expr() {
+    let mut q = sqipe("users");
+    q.select(&["id"]);
+    q.add_select_expr("UPPER(\"name\")", Some("upper_name"));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", UPPER("name") AS "upper_name" FROM "users""#
+    );
+}
+
+#[test]
+fn test_add_select_expr_without_alias() {
+    let mut q = sqipe("users");
+    q.add_select_expr("COALESCE(\"nickname\", \"name\")", None);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT COALESCE("nickname", "name") FROM "users""#
+    );
+}
+
+#[test]
+fn test_add_select_expr_preserves_order() {
+    let mut q = sqipe("users");
+    q.add_select(col("id"));
+    q.add_select_expr("LENGTH(\"name\")", Some("name_len"));
+    q.add_select(col("email"));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", LENGTH("name") AS "name_len", "email" FROM "users""#
+    );
+}
+
+#[test]
 fn test_for_update_with_order_by_and_limit_pipe() {
     let mut q = sqipe("users");
     q.select(&["id", "name"]);

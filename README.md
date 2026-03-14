@@ -443,6 +443,22 @@ let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
 ```
 
+### Raw SQL expressions in SELECT
+
+Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in the SELECT list.
+The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
+
+```rust
+# use sqipe::{sqipe, col};
+let mut q = sqipe("users");
+q.add_select(col("id"));
+q.add_select_expr("UPPER(\"name\")", Some("upper_name"));
+q.add_select_expr("COALESCE(\"nickname\", \"name\")", Some("display_name"));
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
+```
+
 ### UPDATE
 
 `Query::into_update()` converts a SELECT query builder into an UPDATE statement builder.

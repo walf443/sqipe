@@ -196,14 +196,14 @@ impl<V: Clone + std::fmt::Debug> DerefMut for MysqlQuery<V> {
 }
 
 impl<V: Clone + std::fmt::Debug> sqipe::IntoIncluded<V> for MysqlQuery<V> {
-    fn into_in_clause(self, col: sqipe::ColRef) -> sqipe::WhereClause<V> {
+    fn into_in_clause(self, col: sqipe::Col) -> sqipe::WhereClause<V> {
         sqipe::WhereClause::InSubQuery {
             col,
             sub: Box::new(self.into_tree()),
         }
     }
 
-    fn into_not_in_clause(self, col: sqipe::ColRef) -> sqipe::WhereClause<V> {
+    fn into_not_in_clause(self, col: sqipe::Col) -> sqipe::WhereClause<V> {
         sqipe::WhereClause::NotInSubQuery {
             col,
             sub: Box::new(self.into_tree()),

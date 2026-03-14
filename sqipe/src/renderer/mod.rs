@@ -1,6 +1,6 @@
 use crate::{
-    AggregateExpr, AggregateFunc, ColRef, JoinClause, JoinCondition, JoinType, OrderByClause,
-    SortDir, WhereClause, WhereEntry,
+    AggregateExpr, AggregateFunc, Col, JoinClause, JoinCondition, JoinType, OrderByClause,
+    SelectItem, SortDir, WhereClause, WhereEntry,
 };
 
 pub mod delete;
@@ -228,31 +228,37 @@ pub(super) fn render_joins<V: Clone>(
         .collect()
 }
 
-pub(super) fn render_select_columns(cols: &[crate::ColRef], cfg: &RenderConfig) -> String {
-    if cols.is_empty() {
+pub(super) fn render_select_columns(items: &[SelectItem], cfg: &RenderConfig) -> String {
+    if items.is_empty() {
         "SELECT *".to_string()
     } else {
-        let quoted: Vec<String> = cols.iter().map(|c| render_select_item(c, cfg)).collect();
+        let quoted: Vec<String> = items.iter().map(|c| render_select_item(c, cfg)).collect();
         format!("SELECT {}", quoted.join(", "))
     }
 }
 
 // ── Private helpers ──
 
-fn render_col_ref(col: &ColRef, cfg: &RenderConfig) -> String {
-    match col {
-        ColRef::Simple(name) => (cfg.qi)(name),
-        ColRef::Qualified { table, col } => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(col)),
-        ColRef::Aliased { col, .. } => render_col_ref(col, cfg),
+fn render_col_ref(col: &Col, cfg: &RenderConfig) -> String {
+    match &col.table {
+        Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&col.column)),
+        None => (cfg.qi)(&col.column),
     }
 }
 
-fn render_select_item(col: &ColRef, cfg: &RenderConfig) -> String {
-    match col {
-        ColRef::Aliased { col, alias } => {
-            format!("{} AS {}", render_col_ref(col, cfg), (cfg.qi)(alias))
+fn render_select_item(item: &SelectItem, cfg: &RenderConfig) -> String {
+    match item {
+        SelectItem::Col(col) => {
+            let base = render_col_ref(col, cfg);
+            match &col.alias {
+                Some(alias) => format!("{} AS {}", base, (cfg.qi)(alias)),
+                None => base,
+            }
         }
-        other => render_col_ref(other, cfg),
+        SelectItem::Expr { raw, alias } => match alias {
+            Some(alias) => format!("{} AS {}", raw, (cfg.qi)(alias)),
+            None => raw.clone(),
+        },
     }
 }
 

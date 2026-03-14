@@ -1,6 +1,6 @@
 use crate::aggregate::AggregateExpr;
 use crate::column::OrderByClause;
-use crate::column::{ColRef, IntoColRef, TableRef};
+use crate::column::{Col, SelectItem, TableRef};
 use crate::delete::DeleteQuery;
 use crate::join::{JoinClause, JoinCondition, JoinType};
 use crate::update::UpdateQuery;
@@ -82,7 +82,7 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table_alias: Option<String>,
     /// When set, the query selects from this subquery instead of `table`.
     pub(crate) from_subquery: Option<Box<crate::tree::SelectTree<V>>>,
-    pub(crate) selects: Vec<ColRef>,
+    pub(crate) selects: Vec<SelectItem>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
     pub(crate) aggregates: Vec<AggregateExpr>,
@@ -169,14 +169,14 @@ impl<V: Clone + std::fmt::Debug> IntoSelectTree<V> for Query<V> {
 
 /// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
 impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for Query<V> {
-    fn into_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::InSubQuery {
             col,
             sub: Box::new(crate::tree::SelectTree::from_query_owned(self)),
         }
     }
 
-    fn into_not_in_clause(self, col: ColRef) -> WhereClause<V> {
+    fn into_not_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::NotInSubQuery {
             col,
             sub: Box::new(crate::tree::SelectTree::from_query_owned(self)),
@@ -288,19 +288,57 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     }
 
     pub fn select(&mut self, cols: &[&str]) -> &mut Self {
-        self.selects = cols.iter().map(|s| ColRef::Simple(s.to_string())).collect();
+        self.selects = cols
+            .iter()
+            .map(|s| {
+                SelectItem::Col(Col {
+                    table: None,
+                    column: s.to_string(),
+                    alias: None,
+                })
+            })
+            .collect();
         self
     }
 
-    /// Set select columns from `ColRef` values (e.g., from `table("o").cols(&["id"])`).
-    pub fn select_cols(&mut self, cols: &[ColRef]) -> &mut Self {
-        self.selects = cols.to_vec();
+    /// Set select columns from `Col` values (e.g., from `table("o").cols(&["id"])`).
+    pub fn select_cols(&mut self, cols: &[Col]) -> &mut Self {
+        self.selects = cols.iter().map(|c| SelectItem::Col(c.clone())).collect();
         self
     }
 
     /// Append a single column to the select list.
-    pub fn add_select(&mut self, col: impl IntoColRef) -> &mut Self {
-        self.selects.push(col.into_col_ref());
+    pub fn add_select(&mut self, col: Col) -> &mut Self {
+        self.selects.push(SelectItem::Col(col));
+        self
+    }
+
+    /// Append a raw SQL expression to the select list.
+    ///
+    /// The expression is rendered as-is without quoting. Use this for
+    /// expressions like `COUNT(*)`, `price * quantity`, etc.
+    ///
+    /// # Safety
+    ///
+    /// The `raw` string is embedded directly into the generated SQL **without
+    /// escaping or parameterization**. Never pass user-supplied input as `raw`;
+    /// doing so opens the door to SQL injection. Only use hard-coded or
+    /// application-controlled expressions.
+    ///
+    /// ```
+    /// use sqipe::sqipe;
+    ///
+    /// let mut q = sqipe("users");
+    /// q.add_select_expr("COUNT(*)", Some("cnt"));
+    ///
+    /// let (sql, _) = q.to_sql();
+    /// assert_eq!(sql, r#"SELECT COUNT(*) AS "cnt" FROM "users""#);
+    /// ```
+    pub fn add_select_expr(&mut self, raw: &str, alias: Option<&str>) -> &mut Self {
+        self.selects.push(SelectItem::Expr {
+            raw: raw.to_string(),
+            alias: alias.map(|a| a.to_string()),
+        });
         self
     }
 

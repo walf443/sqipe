@@ -1,4 +1,4 @@
-use crate::{AggregateExpr, ColRef, JoinClause, OrderByClause, WhereEntry};
+use crate::{AggregateExpr, JoinClause, OrderByClause, SelectItem, WhereEntry};
 
 /// Default double-quote identifier quoting (SQL standard).
 pub fn default_quote_identifier(name: &str) -> String {
@@ -52,7 +52,7 @@ impl<V: Clone> FromClause<V> {
 #[derive(Debug, Clone)]
 pub enum SelectClause {
     /// SELECT * or SELECT col1, col2, ...
-    Columns(Vec<ColRef>),
+    Columns(Vec<SelectItem>),
     /// Aggregate: SELECT group_cols..., agg_exprs...
     Aggregate {
         group_bys: Vec<String>,
