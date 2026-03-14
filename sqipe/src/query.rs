@@ -338,7 +338,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// ```
     pub fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self {
         self.selects.push(SelectItem::Expr {
-            raw: raw.to_string(),
+            raw,
             alias: alias.map(|a| a.to_string()),
         });
         self

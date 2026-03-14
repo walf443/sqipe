@@ -257,7 +257,7 @@ fn render_select_item(item: &SelectItem, cfg: &RenderConfig) -> String {
         }
         SelectItem::Expr { raw, alias } => match alias {
             Some(alias) => format!("{} AS {}", raw, (cfg.qi)(alias)),
-            None => raw.clone(),
+            None => raw.to_string(),
         },
     }
 }
