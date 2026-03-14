@@ -296,14 +296,13 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
-    /// Set select columns from `Col` values (e.g., from `table("o").cols(&["id"])`).
+    /// Alias for [`select()`](Self::select).
     #[deprecated(
         since = "0.2.0",
         note = "Use `select()` instead, which now accepts both `&str` and `Col`."
     )]
     pub fn select_cols(&mut self, cols: &[Col]) -> &mut Self {
-        self.selects = cols.iter().map(|c| SelectItem::Col(c.clone())).collect();
-        self
+        self.select(cols)
     }
 
     /// Append a single column to the select list.
