@@ -12,7 +12,7 @@ impl From<Col> for JoinCol {
     fn from(c: Col) -> Self {
         JoinCol {
             table: c.table,
-            col: c.col,
+            col: c.column,
         }
     }
 }

@@ -53,7 +53,7 @@ impl TableRef {
     pub fn col(&self, col: &str) -> Col {
         Col {
             table: Some(self.name.clone()),
-            col: col.to_string(),
+            column: col.to_string(),
         }
     }
 
@@ -82,14 +82,14 @@ impl TableRef {
 #[derive(Debug, Clone)]
 pub struct Col {
     pub table: Option<String>,
-    pub col: String,
+    pub column: String,
 }
 
 /// Create a column reference.
 pub fn col(name: &str) -> Col {
     Col {
         table: None,
-        col: name.to_string(),
+        column: name.to_string(),
     }
 }
 
@@ -98,9 +98,9 @@ impl IntoColRef for Col {
         match self.table {
             Some(table) => ColRef::Qualified {
                 table,
-                col: self.col,
+                col: self.column,
             },
-            None => ColRef::Simple(self.col),
+            None => ColRef::Simple(self.column),
         }
     }
 }

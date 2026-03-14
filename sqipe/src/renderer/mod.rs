@@ -166,8 +166,8 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
     match cond {
         JoinCondition::ColEq { left, right } => {
             let left_str = match &left.table {
-                Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&left.col)),
-                None => (cfg.qi)(&left.col),
+                Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&left.column)),
+                None => (cfg.qi)(&left.column),
             };
             format!("{} = {}", left_str, render_join_col(right, cfg))
         }

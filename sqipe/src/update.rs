@@ -96,7 +96,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
-        self.sets.push(SetClause::Value(col.col, val.into()));
+        self.sets.push(SetClause::Value(col.column, val.into()));
         self
     }
 
