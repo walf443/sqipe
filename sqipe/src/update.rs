@@ -6,24 +6,6 @@ use crate::where_clause::{IntoWhereClause, WhereEntry};
 use crate::renderer::RenderConfig;
 use crate::tree::default_quote_identifier;
 
-/// An UPDATE query builder, generic over the bind value type `V`.
-///
-/// Created via [`Query::update()`] to convert a SELECT query builder into an UPDATE statement.
-///
-/// By default, WHERE clause is required. Calling `to_sql()` or `to_sql_with()` without
-/// any WHERE conditions will panic to prevent accidental full-table updates.
-/// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
-///
-/// ```
-/// use sqipe::{sqipe, col};
-///
-/// let mut u = sqipe("employee").update();
-/// u.set(col("name"), "Alice");
-/// u.and_where(col("id").eq(1));
-/// let (sql, _) = u.to_sql();
-/// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
-/// ```
-
 /// A raw SQL expression for use in SET clauses.
 ///
 /// This type exists to make it explicit that the caller is injecting raw SQL.
@@ -57,6 +39,23 @@ pub enum SetClause<V: Clone> {
     Expr(SetExpression),
 }
 
+/// An UPDATE query builder, generic over the bind value type `V`.
+///
+/// Created via [`Query::update()`] to convert a SELECT query builder into an UPDATE statement.
+///
+/// By default, WHERE clause is required. Calling `to_sql()` or `to_sql_with()` without
+/// any WHERE conditions will panic to prevent accidental full-table updates.
+/// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
+///
+/// ```
+/// use sqipe::{sqipe, col};
+///
+/// let mut u = sqipe("employee").update();
+/// u.set(col("name"), "Alice");
+/// u.and_where(col("id").eq(1));
+/// let (sql, _) = u.to_sql();
+/// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
+/// ```
 #[derive(Debug, Clone)]
 pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table: String,
