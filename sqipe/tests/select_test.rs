@@ -283,7 +283,7 @@ fn test_qualified_col_order_by() {
 fn test_add_select_expr() {
     let mut q = sqipe("users");
     q.select(&["id"]);
-    q.add_select_expr("UPPER(\"name\")", Some("upper_name"));
+    q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
 
     let (sql, _) = q.to_sql();
     assert_eq!(
@@ -295,7 +295,7 @@ fn test_add_select_expr() {
 #[test]
 fn test_add_select_expr_without_alias() {
     let mut q = sqipe("users");
-    q.add_select_expr("COALESCE(\"nickname\", \"name\")", None);
+    q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), None);
 
     let (sql, _) = q.to_sql();
     assert_eq!(sql, r#"SELECT COALESCE("nickname", "name") FROM "users""#);
@@ -305,7 +305,7 @@ fn test_add_select_expr_without_alias() {
 fn test_select_appends() {
     let mut q = sqipe("users");
     q.select(&["id", "name"]);
-    q.add_select_expr("UPPER(\"email\")", Some("upper_email"));
+    q.add_select_expr(RawSql::new("UPPER(\"email\")"), Some("upper_email"));
     q.select(&["age"]);
 
     let (sql, _) = q.to_sql();
@@ -319,7 +319,7 @@ fn test_select_appends() {
 fn test_add_select_expr_preserves_order() {
     let mut q = sqipe("users");
     q.add_select(col("id"));
-    q.add_select_expr("LENGTH(\"name\")", Some("name_len"));
+    q.add_select_expr(RawSql::new("LENGTH(\"name\")"), Some("name_len"));
     q.add_select(col("email"));
 
     let (sql, _) = q.to_sql();

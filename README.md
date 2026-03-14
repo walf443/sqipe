@@ -478,11 +478,11 @@ Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in t
 The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
 
 ```rust
-# use sqipe::{sqipe, col};
+# use sqipe::{sqipe, col, RawSql};
 let mut q = sqipe("users");
 q.add_select(col("id"));
-q.add_select_expr("UPPER(\"name\")", Some("upper_name"));
-q.add_select_expr("COALESCE(\"nickname\", \"name\")", Some("display_name"));
+q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
+q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display_name"));
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
