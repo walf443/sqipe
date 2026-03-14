@@ -177,7 +177,7 @@ macro_rules! impl_col_methods {
 /// A table reference for building qualified column references and join targets.
 #[derive(Debug, Clone)]
 pub struct TableRef {
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) alias: Option<String>,
 }
 
@@ -223,7 +223,7 @@ pub struct QualifiedCol {
 /// A column reference used to build conditions and order-by clauses.
 #[derive(Debug, Clone)]
 pub struct Col {
-    pub(crate) name: String,
+    pub name: String,
 }
 
 /// Create a column reference.
