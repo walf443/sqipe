@@ -287,6 +287,11 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
+    /// Set the select list, replacing any previously added columns or expressions.
+    ///
+    /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
+    /// To append items without clearing, use [`add_select`](Self::add_select) or
+    /// [`add_select_expr`](Self::add_select_expr).
     pub fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self {
         self.selects = cols.iter().map(|c| c.clone().into()).collect();
         self
@@ -313,7 +318,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// The expression is rendered as-is without quoting. Use this for
     /// expressions like `COUNT(*)`, `price * quantity`, etc.
     ///
-    /// # Safety
+    /// # Security
     ///
     /// The `raw` string is embedded directly into the generated SQL **without
     /// escaping or parameterization**. Never pass user-supplied input as `raw`;
