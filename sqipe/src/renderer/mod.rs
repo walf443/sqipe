@@ -179,7 +179,7 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
             parts.join(" AND ")
         }
         JoinCondition::Using(_) => unreachable!("Using is handled in render_joins"),
-        JoinCondition::Expr(raw) => raw.clone(),
+        JoinCondition::Expr(raw) => raw.to_string(),
     }
 }
 

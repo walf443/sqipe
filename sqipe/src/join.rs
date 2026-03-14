@@ -1,4 +1,5 @@
 use crate::column::Col;
+use crate::raw_sql::RawSql;
 
 /// A column reference in a JOIN condition, optionally qualified with a table name.
 /// When `table` is `None`, the table name is inferred from the `join()` / `left_join()` call.
@@ -36,7 +37,7 @@ pub enum JoinCondition {
     And(Vec<JoinCondition>),
     Using(Vec<String>),
     /// Raw SQL expression for arbitrary ON conditions (e.g., `"a.text LIKE b.pattern"`).
-    Expr(String),
+    Expr(RawSql),
 }
 
 /// Create a USING join condition with a single column.
@@ -56,13 +57,13 @@ pub fn using_cols(cols: &[&str]) -> JoinCondition {
 /// injection vulnerability.
 ///
 /// ```
-/// use sqipe::{sqipe, join};
+/// use sqipe::{sqipe, join, RawSql};
 ///
 /// let mut q = sqipe("texts");
-/// q.join("patterns", join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#));
+/// q.join("patterns", join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)));
 /// ```
-pub fn on_expr(raw: &str) -> JoinCondition {
-    JoinCondition::Expr(raw.to_string())
+pub fn on_expr(raw: RawSql) -> JoinCondition {
+    JoinCondition::Expr(raw)
 }
 
 /// JOIN type.

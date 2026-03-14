@@ -353,7 +353,7 @@ fn test_join_condition_expr_standard() {
     let mut q = sqipe("texts");
     q.join(
         "patterns",
-        join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+        join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)),
     );
     q.select(&["id", "text"]);
 
@@ -369,7 +369,7 @@ fn test_join_condition_expr_pipe() {
     let mut q = sqipe("texts");
     q.join(
         "patterns",
-        join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+        join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)),
     );
     q.select(&["id", "text"]);
 
@@ -409,7 +409,7 @@ fn test_join_condition_expr_inside_and() {
         "patterns",
         JoinCondition::And(vec![
             table("texts").col("category").eq_col("category"),
-            join::on_expr(r#""texts"."text" LIKE "patterns"."pattern""#),
+            join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)),
         ]),
     );
     q.select(&["id", "text"]);
