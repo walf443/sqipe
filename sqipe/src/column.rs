@@ -1,5 +1,6 @@
 use crate::join::{JoinCol, JoinCondition};
 use crate::like::LikeExpression;
+use crate::raw_sql::RawSql;
 use crate::value::Op;
 use crate::where_clause::{IntoIncluded, IntoRangeClause, WhereClause};
 
@@ -10,9 +11,11 @@ pub enum SortDir {
 }
 
 #[derive(Debug, Clone)]
-pub struct OrderByClause {
-    pub col: Col,
-    pub dir: SortDir,
+pub enum OrderByClause {
+    /// A column reference with a sort direction.
+    Col { col: Col, dir: SortDir },
+    /// A raw SQL expression rendered as-is (e.g., `"RAND()"`, `"id DESC NULLS FIRST"`).
+    Expr(RawSql),
 }
 
 /// Backwards-compatible alias — `ColRef` is now just `Col`.
@@ -223,14 +226,14 @@ impl Col {
     }
 
     pub fn asc(self) -> OrderByClause {
-        OrderByClause {
+        OrderByClause::Col {
             col: self,
             dir: SortDir::Asc,
         }
     }
 
     pub fn desc(self) -> OrderByClause {
-        OrderByClause {
+        OrderByClause::Col {
             col: self,
             dir: SortDir::Desc,
         }

@@ -232,6 +232,35 @@ let (sql, binds) = q.to_pipe_sql();
 assert_eq!(sql, "FROM \"employee\" |> SELECT \"id\", \"name\", \"age\" |> ORDER BY \"name\" ASC, \"age\" DESC");
 ```
 
+### Order By with raw SQL expression
+
+Use `order_by_expr` to sort by a raw SQL expression (e.g., `RAND()`, `FIELD(...)`, `id DESC NULLS FIRST`).
+The expression is rendered as-is, so the caller is responsible for including the sort direction if needed.
+[`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
+
+```rust
+# use sqipe::{sqipe, col, RawSql};
+let mut q = sqipe("users");
+q.select(&["id", "name"]);
+q.order_by_expr(RawSql::new("RAND()"));
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
+```
+
+Column-based and expression-based ORDER BY can be mixed:
+
+```rust
+# use sqipe::{sqipe, col, RawSql};
+let mut q = sqipe("users");
+q.select(&["id", "name"]);
+q.order_by(col("name").asc());
+q.order_by_expr(RawSql::new("RAND()"));
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
+```
+
 ### Limit / Offset
 
 ```rust

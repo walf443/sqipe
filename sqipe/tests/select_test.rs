@@ -330,6 +330,52 @@ fn test_add_select_expr_preserves_order() {
 }
 
 #[test]
+fn test_order_by_expr() {
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.order_by_expr(RawSql::new("RAND()"));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#
+    );
+
+    let (sql, _) = q.to_pipe_sql();
+    assert_eq!(
+        sql,
+        r#"FROM "users" |> SELECT "id", "name" |> ORDER BY RAND()"#
+    );
+}
+
+#[test]
+fn test_order_by_expr_with_direction() {
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.order_by_expr(RawSql::new("id DESC NULLS FIRST"));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" ORDER BY id DESC NULLS FIRST"#
+    );
+}
+
+#[test]
+fn test_order_by_mixed_col_and_expr() {
+    let mut q = sqipe("users");
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    q.order_by_expr(RawSql::new("RAND()"));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#
+    );
+}
+
+#[test]
 fn test_for_update_with_order_by_and_limit_pipe() {
     let mut q = sqipe("users");
     q.select(&["id", "name"]);

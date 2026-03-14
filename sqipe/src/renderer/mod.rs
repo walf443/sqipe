@@ -474,12 +474,15 @@ fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<St
     }
     let clauses: Vec<String> = order_bys
         .iter()
-        .map(|o| {
-            let dir = match o.dir {
-                SortDir::Asc => "ASC",
-                SortDir::Desc => "DESC",
-            };
-            format!("{} {}", render_col_ref(&o.col, cfg), dir)
+        .map(|o| match o {
+            OrderByClause::Col { col, dir } => {
+                let dir_str = match dir {
+                    SortDir::Asc => "ASC",
+                    SortDir::Desc => "DESC",
+                };
+                format!("{} {}", render_col_ref(col, cfg), dir_str)
+            }
+            OrderByClause::Expr(raw) => raw.as_str().to_string(),
         })
         .collect();
     Some(format!("ORDER BY {}", clauses.join(", ")))

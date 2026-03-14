@@ -101,6 +101,12 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
         self
     }
 
+    /// Add a raw SQL expression to the ORDER BY clause (MySQL extension).
+    pub fn order_by_expr(&mut self, raw: sqipe::RawSql) -> &mut Self {
+        self.order_bys.push(sqipe::OrderByClause::Expr(raw));
+        self
+    }
+
     /// Set the LIMIT value (MySQL extension).
     pub fn limit(&mut self, n: u64) -> &mut Self {
         self.limit_val = Some(n);
@@ -159,6 +165,12 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     /// Add an ORDER BY clause (MySQL extension).
     pub fn order_by(&mut self, clause: sqipe::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
+        self
+    }
+
+    /// Add a raw SQL expression to the ORDER BY clause (MySQL extension).
+    pub fn order_by_expr(&mut self, raw: sqipe::RawSql) -> &mut Self {
+        self.order_bys.push(sqipe::OrderByClause::Expr(raw));
         self
     }
 
@@ -492,6 +504,11 @@ impl<V: Clone + std::fmt::Debug> sqipe::UnionQueryOps<V> for MysqlUnionQuery<V> 
 
     fn order_by(&mut self, clause: sqipe::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
+        self
+    }
+
+    fn order_by_expr(&mut self, raw: sqipe::RawSql) -> &mut Self {
+        self.order_bys.push(sqipe::OrderByClause::Expr(raw));
         self
     }
 

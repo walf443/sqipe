@@ -8,6 +8,7 @@ pub mod delete;
 pub mod join;
 pub mod like;
 pub mod query;
+pub mod raw_sql;
 pub mod renderer;
 pub mod tree;
 pub mod update;
@@ -37,6 +38,7 @@ pub use aggregate::AggregateExpr;
 )]
 pub use column::QualifiedCol;
 pub use column::{Col, ColRef, OrderByClause, SelectItem, SortDir, TableRef, col, table};
+pub use raw_sql::RawSql;
 pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;

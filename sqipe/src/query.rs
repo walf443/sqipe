@@ -31,6 +31,7 @@ pub trait UnionQueryOps<V: Clone + std::fmt::Debug = Value>: AsUnionParts {
     fn union<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
     fn union_all<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
     fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
+    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self;
     fn limit(&mut self, n: u64) -> &mut Self;
     fn offset(&mut self, n: u64) -> &mut Self;
     fn to_sql(&self) -> (String, Vec<V>);
@@ -521,6 +522,26 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
+    /// Append a raw SQL expression to the ORDER BY clause.
+    ///
+    /// The expression is rendered as-is without quoting. Use this for
+    /// expressions like `RAND()`, `id DESC NULLS FIRST`, etc.
+    ///
+    /// ```
+    /// use sqipe::{sqipe, RawSql};
+    ///
+    /// let mut q = sqipe("users");
+    /// q.select(&["id", "name"]);
+    /// q.order_by_expr(RawSql::new("RAND()"));
+    ///
+    /// let (sql, _) = q.to_sql();
+    /// assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
+    /// ```
+    pub fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
+        self.order_bys.push(OrderByClause::Expr(raw));
+        self
+    }
+
     pub fn limit(&mut self, n: u64) -> &mut Self {
         self.limit_val = Some(n);
         self
@@ -667,6 +688,11 @@ impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
 
     fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
+        self
+    }
+
+    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
+        self.order_bys.push(OrderByClause::Expr(raw));
         self
     }
 
