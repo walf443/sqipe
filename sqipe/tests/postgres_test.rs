@@ -2,6 +2,7 @@
 
 use postgres::{Client, NoTls, types::ToSql};
 use sqipe::{Dialect, LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
@@ -66,20 +67,50 @@ fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
         .collect()
 }
 
-/// Start a Postgres container (async), then connect with sync Client on a
-/// separate thread (postgres crate uses internal block_on, which conflicts
-/// with tokio runtime).
-async fn setup_container() -> (testcontainers::ContainerAsync<Postgres>, Client) {
-    let container = Postgres::default().start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(5432).await.unwrap();
+struct SharedContainer {
+    _container: testcontainers::ContainerAsync<Postgres>,
+    host_port: u16,
+}
 
-    let conn_str = format!(
-        "host=127.0.0.1 port={} user=postgres password=postgres dbname=postgres",
-        host_port
-    );
+static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
+    tokio::sync::OnceCell::const_new();
+static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+async fn get_shared_container() -> &'static SharedContainer {
+    SHARED_CONTAINER
+        .get_or_init(|| async {
+            let container = Postgres::default().start().await.unwrap();
+            let host_port = container.get_host_port_ipv4(5432).await.unwrap();
+            SharedContainer {
+                _container: container,
+                host_port,
+            }
+        })
+        .await
+}
+
+/// Get a sync Client connected to a fresh per-test database.
+async fn setup_client() -> Client {
+    let shared = get_shared_container().await;
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
+    let db_name = format!("test_{}", db_id);
+    let host_port = shared.host_port;
 
     // postgres::Client::connect internally calls block_on, so run it outside tokio.
-    let client = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
+        let admin_conn_str = format!(
+            "host=127.0.0.1 port={} user=postgres password=postgres dbname=postgres",
+            host_port
+        );
+        let mut admin_client = Client::connect(&admin_conn_str, NoTls).unwrap();
+        admin_client
+            .execute(&format!("CREATE DATABASE \"{}\"", db_name), &[])
+            .unwrap();
+
+        let conn_str = format!(
+            "host=127.0.0.1 port={} user=postgres password=postgres dbname={}",
+            host_port, db_name
+        );
         let mut client = Client::connect(&conn_str, NoTls).unwrap();
         client
             .batch_execute(
@@ -101,16 +132,14 @@ async fn setup_container() -> (testcontainers::ContainerAsync<Postgres>, Client)
         client
     })
     .await
-    .unwrap();
-
-    (container, client)
+    .unwrap()
 }
 
 macro_rules! pg_test {
     ($name:ident, |$client:ident| $body:block) => {
         #[tokio::test]
         async fn $name() {
-            let (_container, mut client) = setup_container().await;
+            let mut client = setup_client().await;
             tokio::task::spawn_blocking(move || {
                 let $client = &mut client;
                 $body

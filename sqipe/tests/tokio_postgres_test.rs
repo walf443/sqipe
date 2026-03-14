@@ -1,6 +1,7 @@
 #![cfg(feature = "test-tokio-postgres")]
 
 use sqipe::{Dialect, LikeExpression, col, sqipe_from_subquery_with, sqipe_with, table};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
@@ -67,19 +68,55 @@ fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
         .collect()
 }
 
-async fn setup_container() -> (
-    testcontainers::ContainerAsync<Postgres>,
-    tokio_postgres::Client,
-) {
-    let container = Postgres::default().start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(5432).await.unwrap();
+struct SharedContainer {
+    _container: testcontainers::ContainerAsync<Postgres>,
+    host_port: u16,
+}
 
+static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
+    tokio::sync::OnceCell::const_new();
+static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+async fn get_shared_container() -> &'static SharedContainer {
+    SHARED_CONTAINER
+        .get_or_init(|| async {
+            let container = Postgres::default().start().await.unwrap();
+            let host_port = container.get_host_port_ipv4(5432).await.unwrap();
+            SharedContainer {
+                _container: container,
+                host_port,
+            }
+        })
+        .await
+}
+
+async fn setup_client() -> tokio_postgres::Client {
+    let shared = get_shared_container().await;
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
+    let db_name = format!("test_{}", db_id);
+
+    // Connect to default database to create test database
     let conn_str = format!(
         "host=127.0.0.1 port={} user=postgres password=postgres dbname=postgres",
-        host_port
+        shared.host_port
+    );
+    let (admin_client, connection) = tokio_postgres::connect(&conn_str, NoTls).await.unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    admin_client
+        .execute(&format!("CREATE DATABASE \"{}\"", db_name), &[])
+        .await
+        .unwrap();
+
+    // Connect to the new database
+    let conn_str = format!(
+        "host=127.0.0.1 port={} user=postgres password=postgres dbname={}",
+        shared.host_port, db_name
     );
     let (client, connection) = tokio_postgres::connect(&conn_str, NoTls).await.unwrap();
-
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -105,12 +142,12 @@ async fn setup_container() -> (
         .await
         .unwrap();
 
-    (container, client)
+    client
 }
 
 #[tokio::test]
 async fn test_basic_select() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -123,7 +160,7 @@ async fn test_basic_select() {
 
 #[tokio::test]
 async fn test_where_condition() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(("name", "Alice"));
@@ -141,7 +178,7 @@ async fn test_where_condition() {
 
 #[tokio::test]
 async fn test_order_by_and_limit() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -157,7 +194,7 @@ async fn test_order_by_and_limit() {
 
 #[tokio::test]
 async fn test_join() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.join("orders", table("users").col("id").eq_col("user_id"));
@@ -175,7 +212,7 @@ async fn test_join() {
 
 #[tokio::test]
 async fn test_join_with_alias() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.as_("u");
@@ -199,7 +236,7 @@ async fn test_join_with_alias() {
 
 #[tokio::test]
 async fn test_left_join() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.as_("u");
@@ -217,7 +254,7 @@ async fn test_left_join() {
 
 #[tokio::test]
 async fn test_between() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("age").between(25, 30));
@@ -236,7 +273,7 @@ async fn test_between() {
 
 #[tokio::test]
 async fn test_aggregate_count() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("orders");
     q.aggregate(&[sqipe::aggregate::count_all().as_("cnt")]);
@@ -250,7 +287,7 @@ async fn test_aggregate_count() {
 
 #[tokio::test]
 async fn test_union() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q1 = sqipe_with::<PgValue>("users");
     q1.and_where(col("age").gt(30));
@@ -272,7 +309,7 @@ async fn test_union() {
 
 #[tokio::test]
 async fn test_in_subquery() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id"]);
@@ -295,7 +332,7 @@ async fn test_in_subquery() {
 
 #[tokio::test]
 async fn test_in_subquery_with_outer_binds() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id"]);
@@ -319,7 +356,7 @@ async fn test_in_subquery_with_outer_binds() {
 
 #[tokio::test]
 async fn test_not_in_subquery() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id"]);
@@ -342,7 +379,7 @@ async fn test_not_in_subquery() {
 
 #[tokio::test]
 async fn test_cte_where_then_join() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("age").gt(26));
@@ -364,7 +401,7 @@ async fn test_cte_where_then_join() {
 
 #[tokio::test]
 async fn test_cte_where_join_then_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("age").gt(26));
@@ -388,7 +425,7 @@ async fn test_cte_where_join_then_where() {
 
 #[tokio::test]
 async fn test_from_subquery() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id", "total"]);
@@ -410,7 +447,7 @@ async fn test_from_subquery() {
 
 #[tokio::test]
 async fn test_from_subquery_with_outer_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut sub = sqipe_with::<PgValue>("orders");
     sub.select(&["user_id", "total"]);
@@ -432,7 +469,7 @@ async fn test_from_subquery_with_outer_where() {
 
 #[tokio::test]
 async fn test_like_contains() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").like(LikeExpression::contains("li")));
@@ -451,7 +488,7 @@ async fn test_like_contains() {
 
 #[tokio::test]
 async fn test_like_starts_with() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").like(LikeExpression::starts_with("Al")));
@@ -468,7 +505,7 @@ async fn test_like_starts_with() {
 
 #[tokio::test]
 async fn test_like_ends_with() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").like(LikeExpression::ends_with("ob")));
@@ -485,7 +522,7 @@ async fn test_like_ends_with() {
 
 #[tokio::test]
 async fn test_not_like() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").not_like(LikeExpression::contains("li")));
@@ -502,7 +539,7 @@ async fn test_not_like() {
 
 #[tokio::test]
 async fn test_for_update() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -522,7 +559,7 @@ async fn test_for_update() {
 
 #[tokio::test]
 async fn test_for_update_with_option() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -542,7 +579,7 @@ async fn test_for_update_with_option() {
 
 #[tokio::test]
 async fn test_for_with_share() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -562,7 +599,7 @@ async fn test_for_with_share() {
 
 #[tokio::test]
 async fn test_for_with_no_key_update() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -582,7 +619,7 @@ async fn test_for_with_no_key_update() {
 
 #[tokio::test]
 async fn test_for_update_skip_locked() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.select(&["id", "name"]);
@@ -597,7 +634,7 @@ async fn test_for_update_skip_locked() {
 
 #[tokio::test]
 async fn test_like_custom_escape_char() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
@@ -616,7 +653,7 @@ async fn test_like_custom_escape_char() {
 
 #[tokio::test]
 async fn test_update_basic() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut u = sqipe_with::<PgValue>("users").update();
     u.set(col("name"), "Alicia");
@@ -636,7 +673,7 @@ async fn test_update_basic() {
 
 #[tokio::test]
 async fn test_update_multiple_sets() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut u = sqipe_with::<PgValue>("users").update();
     u.set(col("name"), "Alicia");
@@ -658,7 +695,7 @@ async fn test_update_multiple_sets() {
 
 #[tokio::test]
 async fn test_update_from_query_with_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("id").eq(2));
@@ -679,7 +716,7 @@ async fn test_update_from_query_with_where() {
 
 #[tokio::test]
 async fn test_update_allow_without_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut u = sqipe_with::<PgValue>("users").update();
     u.set(col("age"), 99);
@@ -696,7 +733,7 @@ async fn test_update_allow_without_where() {
 
 #[tokio::test]
 async fn test_delete_basic() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut d = sqipe_with::<PgValue>("users").delete();
     d.and_where(col("id").eq(1));
@@ -713,7 +750,7 @@ async fn test_delete_basic() {
 
 #[tokio::test]
 async fn test_delete_from_query_with_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut q = sqipe_with::<PgValue>("users");
     q.and_where(col("age").lt(30));
@@ -735,7 +772,7 @@ async fn test_delete_from_query_with_where() {
 
 #[tokio::test]
 async fn test_delete_allow_without_where() {
-    let (_container, client) = setup_container().await;
+    let client = setup_client().await;
 
     let mut d = sqipe_with::<PgValue>("users").delete();
     d.allow_without_where();

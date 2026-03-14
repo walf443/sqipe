@@ -3,6 +3,7 @@
 use sqipe::{LikeExpression, col, table};
 use sqipe_mysql::sqipe_with;
 use sqlx::{MySqlPool, Row};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
@@ -45,11 +46,42 @@ impl From<String> for MysqlValue {
     }
 }
 
-async fn setup_container() -> (testcontainers::ContainerAsync<Mysql>, MySqlPool) {
-    let container = Mysql::default().start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(3306).await.unwrap();
+struct SharedContainer {
+    _container: testcontainers::ContainerAsync<Mysql>,
+    host_port: u16,
+}
 
-    let url = format!("mysql://root@127.0.0.1:{}/test", host_port);
+static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
+    tokio::sync::OnceCell::const_new();
+static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+async fn get_shared_container() -> &'static SharedContainer {
+    SHARED_CONTAINER
+        .get_or_init(|| async {
+            let container = Mysql::default().start().await.unwrap();
+            let host_port = container.get_host_port_ipv4(3306).await.unwrap();
+            SharedContainer {
+                _container: container,
+                host_port,
+            }
+        })
+        .await
+}
+
+async fn setup_pool() -> MySqlPool {
+    let shared = get_shared_container().await;
+    let db_id = DB_COUNTER.fetch_add(1, Relaxed);
+    let db_name = format!("test_{}", db_id);
+
+    let root_url = format!("mysql://root@127.0.0.1:{}", shared.host_port);
+    let root_pool = MySqlPool::connect(&root_url).await.unwrap();
+
+    sqlx::query(&format!("CREATE DATABASE `{}`", db_name))
+        .execute(&root_pool)
+        .await
+        .unwrap();
+
+    let url = format!("mysql://root@127.0.0.1:{}/{}", shared.host_port, db_name);
     let pool = MySqlPool::connect(&url).await.unwrap();
 
     sqlx::query(
@@ -85,7 +117,7 @@ async fn setup_container() -> (testcontainers::ContainerAsync<Mysql>, MySqlPool)
         .await
         .unwrap();
 
-    (container, pool)
+    pool
 }
 
 fn bind_params<'a>(
@@ -105,7 +137,7 @@ fn bind_params<'a>(
 
 #[tokio::test]
 async fn test_basic_select() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -118,7 +150,7 @@ async fn test_basic_select() {
 
 #[tokio::test]
 async fn test_where_condition() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(("name", "Alice"));
@@ -137,7 +169,7 @@ async fn test_where_condition() {
 
 #[tokio::test]
 async fn test_order_by_and_limit() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -153,7 +185,7 @@ async fn test_order_by_and_limit() {
 
 #[tokio::test]
 async fn test_join() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.join("orders", table("users").col("id").eq_col("user_id"));
@@ -172,7 +204,7 @@ async fn test_join() {
 
 #[tokio::test]
 async fn test_join_with_alias() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.as_("u");
@@ -197,7 +229,7 @@ async fn test_join_with_alias() {
 
 #[tokio::test]
 async fn test_left_join() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.as_("u");
@@ -215,7 +247,7 @@ async fn test_left_join() {
 
 #[tokio::test]
 async fn test_straight_join() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.straight_join("orders", table("users").col("id").eq_col("user_id"));
@@ -229,7 +261,7 @@ async fn test_straight_join() {
 
 #[tokio::test]
 async fn test_force_index() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     // Create an index to reference
     sqlx::query("CREATE INDEX idx_name ON users (name)")
@@ -254,7 +286,7 @@ async fn test_force_index() {
 
 #[tokio::test]
 async fn test_between() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("age").between(25, 30));
@@ -274,7 +306,7 @@ async fn test_between() {
 
 #[tokio::test]
 async fn test_aggregate_count() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("orders");
     q.aggregate(&[sqipe::aggregate::count_all().as_("cnt")]);
@@ -288,7 +320,7 @@ async fn test_aggregate_count() {
 
 #[tokio::test]
 async fn test_union() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     use sqipe::UnionQueryOps;
 
@@ -313,7 +345,7 @@ async fn test_union() {
 
 #[tokio::test]
 async fn test_in_subquery() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut sub = sqipe_with::<MysqlValue>("orders");
     sub.select(&["user_id"]);
@@ -336,7 +368,7 @@ async fn test_in_subquery() {
 
 #[tokio::test]
 async fn test_in_subquery_with_outer_binds() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut sub = sqipe_with::<MysqlValue>("orders");
     sub.select(&["user_id"]);
@@ -360,7 +392,7 @@ async fn test_in_subquery_with_outer_binds() {
 
 #[tokio::test]
 async fn test_not_in_subquery() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut sub = sqipe_with::<MysqlValue>("orders");
     sub.select(&["user_id"]);
@@ -383,7 +415,7 @@ async fn test_not_in_subquery() {
 
 #[tokio::test]
 async fn test_from_subquery() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     // Use MysqlQuery as subquery source via IntoSelectTree
     let mut sub = sqipe_with::<MysqlValue>("orders");
@@ -406,7 +438,7 @@ async fn test_from_subquery() {
 
 #[tokio::test]
 async fn test_from_subquery_with_outer_where() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     // Use MysqlQuery as subquery source via IntoSelectTree
     let mut sub = sqipe_with::<MysqlValue>("orders");
@@ -429,7 +461,7 @@ async fn test_from_subquery_with_outer_where() {
 
 #[tokio::test]
 async fn test_like_contains() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("name").like(LikeExpression::contains("li")));
@@ -448,7 +480,7 @@ async fn test_like_contains() {
 
 #[tokio::test]
 async fn test_like_starts_with() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("name").like(LikeExpression::starts_with("Al")));
@@ -465,7 +497,7 @@ async fn test_like_starts_with() {
 
 #[tokio::test]
 async fn test_like_ends_with() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("name").like(LikeExpression::ends_with("ob")));
@@ -482,7 +514,7 @@ async fn test_like_ends_with() {
 
 #[tokio::test]
 async fn test_not_like() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("name").not_like(LikeExpression::contains("li")));
@@ -499,7 +531,7 @@ async fn test_not_like() {
 
 #[tokio::test]
 async fn test_for_update() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -519,7 +551,7 @@ async fn test_for_update() {
 
 #[tokio::test]
 async fn test_for_update_with_nowait() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -539,7 +571,7 @@ async fn test_for_update_with_nowait() {
 
 #[tokio::test]
 async fn test_for_update_skip_locked() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -554,7 +586,7 @@ async fn test_for_update_skip_locked() {
 
 #[tokio::test]
 async fn test_for_with_share() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.select(&["id", "name"]);
@@ -574,7 +606,7 @@ async fn test_for_with_share() {
 
 #[tokio::test]
 async fn test_like_custom_escape_char() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "li")));
@@ -593,7 +625,7 @@ async fn test_like_custom_escape_char() {
 
 #[tokio::test]
 async fn test_update_basic() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
     u.set(col("name"), "Alicia");
@@ -614,7 +646,7 @@ async fn test_update_basic() {
 
 #[tokio::test]
 async fn test_update_multiple_sets() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
     u.set(col("name"), "Alicia");
@@ -637,7 +669,7 @@ async fn test_update_multiple_sets() {
 
 #[tokio::test]
 async fn test_update_from_query_with_where() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("id").eq(2));
@@ -659,7 +691,7 @@ async fn test_update_from_query_with_where() {
 
 #[tokio::test]
 async fn test_update_allow_without_where() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut u = sqipe_with::<MysqlValue>("users").update();
     u.set(col("age"), 99);
@@ -680,7 +712,7 @@ async fn test_update_allow_without_where() {
 
 #[tokio::test]
 async fn test_delete_basic() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut d = sqipe_with::<MysqlValue>("users").delete();
     d.and_where(col("id").eq(1));
@@ -702,7 +734,7 @@ async fn test_delete_basic() {
 
 #[tokio::test]
 async fn test_delete_from_query_with_where() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut q = sqipe_with::<MysqlValue>("users");
     q.and_where(col("age").lt(30));
@@ -726,7 +758,7 @@ async fn test_delete_from_query_with_where() {
 
 #[tokio::test]
 async fn test_delete_allow_without_where() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     let mut d = sqipe_with::<MysqlValue>("users").delete();
     d.allow_without_where();
@@ -746,7 +778,7 @@ async fn test_delete_allow_without_where() {
 
 #[tokio::test]
 async fn test_delete_with_order_by_and_limit() {
-    let (_container, pool) = setup_container().await;
+    let pool = setup_pool().await;
 
     // Delete the oldest user only
     let mut d = sqipe_with::<MysqlValue>("users").delete();
