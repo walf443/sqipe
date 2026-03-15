@@ -1152,4 +1152,130 @@ mod tests {
             "SELECT `id`, `name` FROM `users` STRAIGHT_JOIN (SELECT `user_id`, `total` FROM `orders`) AS `o` ON `users`.`id` = `o`.`user_id`"
         );
     }
+
+    #[test]
+    fn test_intersect() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let q = q1.intersect(&q2);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` INTERSECT SELECT `dept` FROM `contractor`"
+        );
+    }
+
+    #[test]
+    fn test_intersect_all() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let q = q1.intersect_all(&q2);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` INTERSECT ALL SELECT `dept` FROM `contractor`"
+        );
+    }
+
+    #[test]
+    fn test_except() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let q = q1.except(&q2);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` EXCEPT SELECT `dept` FROM `contractor`"
+        );
+    }
+
+    #[test]
+    fn test_except_all() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let q = q1.except_all(&q2);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` EXCEPT ALL SELECT `dept` FROM `contractor`"
+        );
+    }
+
+    #[test]
+    fn test_intersect_with_order_by_and_limit() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let mut q = q1.intersect(&q2);
+        q.order_by(col("dept").asc());
+        q.limit(5);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` INTERSECT SELECT `dept` FROM `contractor` ORDER BY `dept` ASC LIMIT 5"
+        );
+    }
+
+    #[test]
+    fn test_except_with_order_by_and_limit() {
+        let mut q1 = qbey("employee");
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.select(&["dept"]);
+
+        let mut q = q1.except(&q2);
+        q.order_by(col("dept").desc());
+        q.limit(3);
+        q.offset(1);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` EXCEPT SELECT `dept` FROM `contractor` ORDER BY `dept` DESC LIMIT 3 OFFSET 1"
+        );
+    }
+
+    #[test]
+    fn test_intersect_with_force_index() {
+        let mut q1 = qbey("employee");
+        q1.force_index(&["idx_dept"]);
+        q1.select(&["dept"]);
+
+        let mut q2 = qbey("contractor");
+        q2.force_index(&["idx_dept"]);
+        q2.select(&["dept"]);
+
+        let q = q1.intersect(&q2);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `dept` FROM `employee` FORCE INDEX (idx_dept) INTERSECT SELECT `dept` FROM `contractor` FORCE INDEX (idx_dept)"
+        );
+    }
 }
