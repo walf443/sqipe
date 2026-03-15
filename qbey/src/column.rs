@@ -170,7 +170,7 @@ impl Col {
 
     /// Generate an `IN (...)` condition.
     ///
-    /// Accepts a slice of values or a `&Query` for subqueries:
+    /// Accepts a slice of values or a `&SelectQuery` for subqueries:
     /// - `col("id").included(&[1, 2, 3])` → `"id" IN (?, ?, ?)`
     /// - `col("id").included(sub_query)` → `"id" IN (SELECT ...)`
     ///
@@ -183,7 +183,7 @@ impl Col {
 
     /// Generate a `NOT IN (...)` condition.
     ///
-    /// Accepts a slice of values or a `Query` for subqueries:
+    /// Accepts a slice of values or a `SelectQuery` for subqueries:
     /// - `col("id").not_included(&[1, 2, 3])` → `"id" NOT IN (?, ?, ?)`
     /// - `col("id").not_included(sub_query)` → `"id" NOT IN (SELECT ...)`
     ///
@@ -259,7 +259,7 @@ pub enum SelectItem {
     /// A raw SQL expression (e.g., `"COUNT(*)"`, `"price * quantity"`).
     ///
     /// **Warning:** `raw` is embedded into SQL without escaping.
-    /// Never pass user-supplied input — see [`Query::add_select_expr`](crate::Query::add_select_expr).
+    /// Never pass user-supplied input — see [`SelectQuery::add_select_expr`](crate::SelectQuery::add_select_expr).
     Expr {
         raw: crate::raw_sql::RawSql,
         alias: Option<String>,

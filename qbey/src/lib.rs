@@ -35,7 +35,7 @@ pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
-    IntoFromTable, IntoJoinTable, IntoSelectTree, Query, SetOp, qbey, qbey_from_subquery,
+    IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SetOp, qbey, qbey_from_subquery,
     qbey_from_subquery_with, qbey_with,
 };
 pub use raw_sql::RawSql;

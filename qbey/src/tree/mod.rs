@@ -104,10 +104,10 @@ impl<V: Clone> SelectTree<V> {
     }
 }
 
-// ── Build tree from Query ──
+// ── Build tree from SelectQuery ──
 
 impl<V: Clone + std::fmt::Debug> SelectTree<V> {
-    pub fn from_query(query: &crate::Query<V>) -> Self {
+    pub fn from_query(query: &crate::SelectQuery<V>) -> Self {
         let select = SelectClause::Columns(query.selects.clone());
 
         let source = match &query.from_subquery {
@@ -146,8 +146,8 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
         }
     }
 
-    /// Convert a Query into a SelectTree by moving fields instead of cloning.
-    pub fn from_query_owned(query: crate::Query<V>) -> Self {
+    /// Convert a SelectQuery into a SelectTree by moving fields instead of cloning.
+    pub fn from_query_owned(query: crate::SelectQuery<V>) -> Self {
         let select = SelectClause::Columns(query.selects);
 
         let source = match query.from_subquery {

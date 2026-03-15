@@ -278,7 +278,7 @@ impl<V: Clone> IntoRangeClause<V> for RangeToInclusive<V> {
 
 /// Trait for types that can be used as a source for `included` (IN clause).
 ///
-/// Implemented for slices (value list) and `Query` (subquery).
+/// Implemented for slices (value list) and `SelectQuery` (subquery).
 pub trait IntoIncluded<V: Clone> {
     fn into_in_clause(self, col: Col) -> WhereClause<V>;
     fn into_not_in_clause(self, col: Col) -> WhereClause<V>;

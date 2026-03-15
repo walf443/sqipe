@@ -18,7 +18,7 @@ pub enum SetClause<V: Clone> {
 
 /// An UPDATE query builder, generic over the bind value type `V`.
 ///
-/// Created via [`Query::into_update()`] to convert a SELECT query builder into an UPDATE statement.
+/// Created via [`SelectQuery::into_update()`] to convert a SELECT query builder into an UPDATE statement.
 ///
 /// By default, WHERE clause is required. Calling `to_sql()` or `to_sql_with()` without
 /// any WHERE conditions will panic to prevent accidental full-table updates.

@@ -61,14 +61,14 @@ impl<T: IntoFromTable> IntoJoinTable for T {
     }
 }
 
-/// The query builder, generic over the bind value type `V`.
+/// The SELECT query builder, generic over the bind value type `V`.
 ///
 /// Supports both simple SELECT queries and compound queries with set operations
 /// (UNION, INTERSECT, EXCEPT). When `set_operations` is non-empty, all parts
 /// are stored there and `order_bys`/`limit_val`/`offset_val` apply to the
 /// entire compound result.
 #[derive(Debug, Clone)]
-pub struct Query<V: Clone + std::fmt::Debug = Value> {
+pub struct SelectQuery<V: Clone + std::fmt::Debug = Value> {
     /// Table name for table-based queries. Empty when using `from_subquery` or set operations.
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
@@ -89,7 +89,7 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
     /// When non-empty, this query is a compound query (UNION, INTERSECT, EXCEPT).
     /// All parts are stored here; the outer `order_bys`/`limit_val`/`offset_val`
     /// apply to the entire compound result.
-    pub(crate) set_operations: Vec<(SetOp, Query<V>)>,
+    pub(crate) set_operations: Vec<(SetOp, SelectQuery<V>)>,
 }
 
 /// Create a new query builder for the given table.
@@ -109,36 +109,36 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
 /// let (sql, _) = q.to_sql();
 /// assert_eq!(sql, r#"SELECT * FROM "users" AS "u""#);
 /// ```
-pub fn qbey(table: impl IntoFromTable) -> Query<Value> {
-    Query::new(table)
+pub fn qbey(table: impl IntoFromTable) -> SelectQuery<Value> {
+    SelectQuery::new(table)
 }
 
 /// Create a new query builder with a custom value type.
-pub fn qbey_with<V: Clone + std::fmt::Debug>(table: impl IntoFromTable) -> Query<V> {
-    Query::new(table)
+pub fn qbey_with<V: Clone + std::fmt::Debug>(table: impl IntoFromTable) -> SelectQuery<V> {
+    SelectQuery::new(table)
 }
 
 /// Create a query that selects from a subquery instead of a table.
-pub fn qbey_from_subquery(sub: impl IntoSelectTree<Value>, alias: &str) -> Query<Value> {
-    Query::from_subquery(sub, alias)
+pub fn qbey_from_subquery(sub: impl IntoSelectTree<Value>, alias: &str) -> SelectQuery<Value> {
+    SelectQuery::from_subquery(sub, alias)
 }
 
 /// Create a query that selects from a subquery with a custom value type.
 pub fn qbey_from_subquery_with<V: Clone + std::fmt::Debug>(
     sub: impl IntoSelectTree<V>,
     alias: &str,
-) -> Query<V> {
-    Query::from_subquery(sub, alias)
+) -> SelectQuery<V> {
+    SelectQuery::from_subquery(sub, alias)
 }
 
-impl<V: Clone + std::fmt::Debug> IntoSelectTree<V> for Query<V> {
+impl<V: Clone + std::fmt::Debug> IntoSelectTree<V> for SelectQuery<V> {
     fn into_select_tree(self) -> crate::tree::SelectTree<V> {
         crate::tree::SelectTree::from_query_owned(self)
     }
 }
 
-/// `Debug` bound comes from `Query<V>` requiring `V: Debug`, not from this impl itself.
-impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for Query<V> {
+/// `Debug` bound comes from `SelectQuery<V>` requiring `V: Debug`, not from this impl itself.
+impl<V: Clone + std::fmt::Debug> IntoIncluded<V> for SelectQuery<V> {
     fn into_in_clause(self, col: Col) -> WhereClause<V> {
         WhereClause::InSubQuery {
             col,
@@ -170,10 +170,10 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> Query<V> {
+impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     pub fn new(table: impl IntoFromTable) -> Self {
         let (name, alias) = table.into_from_table();
-        Query {
+        SelectQuery {
             table: name,
             table_alias: alias,
             from_subquery: None,
@@ -210,7 +210,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// );
     /// ```
     pub fn from_subquery(sub: impl IntoSelectTree<V>, alias: &str) -> Self {
-        Query {
+        SelectQuery {
             table: String::new(),
             table_alias: Some(alias.to_string()),
             from_subquery: Some(Box::new(sub.into_select_tree())),
@@ -410,7 +410,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// Create a new compound query by combining `self` and `other` with the given set operation.
     ///
     /// If `other` is already a compound query (has set_operations), its parts are flattened.
-    fn combine(&self, op: SetOp, other: &Query<V>) -> Query<V> {
+    fn combine(&self, op: SetOp, other: &SelectQuery<V>) -> SelectQuery<V> {
         let mut parts = self.as_set_operation_parts();
         let other_parts = other.as_set_operation_parts();
         for (i, (other_op, query)) in other_parts.into_iter().enumerate() {
@@ -420,7 +420,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
                 parts.push((other_op, query));
             }
         }
-        let mut q = Query::new("");
+        let mut q = SelectQuery::new("");
         q.set_operations = parts;
         q
     }
@@ -428,12 +428,12 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// Append `other` to this compound query with the given set operation (mutating).
     ///
     /// If `self` is not yet a compound query, it is converted into one.
-    fn add_combine(&mut self, op: SetOp, other: &Query<V>) {
+    fn add_combine(&mut self, op: SetOp, other: &SelectQuery<V>) {
         if self.set_operations.is_empty() {
             // Convert self into a compound query: move current state into
             // set_operations and reset self to an empty shell.
             let first = self.clone();
-            *self = Query::new("");
+            *self = SelectQuery::new("");
             self.set_operations = vec![(SetOp::Union, first)]; // first part's SetOp is placeholder
         }
         let other_parts = other.as_set_operation_parts();
@@ -448,7 +448,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
 
     /// Returns the parts of this query for use in set operations.
     /// If this is a compound query, returns its parts; otherwise returns self as a single part.
-    fn as_set_operation_parts(&self) -> Vec<(SetOp, Query<V>)> {
+    fn as_set_operation_parts(&self) -> Vec<(SetOp, SelectQuery<V>)> {
         if self.set_operations.is_empty() {
             vec![(SetOp::Union, self.clone())] // SetOp is placeholder for the first part
         } else {
@@ -456,62 +456,62 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         }
     }
 
-    pub fn union(&self, other: &Query<V>) -> Query<V> {
+    pub fn union(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::Union, other)
     }
 
-    pub fn union_all(&self, other: &Query<V>) -> Query<V> {
+    pub fn union_all(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::UnionAll, other)
     }
 
-    pub fn intersect(&self, other: &Query<V>) -> Query<V> {
+    pub fn intersect(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::Intersect, other)
     }
 
-    pub fn intersect_all(&self, other: &Query<V>) -> Query<V> {
+    pub fn intersect_all(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::IntersectAll, other)
     }
 
-    pub fn except(&self, other: &Query<V>) -> Query<V> {
+    pub fn except(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::Except, other)
     }
 
-    pub fn except_all(&self, other: &Query<V>) -> Query<V> {
+    pub fn except_all(&self, other: &SelectQuery<V>) -> SelectQuery<V> {
         self.combine(SetOp::ExceptAll, other)
     }
 
     /// Append `other` with UNION to this compound query (mutating).
-    pub fn add_union(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_union(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::Union, other);
         self
     }
 
     /// Append `other` with UNION ALL to this compound query (mutating).
-    pub fn add_union_all(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_union_all(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::UnionAll, other);
         self
     }
 
     /// Append `other` with INTERSECT to this compound query (mutating).
-    pub fn add_intersect(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_intersect(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::Intersect, other);
         self
     }
 
     /// Append `other` with INTERSECT ALL to this compound query (mutating).
-    pub fn add_intersect_all(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_intersect_all(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::IntersectAll, other);
         self
     }
 
     /// Append `other` with EXCEPT to this compound query (mutating).
-    pub fn add_except(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_except(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::Except, other);
         self
     }
 
     /// Append `other` with EXCEPT ALL to this compound query (mutating).
-    pub fn add_except_all(&mut self, other: &Query<V>) -> &mut Self {
+    pub fn add_except_all(&mut self, other: &SelectQuery<V>) -> &mut Self {
         self.add_combine(SetOp::ExceptAll, other);
         self
     }
@@ -522,7 +522,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     }
 
     /// Returns the set operation parts for compound queries.
-    pub fn set_operations(&self) -> &[(SetOp, Query<V>)] {
+    pub fn set_operations(&self) -> &[(SetOp, SelectQuery<V>)] {
         &self.set_operations
     }
 
@@ -666,7 +666,7 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> Query<V> {
+impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Convert this SELECT query builder into an UPDATE query builder.
     ///
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
@@ -688,15 +688,15 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         );
         assert!(
             self.joins.is_empty(),
-            "Query has JOINs which are not supported in UPDATE and will be discarded"
+            "SelectQuery has JOINs which are not supported in UPDATE and will be discarded"
         );
         assert!(
             self.order_bys.is_empty(),
-            "Query has ORDER BY which is not supported in UPDATE and will be discarded"
+            "SelectQuery has ORDER BY which is not supported in UPDATE and will be discarded"
         );
         assert!(
             self.limit_val.is_none(),
-            "Query has LIMIT which is not supported in UPDATE and will be discarded"
+            "SelectQuery has LIMIT which is not supported in UPDATE and will be discarded"
         );
         UpdateQuery::new(self.table, self.table_alias, self.wheres)
     }
@@ -721,15 +721,15 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         );
         assert!(
             self.joins.is_empty(),
-            "Query has JOINs which are not supported in DELETE and will be discarded"
+            "SelectQuery has JOINs which are not supported in DELETE and will be discarded"
         );
         assert!(
             self.order_bys.is_empty(),
-            "Query has ORDER BY which is not supported in DELETE and will be discarded"
+            "SelectQuery has ORDER BY which is not supported in DELETE and will be discarded"
         );
         assert!(
             self.limit_val.is_none(),
-            "Query has LIMIT which is not supported in DELETE and will be discarded"
+            "SelectQuery has LIMIT which is not supported in DELETE and will be discarded"
         );
         DeleteQuery::new(self.table, self.table_alias, self.wheres)
     }

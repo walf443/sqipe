@@ -26,13 +26,13 @@ impl qbey::Dialect for MySQL {
     }
 }
 
-/// MySQL-specific query builder wrapping the core Query.
+/// MySQL-specific query builder wrapping the core SelectQuery.
 ///
 /// Supports set operations (UNION, INTERSECT, EXCEPT) via `union()`, `union_all()`, etc.
 /// When `set_operations` is non-empty, this query is a compound query.
 #[derive(Clone)]
 pub struct MysqlQuery<V: Clone + std::fmt::Debug = Value> {
-    inner: qbey::Query<V>,
+    inner: qbey::SelectQuery<V>,
     force_indexes: Vec<String>,
     use_indexes: Vec<String>,
     ignore_indexes: Vec<String>,
@@ -190,7 +190,7 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
 }
 
 impl<V: Clone + std::fmt::Debug> Deref for MysqlQuery<V> {
-    type Target = qbey::Query<V>;
+    type Target = qbey::SelectQuery<V>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -256,7 +256,7 @@ fn apply_index_hints_to<V: Clone>(
 
 /// Create a MySQL-specific query that selects from a subquery.
 pub fn qbey_from_subquery(sub: impl qbey::IntoSelectTree<Value>, alias: &str) -> MysqlQuery<Value> {
-    MysqlQuery::wrap(qbey::Query::from_subquery(sub, alias))
+    MysqlQuery::wrap(qbey::SelectQuery::from_subquery(sub, alias))
 }
 
 /// Create a MySQL-specific query that selects from a subquery with a custom value type.
@@ -264,7 +264,7 @@ pub fn qbey_from_subquery_with<V: Clone + std::fmt::Debug>(
     sub: impl qbey::IntoSelectTree<V>,
     alias: &str,
 ) -> MysqlQuery<V> {
-    MysqlQuery::wrap(qbey::Query::from_subquery(sub, alias))
+    MysqlQuery::wrap(qbey::SelectQuery::from_subquery(sub, alias))
 }
 
 /// Create a MySQL-specific query builder with a custom value type.
@@ -275,7 +275,7 @@ pub fn qbey_with<V: Clone + std::fmt::Debug>(table: impl qbey::IntoFromTable) ->
 }
 
 impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
-    fn wrap(inner: qbey::Query<V>) -> Self {
+    fn wrap(inner: qbey::SelectQuery<V>) -> Self {
         MysqlQuery {
             inner,
             force_indexes: Vec::new(),
@@ -349,7 +349,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
             }
         }
         MysqlQuery {
-            // inner is a dummy Query; for compound queries it only serves as a
+            // inner is a dummy SelectQuery; for compound queries it only serves as a
             // container for union-level order_bys / limit / offset via Deref.
             inner: qbey::qbey_with(""),
             force_indexes: Vec::new(),
