@@ -308,8 +308,6 @@ async fn test_between() {
 async fn test_union() {
     let pool = setup_pool().await;
 
-    use qbey::UnionQueryOps;
-
     let mut q1 = qbey_with::<MysqlValue>("users");
     q1.and_where(col("age").gt(30));
     q1.select(&["id", "name"]);

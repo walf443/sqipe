@@ -237,8 +237,6 @@ fn test_between() {
 fn test_union() {
     let conn = setup_db();
 
-    use qbey::UnionQueryOps;
-
     let mut q1 = qbey_with::<SqliteValue>("users");
     q1.and_where(col("age").gt(30));
     q1.select(&["id", "name"]);
