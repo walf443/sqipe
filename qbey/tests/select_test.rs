@@ -15,19 +15,6 @@ fn test_basic_select_to_sql() {
 }
 
 #[test]
-fn test_basic_select_to_pipe_sql() {
-    let mut q = qbey("employee");
-    q.and_where(("name", "Alice"));
-    q.select(&["id", "name"]);
-
-    let (sql, _binds) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE \"name\" = ? |> SELECT \"id\", \"name\""
-    );
-}
-
-#[test]
 fn test_select_star_when_no_select() {
     let mut q = qbey("employee");
     q.and_where(("name", "Alice"));
@@ -48,12 +35,6 @@ fn test_order_by() {
         sql,
         "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC"
     );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> SELECT \"id\", \"name\", \"age\" |> ORDER BY \"name\" ASC, \"age\" DESC"
-    );
 }
 
 #[test]
@@ -67,12 +48,6 @@ fn test_limit_offset() {
     assert_eq!(
         sql,
         "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20"
-    );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> SELECT \"id\", \"name\" |> LIMIT 10 OFFSET 20"
     );
 }
 
@@ -140,9 +115,6 @@ fn test_qbey_with_table_ref_alias() {
 
     let (sql, _) = q.to_sql();
     assert_eq!(sql, r#"SELECT "id", "name" FROM "employee" AS "e""#);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(sql, r#"FROM "employee" AS "e" |> SELECT "id", "name""#);
 }
 
 #[test]
@@ -174,20 +146,6 @@ fn test_for_update() {
 }
 
 #[test]
-fn test_for_update_pipe() {
-    let mut q = qbey("users");
-    q.select(&["id", "name"]);
-    q.and_where(col("id").eq(1));
-    q.for_update();
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> WHERE "id" = ? |> SELECT "id", "name" FOR UPDATE"#
-    );
-}
-
-#[test]
 fn test_for_update_with_option() {
     let mut q = qbey("users");
     q.select(&["id", "name"]);
@@ -202,20 +160,6 @@ fn test_for_update_with_option() {
 }
 
 #[test]
-fn test_for_update_with_option_pipe() {
-    let mut q = qbey("users");
-    q.select(&["id", "name"]);
-    q.and_where(col("id").eq(1));
-    q.for_update_with("SKIP LOCKED");
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> WHERE "id" = ? |> SELECT "id", "name" FOR UPDATE SKIP LOCKED"#
-    );
-}
-
-#[test]
 fn test_for_with() {
     let mut q = qbey("users");
     q.select(&["id", "name"]);
@@ -226,20 +170,6 @@ fn test_for_with() {
     assert_eq!(
         sql,
         r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR NO KEY UPDATE"#
-    );
-}
-
-#[test]
-fn test_for_with_pipe() {
-    let mut q = qbey("users");
-    q.select(&["id", "name"]);
-    q.and_where(col("id").eq(1));
-    q.for_with("SHARE");
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> WHERE "id" = ? |> SELECT "id", "name" FOR SHARE"#
     );
 }
 
@@ -270,12 +200,6 @@ fn test_qualified_col_order_by() {
     assert_eq!(
         sql,
         r#"SELECT "id", "name" FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id" ORDER BY "users"."name" ASC, "orders"."created_at" DESC"#
-    );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> INNER JOIN "orders" ON "users"."id" = "orders"."user_id" |> SELECT "id", "name" |> ORDER BY "users"."name" ASC, "orders"."created_at" DESC"#
     );
 }
 
@@ -337,12 +261,6 @@ fn test_order_by_expr() {
 
     let (sql, _) = q.to_sql();
     assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> SELECT "id", "name" |> ORDER BY RAND()"#
-    );
 }
 
 #[test]
@@ -372,17 +290,3 @@ fn test_order_by_mixed_col_and_expr() {
     );
 }
 
-#[test]
-fn test_for_update_with_order_by_and_limit_pipe() {
-    let mut q = qbey("users");
-    q.select(&["id", "name"]);
-    q.order_by(col("id").asc());
-    q.limit(10);
-    q.for_update();
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> SELECT "id", "name" |> ORDER BY "id" ASC |> LIMIT 10 FOR UPDATE"#
-    );
-}

@@ -14,19 +14,6 @@ fn test_join_standard() {
 }
 
 #[test]
-fn test_join_pipe() {
-    let mut q = qbey("users");
-    q.join("orders", table("users").col("id").eq_col("user_id"));
-    q.select(&["id", "name"]);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"users\" |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
-    );
-}
-
-#[test]
 fn test_left_join() {
     let mut q = qbey("users");
     q.left_join("orders", table("users").col("id").eq_col("user_id"));
@@ -162,20 +149,6 @@ fn test_cte_where_then_join() {
 }
 
 #[test]
-fn test_cte_where_then_join_pipe() {
-    let mut q = qbey("users");
-    q.and_where(col("age").gt(25));
-    q.join("orders", table("users").col("id").eq_col("user_id"));
-    q.select(&["id", "name"]);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"users\" |> WHERE \"age\" > ? |> INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\" |> SELECT \"id\", \"name\""
-    );
-}
-
-#[test]
 fn test_join_then_where_no_cte() {
     let mut q = qbey("users");
     q.join("orders", table("users").col("id").eq_col("user_id"));
@@ -221,24 +194,6 @@ fn test_left_join_subquery_standard() {
         sql,
         r#"SELECT "id", "name" FROM "users" LEFT JOIN (SELECT "user_id", "total" FROM "orders") AS "o" ON "users"."id" = "o"."user_id""#
     );
-}
-
-#[test]
-fn test_join_subquery_pipe_sql() {
-    let mut sub = qbey("orders");
-    sub.select(&["user_id", "total"]);
-    sub.and_where(col("status").eq("shipped"));
-
-    let mut q = qbey("users");
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
-    q.select(&["id", "name"]);
-
-    let (sql, binds) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id" |> SELECT "id", "name""#
-    );
-    assert_eq!(binds, vec![Value::String("shipped".to_string())]);
 }
 
 #[test]
@@ -340,12 +295,6 @@ fn test_join_with_unqualified_col_eq_col() {
         sql,
         r#"SELECT "id", "name" FROM "users" INNER JOIN "orders" ON "id" = "orders"."user_id""#
     );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> INNER JOIN "orders" ON "id" = "orders"."user_id" |> SELECT "id", "name""#
-    );
 }
 
 #[test]
@@ -365,22 +314,6 @@ fn test_join_condition_expr_standard() {
 }
 
 #[test]
-fn test_join_condition_expr_pipe() {
-    let mut q = qbey("texts");
-    q.join(
-        "patterns",
-        join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)),
-    );
-    q.select(&["id", "text"]);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "texts" |> INNER JOIN "patterns" ON "texts"."text" LIKE "patterns"."pattern" |> SELECT "id", "text""#
-    );
-}
-
-#[test]
 fn test_qbey_table_ref_with_join() {
     let mut q = qbey(table("users").as_("u"));
     q.join(
@@ -393,12 +326,6 @@ fn test_qbey_table_ref_with_join() {
     assert_eq!(
         sql,
         r#"SELECT "id", "name" FROM "users" AS "u" INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id""#
-    );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" AS "u" |> INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id" |> SELECT "id", "name""#
     );
 }
 

@@ -18,15 +18,11 @@ q.select(&["id", "name"]);
 // Standard SQL (default placeholder: ?)
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ?");
-
-// Pipe syntax SQL (default placeholder: ?)
-let (sql, binds) = q.to_pipe_sql();
-assert_eq!(sql, "FROM \"employee\" |> WHERE \"name\" = ? |> SELECT \"id\", \"name\"");
 ```
 
 ## Features
 
-- **Standard SQL & pipe syntax** — Generate both traditional `SELECT ... FROM ... WHERE` and pipe syntax `FROM ... |> WHERE ... |> SELECT ...` from the same query builder
+- **Standard SQL** — Generate traditional `SELECT ... FROM ... WHERE` SQL from the query builder
 - **Driver agnostic** — Works with any database driver. Tested with [sqlx](https://github.com/launchbadge/sqlx) (SQLite, MySQL), [rusqlite](https://github.com/rusqlite/rusqlite), [tokio-postgres](https://github.com/sfackler/rust-postgres), and [postgres](https://github.com/sfackler/rust-postgres)
 - **Extensible bind value types** — Use the built-in `Value` enum for quick prototyping, or define your own type with `qbey_with::<V>()` to match your driver's parameter types
 - **Dialect support** — Customize placeholder style (`?`, `$1`, ...) and identifier quoting via the `Dialect` trait. MySQL dialect is available as a separate crate:
@@ -190,9 +186,6 @@ q.group_by(&["dept"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total_salary\" FROM \"employee\" GROUP BY \"dept\"");
-
-let (sql, binds) = q.to_pipe_sql();
-assert_eq!(sql, "FROM \"employee\" |> AGGREGATE COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total_salary\" GROUP BY \"dept\"");
 ```
 
 Available aggregate functions: `count_all()`, `count(col)`, `sum(col)`, `avg(col)`, `min(col)`, `max(col)`, `expr(raw_sql)`.
@@ -211,9 +204,6 @@ q.and_where(col("cnt").gt(5));             // HAVING (after aggregate)
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" WHERE \"active\" = ? GROUP BY \"dept\" HAVING \"cnt\" > ?");
-
-let (sql, binds) = q.to_pipe_sql();
-assert_eq!(sql, "FROM \"employee\" |> WHERE \"active\" = ? |> AGGREGATE COUNT(*) AS \"cnt\" GROUP BY \"dept\" |> WHERE \"cnt\" > ?");
 ```
 
 ### Order By
@@ -227,9 +217,6 @@ q.order_by(col("age").desc());
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
-
-let (sql, binds) = q.to_pipe_sql();
-assert_eq!(sql, "FROM \"employee\" |> SELECT \"id\", \"name\", \"age\" |> ORDER BY \"name\" ASC, \"age\" DESC");
 ```
 
 ### Order By with raw SQL expression
@@ -272,9 +259,6 @@ q.offset(20);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
-
-let (sql, binds) = q.to_pipe_sql();
-assert_eq!(sql, "FROM \"employee\" |> SELECT \"id\", \"name\" |> LIMIT 10 OFFSET 20");
 ```
 
 ### Method chaining
@@ -423,8 +407,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" US
 #### Call order matters: WHERE before JOIN
 
 The order of `and_where` / `or_where` and `join` / `left_join` calls affects the generated SQL.
-In pipe syntax, this naturally produces `FROM ... |> WHERE ... |> JOIN ...`.
-In standard SQL, a CTE (Common Table Expression) is automatically generated to preserve the intended semantics.
+If `and_where` is called before `join`, a CTE (Common Table Expression) is automatically generated to preserve the intended semantics.
 
 ```rust
 # use qbey::{qbey, col, table};
@@ -432,10 +415,6 @@ let mut q = qbey("users");
 q.and_where(col("age").gt(25));   // WHERE first
 q.join("orders", table("users").col("id").eq_col("user_id"));  // then JOIN
 q.select(&["id", "name"]);
-
-// Pipe SQL: WHERE before JOIN is natural
-let (sql, _) = q.to_pipe_sql();
-assert_eq!(sql, r#"FROM "users" |> WHERE "age" > ? |> INNER JOIN "orders" ON "users"."id" = "orders"."user_id" |> SELECT "id", "name""#);
 
 // Standard SQL: CTE is generated to filter before joining
 let (sql, _) = q.to_sql();

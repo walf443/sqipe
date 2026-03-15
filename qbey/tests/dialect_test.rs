@@ -26,24 +26,6 @@ fn test_numbered_placeholders() {
 }
 
 #[test]
-fn test_pipe_sql_numbered_placeholders() {
-    let mut q = qbey("employee");
-    q.and_where(("name", "Alice"));
-    q.and_where(col("age").gt(20));
-    q.select(&["id", "name"]);
-    let (sql, binds) = q.to_pipe_sql_with(&PgDialect);
-
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE \"name\" = $1 AND \"age\" > $2 |> SELECT \"id\", \"name\""
-    );
-    assert_eq!(
-        binds,
-        vec![Value::String("Alice".to_string()), Value::Int(20),]
-    );
-}
-
-#[test]
 fn test_not_numbered_placeholders() {
     let mut q = qbey("employee");
     q.and_where(("name", "Alice"));

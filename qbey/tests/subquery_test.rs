@@ -18,22 +18,6 @@ fn test_from_subquery() {
 }
 
 #[test]
-fn test_from_subquery_pipe() {
-    let mut sub = qbey("orders");
-    sub.select(&["user_id", "amount"]);
-    sub.and_where(col("status").eq("completed"));
-
-    let mut q = qbey_from_subquery(sub, "t");
-    q.select(&["user_id"]);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM (SELECT "user_id", "amount" FROM "orders" WHERE "status" = ?) AS "t" |> SELECT "user_id""#
-    );
-}
-
-#[test]
 fn test_from_subquery_with_outer_where() {
     let mut sub = qbey("orders");
     sub.select(&["user_id", "amount"]);

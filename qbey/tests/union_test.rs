@@ -44,25 +44,6 @@ fn test_union_to_sql() {
 }
 
 #[test]
-fn test_union_all_to_pipe_sql() {
-    let mut q1 = qbey("employee");
-    q1.and_where(("dept", "eng"));
-    q1.select(&["id", "name"]);
-
-    let mut q2 = qbey("employee");
-    q2.and_where(("dept", "sales"));
-    q2.select(&["id", "name"]);
-
-    let uq = q1.union_all(&q2);
-
-    let (sql, _) = uq.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE \"dept\" = ? |> SELECT \"id\", \"name\" |> UNION ALL FROM \"employee\" |> WHERE \"dept\" = ? |> SELECT \"id\", \"name\""
-    );
-}
-
-#[test]
 fn test_union_all_with_order_by_and_limit() {
     let mut q1 = qbey("employee");
     q1.and_where(("dept", "eng"));

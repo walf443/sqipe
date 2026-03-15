@@ -17,31 +17,12 @@ fn test_aggregate_to_sql() {
 }
 
 #[test]
-fn test_aggregate_to_pipe_sql() {
-    let mut q = qbey("employee");
-    q.aggregate(&[
-        aggregate::count_all().as_("cnt"),
-        aggregate::sum("salary").as_("total_salary"),
-    ]);
-    q.group_by(&["dept"]);
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> AGGREGATE COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total_salary\" GROUP BY \"dept\""
-    );
-}
-
-#[test]
 fn test_aggregate_without_group_by() {
     let mut q = qbey("employee");
     q.aggregate(&[aggregate::count_all().as_("cnt")]);
 
     let (sql, _) = q.to_sql();
     assert_eq!(sql, "SELECT COUNT(*) AS \"cnt\" FROM \"employee\"");
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(sql, "FROM \"employee\" |> AGGREGATE COUNT(*) AS \"cnt\"");
 }
 
 #[test]
@@ -55,12 +36,6 @@ fn test_aggregate_with_where() {
     assert_eq!(
         sql,
         "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" WHERE \"active\" = ? GROUP BY \"dept\""
-    );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE \"active\" = ? |> AGGREGATE COUNT(*) AS \"cnt\" GROUP BY \"dept\""
     );
 }
 
@@ -110,11 +85,5 @@ fn test_having_auto_detect() {
     assert_eq!(
         sql,
         "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" WHERE \"active\" = ? GROUP BY \"dept\" HAVING \"cnt\" > ?"
-    );
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE \"active\" = ? |> AGGREGATE COUNT(*) AS \"cnt\" GROUP BY \"dept\" |> WHERE \"cnt\" > ?"
     );
 }

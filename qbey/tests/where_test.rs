@@ -117,18 +117,6 @@ fn test_not_operator() {
 }
 
 #[test]
-fn test_not_pipe_sql() {
-    let mut q = qbey("employee");
-    q.and_where(not(col("role").eq("admin")));
-
-    let (sql, _) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        "FROM \"employee\" |> WHERE NOT (\"role\" = ?) |> SELECT *"
-    );
-}
-
-#[test]
 fn test_in_clause() {
     let mut q = qbey("employee");
     q.and_where(col("id").included(&[1, 2, 3]));

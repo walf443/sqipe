@@ -8,7 +8,6 @@ use crate::update::UpdateQuery;
 use crate::value::Value;
 use crate::where_clause::{IntoIncluded, IntoWhereClause, WhereClause, WhereEntry};
 
-use crate::renderer::pipe::PipeSqlRenderer;
 use crate::renderer::standard::StandardSqlRenderer;
 use crate::renderer::{RenderConfig, Renderer};
 use crate::tree::{SelectTree, UnionTree, default_quote_identifier};
@@ -38,7 +37,6 @@ pub trait UnionQueryOps<V: Clone + std::fmt::Debug = Value>: AsUnionParts {
     fn limit(&mut self, n: u64) -> &mut Self;
     fn offset(&mut self, n: u64) -> &mut Self;
     fn to_sql(&self) -> (String, Vec<V>);
-    fn to_pipe_sql(&self) -> (String, Vec<V>);
 }
 
 /// Trait for types that can be converted into a `SelectTree` for use as a FROM subquery.
@@ -350,7 +348,6 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// The order of `join` relative to `and_where` / `or_where` affects SQL generation.
     /// If `and_where` is called **before** `join`, standard SQL rendering wraps the
     /// preceding WHERE in a CTE so the filter is applied before the join.
-    /// Pipe SQL always renders operations in call order without CTEs.
     pub fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
         let (name, alias) = table.into_join_table();
         let resolve_name = alias.as_deref().unwrap_or(&name);
@@ -627,17 +624,6 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         StandardSqlRenderer.render_select(&tree, &cfg)
     }
 
-    /// Build pipe syntax SQL with `?` placeholders and double-quote identifiers.
-    pub fn to_pipe_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        PipeSqlRenderer.render_select(&tree, &cfg)
-    }
-
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
         let tree = self.to_tree();
@@ -646,13 +632,6 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 
-    /// Build pipe syntax SQL with dialect-specific placeholders and quoting.
-    pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
-    }
 }
 
 impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
@@ -710,15 +689,6 @@ impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
         StandardSqlRenderer.render_union(&tree, &cfg)
     }
 
-    fn to_pipe_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        PipeSqlRenderer.render_union(&tree, &cfg)
-    }
 }
 
 impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
@@ -732,13 +702,6 @@ impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
         StandardSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
-    }
-
-    pub fn to_pipe_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        PipeSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 
     /// Returns the parts for dialect wrappers to build SQL with custom rendering per part.

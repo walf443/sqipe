@@ -110,20 +110,6 @@ fn test_like_qualified_col() {
 }
 
 #[test]
-fn test_like_pipe_sql() {
-    let mut q = qbey("users");
-    q.and_where(col("name").like(LikeExpression::contains("Ali")));
-    q.select(&["id", "name"]);
-
-    let (sql, binds) = q.to_pipe_sql();
-    assert_eq!(
-        sql,
-        r#"FROM "users" |> WHERE "name" LIKE ? ESCAPE '\' |> SELECT "id", "name""#
-    );
-    assert_eq!(binds, vec![Value::String("%Ali%".to_string())]);
-}
-
-#[test]
 fn test_like_custom_escape_char() {
     let mut q = qbey("users");
     q.and_where(col("name").like(LikeExpression::contains_escaped_by('!', "100%")));

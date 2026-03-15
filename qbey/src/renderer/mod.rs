@@ -4,7 +4,6 @@ use crate::{
 };
 
 pub mod delete;
-pub mod pipe;
 pub mod standard;
 pub mod update;
 
@@ -42,7 +41,7 @@ pub trait Renderer {
     fn render_union<V: Clone>(&self, tree: &UnionTree<V>, cfg: &RenderConfig) -> (String, Vec<V>);
 }
 
-// ── Shared rendering helpers (crate-visible for standard/pipe modules) ──
+// ── Shared rendering helpers (crate-visible for standard module) ──
 
 pub(super) fn set_op_keyword(op: &crate::SetOp) -> &'static str {
     match op {
@@ -71,21 +70,6 @@ pub(super) fn append_limit_offset_flat(sql: &mut String, limit: Option<u64>, off
     }
     if let Some(o) = o {
         sql.push_str(&format!(" {}", o));
-    }
-}
-
-/// Append LIMIT/OFFSET as a single pipe stage (pipe SQL style).
-pub(super) fn append_limit_offset_pipe(sql: &mut String, limit: Option<u64>, offset: Option<u64>) {
-    let (l, o) = render_limit_offset(limit, offset);
-    let mut lo_parts = Vec::new();
-    if let Some(l) = l {
-        lo_parts.push(l);
-    }
-    if let Some(o) = o {
-        lo_parts.push(o);
-    }
-    if !lo_parts.is_empty() {
-        sql.push_str(&format!(" |> {}", lo_parts.join(" ")));
     }
 }
 
@@ -323,8 +307,8 @@ pub(super) fn render_select_core<V: Clone>(
 /// Render a SelectTree as standard SQL for use in subqueries.
 /// Uses the shared binds accumulator so placeholder indices are correct.
 ///
-/// Always renders standard SQL (not pipe syntax) because subqueries appear
-/// inside parentheses where pipe syntax would be invalid.
+/// Always renders standard SQL because subqueries appear
+/// inside parentheses.
 fn render_subquery_sql<V: Clone>(
     tree: &SelectTree<V>,
     cfg: &RenderConfig,

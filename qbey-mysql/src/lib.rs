@@ -4,7 +4,6 @@ struct ReadmeDocTests;
 
 use qbey::Dialect;
 use qbey::Value;
-use qbey::renderer::pipe::PipeSqlRenderer;
 use qbey::renderer::standard::StandardSqlRenderer;
 use qbey::renderer::{RenderConfig, Renderer};
 use qbey::tree::SelectTree;
@@ -419,14 +418,6 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
-    /// Build pipe syntax SQL with MySQL dialect.
-    pub fn to_pipe_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| MySQL.placeholder(n);
-        let qi = |name: &str| MySQL.quote_identifier(name);
-        PipeSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
-    }
-
     /// Convert this MySQL query builder into an UPDATE query builder.
     ///
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
@@ -529,12 +520,6 @@ impl<V: Clone + std::fmt::Debug> qbey::UnionQueryOps<V> for MysqlUnionQuery<V> {
         StandardSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
-    fn to_pipe_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| MySQL.placeholder(n);
-        let qi = |name: &str| MySQL.quote_identifier(name);
-        PipeSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
-    }
 }
 
 #[cfg(test)]
@@ -627,20 +612,6 @@ mod tests {
     }
 
     #[test]
-    fn test_force_index_pipe_sql() {
-        let mut q = qbey("employee");
-        q.force_index(&["idx_name"]);
-        q.and_where(("name", "Alice"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql();
-        assert_eq!(
-            sql,
-            "FROM `employee` FORCE INDEX (idx_name) |> WHERE `name` = ? |> SELECT `id`, `name`"
-        );
-    }
-
-    #[test]
     fn test_union_all_with_force_index() {
         let mut q1 = qbey("employee");
         q1.force_index(&["idx_dept"]);
@@ -686,27 +657,6 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT `id`, `name` FROM `employee` WHERE `dept` = ? UNION ALL SELECT `id`, `name` FROM `employee` WHERE `dept` = ? ORDER BY `name` ASC LIMIT 10"
-        );
-    }
-
-    #[test]
-    fn test_union_pipe_sql_with_force_index() {
-        let mut q1 = qbey("employee");
-        q1.force_index(&["idx_dept"]);
-        q1.and_where(("dept", "eng"));
-        q1.select(&["id", "name"]);
-
-        let mut q2 = qbey("employee");
-        q2.force_index(&["idx_dept"]);
-        q2.and_where(("dept", "sales"));
-        q2.select(&["id", "name"]);
-
-        let uq = q1.union_all(&q2);
-
-        let (sql, _) = uq.to_pipe_sql();
-        assert_eq!(
-            sql,
-            "FROM `employee` FORCE INDEX (idx_dept) |> WHERE `dept` = ? |> SELECT `id`, `name` |> UNION ALL FROM `employee` FORCE INDEX (idx_dept) |> WHERE `dept` = ? |> SELECT `id`, `name`"
         );
     }
 
@@ -775,19 +725,6 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT `id`, `name` FROM `users` STRAIGHT_JOIN `orders` ON `users`.`id` = `orders`.`user_id`"
-        );
-    }
-
-    #[test]
-    fn test_straight_join_pipe() {
-        let mut q = qbey("users");
-        q.straight_join("orders", table("users").col("id").eq_col("user_id"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql();
-        assert_eq!(
-            sql,
-            "FROM `users` |> STRAIGHT_JOIN `orders` ON `users`.`id` = `orders`.`user_id` |> SELECT `id`, `name`"
         );
     }
 
@@ -919,20 +856,6 @@ mod tests {
             sql,
             r#"SELECT `id`, `name` FROM `users` WHERE `name` NOT LIKE ? ESCAPE '\\'"#
         );
-    }
-
-    #[test]
-    fn test_cte_pipe_sql_no_cte() {
-        let mut q = qbey("users");
-        q.and_where(col("age").gt(25));
-        q.join("orders", table("users").col("id").eq_col("user_id"));
-        q.select(&["id", "name"]);
-
-        let (sql, _) = q.to_pipe_sql();
-        // Pipe SQL should NOT generate CTE
-        assert!(!sql.starts_with("WITH"));
-        assert!(sql.contains("|> WHERE"));
-        assert!(sql.contains("|> INNER JOIN"));
     }
 
     #[test]
