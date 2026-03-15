@@ -166,7 +166,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
         let set_operations: Vec<_> = query
             .set_operations
             .into_iter()
-            .map(|(op, q)| (op, SelectTree::from_query(&q)))
+            .map(|(op, q)| (op, SelectTree::from_query_owned(q)))
             .collect();
 
         SelectTree {

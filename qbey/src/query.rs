@@ -420,22 +420,9 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
                 parts.push((other_op, query));
             }
         }
-        Query {
-            table: String::new(),
-            table_alias: None,
-            from_subquery: None,
-            selects: Vec::new(),
-            wheres: Vec::new(),
-            havings: Vec::new(),
-            group_bys: Vec::new(),
-            joins: Vec::new(),
-            join_subqueries: Vec::new(),
-            order_bys: Vec::new(),
-            limit_val: None,
-            offset_val: None,
-            lock_for: None,
-            set_operations: parts,
-        }
+        let mut q = Query::new("");
+        q.set_operations = parts;
+        q
     }
 
     /// Append `other` to this compound query with the given set operation (mutating).
