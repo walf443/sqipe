@@ -13,29 +13,15 @@ use crate::tree::{SelectTree, UnionTree, default_quote_identifier};
 
 use crate::Dialect;
 
+/// SQL set operation type (UNION, INTERSECT, EXCEPT and their ALL variants).
 #[derive(Debug, Clone)]
 pub enum SetOp {
     Union,
     UnionAll,
-}
-
-/// Trait for types that can be used as a source in union operations.
-pub trait AsUnionParts {
-    type Query: Clone;
-    fn as_union_parts(&self) -> Vec<(SetOp, Self::Query)>;
-}
-
-/// Common interface for union query builders.
-pub trait UnionQueryOps<V: Clone + std::fmt::Debug = Value>: AsUnionParts {
-    fn union<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
-    fn union_all<T: AsUnionParts<Query = Self::Query>>(&mut self, other: &T) -> &mut Self;
-    fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
-    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
-        self.order_by(OrderByClause::Expr(raw))
-    }
-    fn limit(&mut self, n: u64) -> &mut Self;
-    fn offset(&mut self, n: u64) -> &mut Self;
-    fn to_sql(&self) -> (String, Vec<V>);
+    Intersect,
+    IntersectAll,
+    Except,
+    ExceptAll,
 }
 
 /// Trait for types that can be converted into a `SelectTree` for use as a FROM subquery.
@@ -76,9 +62,14 @@ impl<T: IntoFromTable> IntoJoinTable for T {
 }
 
 /// The query builder, generic over the bind value type `V`.
+///
+/// Supports both simple SELECT queries and compound queries with set operations
+/// (UNION, INTERSECT, EXCEPT). When `set_operations` is non-empty, all parts
+/// are stored there and `order_bys`/`limit_val`/`offset_val` apply to the
+/// entire compound result.
 #[derive(Debug, Clone)]
 pub struct Query<V: Clone + std::fmt::Debug = Value> {
-    /// Table name for table-based queries. Empty when using `from_subquery`.
+    /// Table name for table-based queries. Empty when using `from_subquery` or set operations.
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
     /// When set, the query selects from this subquery instead of `table`.
@@ -95,29 +86,10 @@ pub struct Query<V: Clone + std::fmt::Debug = Value> {
     pub(crate) offset_val: Option<u64>,
     /// Row-level locking clause (e.g., `"UPDATE"` → `FOR UPDATE`).
     pub(crate) lock_for: Option<String>,
-}
-
-/// A combined query built from UNION / UNION ALL operations.
-#[derive(Debug, Clone)]
-pub struct UnionQuery<V: Clone + std::fmt::Debug = Value> {
-    pub(crate) parts: Vec<(SetOp, Query<V>)>,
-    pub(crate) order_bys: Vec<OrderByClause>,
-    pub(crate) limit_val: Option<u64>,
-    pub(crate) offset_val: Option<u64>,
-}
-
-impl<V: Clone + std::fmt::Debug> AsUnionParts for Query<V> {
-    type Query = Query<V>;
-    fn as_union_parts(&self) -> Vec<(SetOp, Query<V>)> {
-        vec![(SetOp::Union, self.clone())] // SetOp is placeholder, caller overrides
-    }
-}
-
-impl<V: Clone + std::fmt::Debug> AsUnionParts for UnionQuery<V> {
-    type Query = Query<V>;
-    fn as_union_parts(&self) -> Vec<(SetOp, Query<V>)> {
-        self.parts.clone()
-    }
+    /// When non-empty, this query is a compound query (UNION, INTERSECT, EXCEPT).
+    /// All parts are stored here; the outer `order_bys`/`limit_val`/`offset_val`
+    /// apply to the entire compound result.
+    pub(crate) set_operations: Vec<(SetOp, Query<V>)>,
 }
 
 /// Create a new query builder for the given table.
@@ -214,8 +186,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
-
             lock_for: None,
+            set_operations: Vec::new(),
         }
     }
 
@@ -251,8 +223,8 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
-
             lock_for: None,
+            set_operations: Vec::new(),
         }
     }
 
@@ -435,40 +407,162 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
-    pub fn union<T: AsUnionParts<Query = Query<V>>>(&self, other: &T) -> UnionQuery<V> {
-        let mut parts = vec![(SetOp::Union, self.clone())];
-        let other_parts = other.as_union_parts();
-        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+    /// Create a new compound query by combining `self` and `other` with the given set operation.
+    ///
+    /// If `other` is already a compound query (has set_operations), its parts are flattened.
+    fn combine(&self, op: SetOp, other: &Query<V>) -> Query<V> {
+        let mut parts = self.as_set_operation_parts();
+        let other_parts = other.as_set_operation_parts();
+        for (i, (other_op, query)) in other_parts.into_iter().enumerate() {
             if i == 0 {
-                parts.push((SetOp::Union, query));
+                parts.push((op.clone(), query));
             } else {
-                parts.push((op, query));
+                parts.push((other_op, query));
             }
         }
-        UnionQuery {
-            parts,
+        Query {
+            table: String::new(),
+            table_alias: None,
+            from_subquery: None,
+            selects: Vec::new(),
+            wheres: Vec::new(),
+            havings: Vec::new(),
+            group_bys: Vec::new(),
+            joins: Vec::new(),
+            join_subqueries: Vec::new(),
             order_bys: Vec::new(),
             limit_val: None,
             offset_val: None,
+            lock_for: None,
+            set_operations: parts,
         }
     }
 
-    pub fn union_all<T: AsUnionParts<Query = Query<V>>>(&self, other: &T) -> UnionQuery<V> {
-        let mut parts = vec![(SetOp::Union, self.clone())];
-        let other_parts = other.as_union_parts();
-        for (i, (op, query)) in other_parts.into_iter().enumerate() {
+    /// Append `other` to this compound query with the given set operation (mutating).
+    ///
+    /// If `self` is not yet a compound query, it is converted into one.
+    fn add_combine(&mut self, op: SetOp, other: &Query<V>) {
+        if self.set_operations.is_empty() {
+            // Convert self into a compound query
+            let first = self.clone();
+            self.table = String::new();
+            self.table_alias = None;
+            self.from_subquery = None;
+            self.selects = Vec::new();
+            self.wheres = Vec::new();
+            self.havings = Vec::new();
+            self.group_bys = Vec::new();
+            self.joins = Vec::new();
+            self.join_subqueries = Vec::new();
+            self.order_bys = Vec::new();
+            self.limit_val = None;
+            self.offset_val = None;
+            self.lock_for = None;
+            self.set_operations = vec![(SetOp::Union, first)]; // first part's SetOp is placeholder
+        }
+        let other_parts = other.as_set_operation_parts();
+        for (i, (other_op, query)) in other_parts.into_iter().enumerate() {
             if i == 0 {
-                parts.push((SetOp::UnionAll, query));
+                self.set_operations.push((op.clone(), query));
             } else {
-                parts.push((op, query));
+                self.set_operations.push((other_op, query));
             }
         }
-        UnionQuery {
-            parts,
-            order_bys: Vec::new(),
-            limit_val: None,
-            offset_val: None,
+    }
+
+    /// Returns the parts of this query for use in set operations.
+    /// If this is a compound query, returns its parts; otherwise returns self as a single part.
+    fn as_set_operation_parts(&self) -> Vec<(SetOp, Query<V>)> {
+        if self.set_operations.is_empty() {
+            vec![(SetOp::Union, self.clone())] // SetOp is placeholder for the first part
+        } else {
+            self.set_operations.clone()
         }
+    }
+
+    pub fn union(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::Union, other)
+    }
+
+    pub fn union_all(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::UnionAll, other)
+    }
+
+    pub fn intersect(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::Intersect, other)
+    }
+
+    pub fn intersect_all(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::IntersectAll, other)
+    }
+
+    pub fn except(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::Except, other)
+    }
+
+    pub fn except_all(&self, other: &Query<V>) -> Query<V> {
+        self.combine(SetOp::ExceptAll, other)
+    }
+
+    /// Append `other` with UNION to this compound query (mutating).
+    pub fn add_union(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::Union, other);
+        self
+    }
+
+    /// Append `other` with UNION ALL to this compound query (mutating).
+    pub fn add_union_all(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::UnionAll, other);
+        self
+    }
+
+    /// Append `other` with INTERSECT to this compound query (mutating).
+    pub fn add_intersect(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::Intersect, other);
+        self
+    }
+
+    /// Append `other` with INTERSECT ALL to this compound query (mutating).
+    pub fn add_intersect_all(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::IntersectAll, other);
+        self
+    }
+
+    /// Append `other` with EXCEPT to this compound query (mutating).
+    pub fn add_except(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::Except, other);
+        self
+    }
+
+    /// Append `other` with EXCEPT ALL to this compound query (mutating).
+    pub fn add_except_all(&mut self, other: &Query<V>) -> &mut Self {
+        self.add_combine(SetOp::ExceptAll, other);
+        self
+    }
+
+    /// Returns true if this query is a compound query (has set operations).
+    pub fn has_set_operations(&self) -> bool {
+        !self.set_operations.is_empty()
+    }
+
+    /// Returns the set operation parts for compound queries.
+    pub fn set_operations(&self) -> &[(SetOp, Query<V>)] {
+        &self.set_operations
+    }
+
+    /// Returns the ORDER BY clauses.
+    pub fn order_bys(&self) -> &[OrderByClause] {
+        &self.order_bys
+    }
+
+    /// Returns the LIMIT value.
+    pub fn limit_val(&self) -> Option<u64> {
+        self.limit_val
+    }
+
+    /// Returns the OFFSET value.
+    pub fn offset_val(&self) -> Option<u64> {
+        self.offset_val
     }
 
     pub fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
@@ -572,102 +666,66 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     }
 
     /// Build a SelectTree from this query.
+    ///
+    /// Panics if this is a compound query (has set operations).
+    /// Use `to_set_operation_tree()` for compound queries.
     pub fn to_tree(&self) -> SelectTree<V> {
+        assert!(
+            self.set_operations.is_empty(),
+            "Cannot build SelectTree from a compound query; use to_set_operation_tree()"
+        );
         SelectTree::from_query(self)
+    }
+
+    /// Build a UnionTree from this compound query.
+    ///
+    /// Panics if this is not a compound query.
+    pub fn to_set_operation_tree(&self) -> UnionTree<V> {
+        assert!(
+            !self.set_operations.is_empty(),
+            "Cannot build UnionTree from a non-compound query; use to_tree()"
+        );
+        let parts = self
+            .set_operations
+            .iter()
+            .map(|(op, q)| (op.clone(), SelectTree::from_query(q)))
+            .collect();
+        UnionTree {
+            parts,
+            order_bys: self.order_bys.clone(),
+            limit: self.limit_val,
+            offset: self.offset_val,
+        }
     }
 
     /// Build standard SQL with `?` placeholders and double-quote identifiers.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
             backslash_escape: false,
         };
-        StandardSqlRenderer.render_select(&tree, &cfg)
+        if self.set_operations.is_empty() {
+            let tree = self.to_tree();
+            StandardSqlRenderer.render_select(&tree, &cfg)
+        } else {
+            let tree = self.to_set_operation_tree();
+            StandardSqlRenderer.render_union(&tree, &cfg)
+        }
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
-    }
-}
-
-impl<V: Clone + std::fmt::Debug> UnionQueryOps<V> for UnionQuery<V> {
-    fn union<T: AsUnionParts<Query = Query<V>>>(&mut self, other: &T) -> &mut Self {
-        let parts = other.as_union_parts();
-        for (i, (op, query)) in parts.into_iter().enumerate() {
-            if i == 0 {
-                self.parts.push((SetOp::Union, query));
-            } else {
-                self.parts.push((op, query));
-            }
+        let cfg = RenderConfig::from_dialect(&ph, &qi, dialect);
+        if self.set_operations.is_empty() {
+            let tree = self.to_tree();
+            StandardSqlRenderer.render_select(&tree, &cfg)
+        } else {
+            let tree = self.to_set_operation_tree();
+            StandardSqlRenderer.render_union(&tree, &cfg)
         }
-        self
-    }
-
-    fn union_all<T: AsUnionParts<Query = Query<V>>>(&mut self, other: &T) -> &mut Self {
-        let parts = other.as_union_parts();
-        for (i, (op, query)) in parts.into_iter().enumerate() {
-            if i == 0 {
-                self.parts.push((SetOp::UnionAll, query));
-            } else {
-                self.parts.push((op, query));
-            }
-        }
-        self
-    }
-
-    fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
-        self.order_bys.push(clause);
-        self
-    }
-
-    fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
-        self.order_bys.push(OrderByClause::Expr(raw));
-        self
-    }
-
-    fn limit(&mut self, n: u64) -> &mut Self {
-        self.limit_val = Some(n);
-        self
-    }
-
-    fn offset(&mut self, n: u64) -> &mut Self {
-        self.offset_val = Some(n);
-        self
-    }
-
-    fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        StandardSqlRenderer.render_union(&tree, &cfg)
-    }
-}
-
-impl<V: Clone + std::fmt::Debug> UnionQuery<V> {
-    /// Build a UnionTree from this union query.
-    pub fn to_tree(&self) -> UnionTree<V> {
-        UnionTree::from_union_query(self)
-    }
-
-    pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        StandardSqlRenderer.render_union(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
-    }
-
-    /// Returns the parts for dialect wrappers to build SQL with custom rendering per part.
-    pub fn parts(&self) -> &[(SetOp, Query<V>)] {
-        &self.parts
     }
 }
 
@@ -687,6 +745,10 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
     pub fn into_update(self) -> UpdateQuery<V> {
+        assert!(
+            self.set_operations.is_empty(),
+            "Compound query (set operations) cannot be converted to UPDATE"
+        );
         assert!(
             self.joins.is_empty(),
             "Query has JOINs which are not supported in UPDATE and will be discarded"
@@ -716,6 +778,10 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     /// assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
     /// ```
     pub fn into_delete(self) -> DeleteQuery<V> {
+        assert!(
+            self.set_operations.is_empty(),
+            "Compound query (set operations) cannot be converted to DELETE"
+        );
         assert!(
             self.joins.is_empty(),
             "Query has JOINs which are not supported in DELETE and will be discarded"

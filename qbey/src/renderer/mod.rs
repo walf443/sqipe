@@ -47,6 +47,10 @@ pub(super) fn set_op_keyword(op: &crate::SetOp) -> &'static str {
     match op {
         crate::SetOp::Union => "UNION",
         crate::SetOp::UnionAll => "UNION ALL",
+        crate::SetOp::Intersect => "INTERSECT",
+        crate::SetOp::IntersectAll => "INTERSECT ALL",
+        crate::SetOp::Except => "EXCEPT",
+        crate::SetOp::ExceptAll => "EXCEPT ALL",
     }
 }
 

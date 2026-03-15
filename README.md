@@ -256,8 +256,10 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 
 ### UNION / UNION ALL
 
+`union()` / `union_all()` returns a new `Query`, so you can use the same `order_by()`, `limit()`, etc. on the result:
+
 ```rust
-# use qbey::{qbey, col, UnionQueryOps};
+# use qbey::{qbey, col};
 let mut q1 = qbey("employee");
 q1.and_where(("dept", "eng"));
 q1.select(&["id", "name"]);
@@ -266,9 +268,12 @@ let mut q2 = qbey("employee");
 q2.and_where(("dept", "sales"));
 q2.select(&["id", "name"]);
 
-let uq = q1.union_all(&q2);
+let mut uq = q1.union_all(&q2);
+uq.order_by(col("name").asc());
+uq.limit(10);
+
 let (sql, binds) = uq.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ?");
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 10");
 ```
 
 ### IN clause

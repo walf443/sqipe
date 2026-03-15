@@ -84,7 +84,7 @@ fn test_union_query_merge() {
 
     let mut uq1 = q1.union_all(&q2);
     let uq2 = q3.union_all(&q4);
-    uq1.union_all(&uq2);
+    uq1.add_union_all(&uq2);
 
     let (sql, _) = uq1.to_sql();
     assert_eq!(
@@ -137,4 +137,97 @@ fn test_union_with_one_query_having_order_by() {
         sql,
         "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL (SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 5)"
     );
+}
+
+#[test]
+fn test_intersect_to_sql() {
+    let mut q1 = qbey("employee");
+    q1.select(&["dept"]);
+
+    let mut q2 = qbey("contractor");
+    q2.select(&["dept"]);
+
+    let uq = q1.intersect(&q2);
+
+    let (sql, _) = uq.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"dept\" FROM \"employee\" INTERSECT SELECT \"dept\" FROM \"contractor\""
+    );
+}
+
+#[test]
+fn test_except_to_sql() {
+    let mut q1 = qbey("employee");
+    q1.select(&["dept"]);
+
+    let mut q2 = qbey("contractor");
+    q2.select(&["dept"]);
+
+    let uq = q1.except(&q2);
+
+    let (sql, _) = uq.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"dept\" FROM \"employee\" EXCEPT SELECT \"dept\" FROM \"contractor\""
+    );
+}
+
+#[test]
+fn test_intersect_all_to_sql() {
+    let mut q1 = qbey("employee");
+    q1.select(&["dept"]);
+
+    let mut q2 = qbey("contractor");
+    q2.select(&["dept"]);
+
+    let uq = q1.intersect_all(&q2);
+
+    let (sql, _) = uq.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"dept\" FROM \"employee\" INTERSECT ALL SELECT \"dept\" FROM \"contractor\""
+    );
+}
+
+#[test]
+fn test_except_all_to_sql() {
+    let mut q1 = qbey("employee");
+    q1.select(&["dept"]);
+
+    let mut q2 = qbey("contractor");
+    q2.select(&["dept"]);
+
+    let uq = q1.except_all(&q2);
+
+    let (sql, _) = uq.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"dept\" FROM \"employee\" EXCEPT ALL SELECT \"dept\" FROM \"contractor\""
+    );
+}
+
+#[test]
+fn test_query_union_with_compound_query() {
+    let mut q1 = qbey("employee");
+    q1.and_where(("dept", "eng"));
+    q1.select(&["id", "name"]);
+
+    let mut q2 = qbey("employee");
+    q2.and_where(("dept", "sales"));
+    q2.select(&["id", "name"]);
+
+    let mut q3 = qbey("contractor");
+    q3.and_where(("dept", "eng"));
+    q3.select(&["id", "name"]);
+
+    let uq = q2.union_all(&q3);
+    let result = q1.union_all(&uq);
+
+    let (sql, binds) = result.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"contractor\" WHERE \"dept\" = ?"
+    );
+    assert_eq!(binds.len(), 3);
 }

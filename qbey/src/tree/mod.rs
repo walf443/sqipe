@@ -228,19 +228,3 @@ impl<V: Clone> DeleteTree<V> {
         }
     }
 }
-
-impl<V: Clone + std::fmt::Debug> UnionTree<V> {
-    pub fn from_union_query(union: &crate::UnionQuery<V>) -> Self {
-        let parts = union
-            .parts
-            .iter()
-            .map(|(op, q)| (op.clone(), SelectTree::from_query(q)))
-            .collect();
-        UnionTree {
-            parts,
-            order_bys: union.order_bys.clone(),
-            limit: union.limit_val,
-            offset: union.offset_val,
-        }
-    }
-}
