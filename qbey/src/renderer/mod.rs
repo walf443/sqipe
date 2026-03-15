@@ -7,7 +7,7 @@ pub mod delete;
 pub mod standard;
 pub mod update;
 
-use crate::tree::{FromClause, FromSource, SelectTree, SetOperationTree};
+use crate::tree::{FromClause, FromSource, SelectTree};
 
 /// Configuration for rendering SQL from trees.
 pub struct RenderConfig<'a> {
@@ -38,11 +38,6 @@ impl<'a> RenderConfig<'a> {
 pub trait Renderer {
     fn render_select<V: Clone>(&self, tree: &SelectTree<V>, cfg: &RenderConfig)
     -> (String, Vec<V>);
-    fn render_set_operation<V: Clone>(
-        &self,
-        tree: &SetOperationTree<V>,
-        cfg: &RenderConfig,
-    ) -> (String, Vec<V>);
 }
 
 // ── Shared rendering helpers (crate-visible for standard module) ──

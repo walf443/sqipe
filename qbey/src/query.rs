@@ -9,7 +9,7 @@ use crate::where_clause::{IntoIncluded, IntoWhereClause, WhereClause, WhereEntry
 
 use crate::renderer::standard::StandardSqlRenderer;
 use crate::renderer::{RenderConfig, Renderer};
-use crate::tree::{SelectTree, SetOperationTree, default_quote_identifier};
+use crate::tree::{SelectTree, default_quote_identifier};
 
 use crate::Dialect;
 
@@ -655,66 +655,27 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
     }
 
     /// Build a SelectTree from this query.
-    ///
-    /// Panics if this is a compound query (has set operations).
-    /// Use `to_set_operation_tree()` for compound queries.
     pub fn to_tree(&self) -> SelectTree<V> {
-        assert!(
-            self.set_operations.is_empty(),
-            "Cannot build SelectTree from a compound query; use to_set_operation_tree()"
-        );
         SelectTree::from_query(self)
-    }
-
-    /// Build a SetOperationTree from this compound query.
-    ///
-    /// Panics if this is not a compound query.
-    pub fn to_set_operation_tree(&self) -> SetOperationTree<V> {
-        assert!(
-            !self.set_operations.is_empty(),
-            "Cannot build SetOperationTree from a non-compound query; use to_tree()"
-        );
-        let parts = self
-            .set_operations
-            .iter()
-            .map(|(op, q)| (op.clone(), SelectTree::from_query(q)))
-            .collect();
-        SetOperationTree {
-            parts,
-            order_bys: self.order_bys.clone(),
-            limit: self.limit_val,
-            offset: self.offset_val,
-        }
     }
 
     /// Build standard SQL with `?` placeholders and double-quote identifiers.
     pub fn to_sql(&self) -> (String, Vec<V>) {
+        let tree = self.to_tree();
         let cfg = RenderConfig {
             ph: &|_| "?".to_string(),
             qi: &default_quote_identifier,
             backslash_escape: false,
         };
-        if self.set_operations.is_empty() {
-            let tree = self.to_tree();
-            StandardSqlRenderer.render_select(&tree, &cfg)
-        } else {
-            let tree = self.to_set_operation_tree();
-            StandardSqlRenderer.render_set_operation(&tree, &cfg)
-        }
+        StandardSqlRenderer.render_select(&tree, &cfg)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
+        let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        let cfg = RenderConfig::from_dialect(&ph, &qi, dialect);
-        if self.set_operations.is_empty() {
-            let tree = self.to_tree();
-            StandardSqlRenderer.render_select(&tree, &cfg)
-        } else {
-            let tree = self.to_set_operation_tree();
-            StandardSqlRenderer.render_set_operation(&tree, &cfg)
-        }
+        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect))
     }
 }
 

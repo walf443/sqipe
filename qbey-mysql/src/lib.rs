@@ -460,33 +460,31 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         tree
     }
 
-    /// Build a SetOperationTree from this compound query.
-    fn to_set_operation_tree(&self) -> qbey::tree::SetOperationTree<V> {
-        let parts = self
+    /// Build a SelectTree for a compound query.
+    ///
+    /// Each part's tree is built with MySQL index hints applied.
+    /// The outer order_bys/limit/offset come from inner (set via Deref).
+    fn to_compound_tree(&self) -> SelectTree<V> {
+        let parts: Vec<_> = self
             .set_operations
             .iter()
             .map(|(op, mq)| (op.clone(), mq.to_tree()))
             .collect();
-        qbey::tree::SetOperationTree {
-            parts,
-            order_bys: self.inner.order_bys().to_vec(),
-            limit: self.inner.limit_val(),
-            offset: self.inner.offset_val(),
-        }
+        let mut tree = self.inner.to_tree();
+        tree.set_operations = parts;
+        tree
     }
 
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
+        let tree = if self.set_operations.is_empty() {
+            self.to_tree()
+        } else {
+            self.to_compound_tree()
+        };
         let ph = |n: usize| MySQL.placeholder(n);
         let qi = |name: &str| MySQL.quote_identifier(name);
-        let cfg = RenderConfig::from_dialect(&ph, &qi, &MySQL);
-        if self.set_operations.is_empty() {
-            let tree = self.to_tree();
-            StandardSqlRenderer.render_select(&tree, &cfg)
-        } else {
-            let tree = self.to_set_operation_tree();
-            StandardSqlRenderer.render_set_operation(&tree, &cfg)
-        }
+        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
     }
 
     /// Convert this MySQL query builder into an UPDATE query builder.

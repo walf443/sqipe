@@ -45,7 +45,11 @@ pub enum SelectClause {
     Columns(Vec<SelectItem>),
 }
 
-/// AST for a single SELECT query, generic over bind value type.
+/// AST for a SELECT query, generic over bind value type.
+///
+/// Also supports compound queries (UNION, INTERSECT, EXCEPT) via `set_operations`.
+/// When `set_operations` is non-empty, all parts are stored there and the outer
+/// `order_bys`/`limit`/`offset` apply to the entire compound result.
 #[derive(Debug, Clone)]
 pub struct SelectTree<V: Clone = crate::Value> {
     pub from: FromClause<V>,
@@ -63,15 +67,10 @@ pub struct SelectTree<V: Clone = crate::Value> {
     pub offset: Option<u64>,
     /// Row-level locking clause (e.g., `"UPDATE"` → `FOR UPDATE`).
     pub lock_for: Option<String>,
-}
-
-/// AST for a compound query using set operations (UNION, INTERSECT, EXCEPT).
-#[derive(Debug, Clone)]
-pub struct SetOperationTree<V: Clone = crate::Value> {
-    pub parts: Vec<(crate::SetOp, SelectTree<V>)>,
-    pub order_bys: Vec<OrderByClause>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
+    /// When non-empty, this tree represents a compound query.
+    /// All parts are stored here; the outer `order_bys`/`limit`/`offset`
+    /// apply to the entire compound result.
+    pub set_operations: Vec<(crate::SetOp, SelectTree<V>)>,
 }
 
 impl<V: Clone> SelectTree<V> {
@@ -96,6 +95,11 @@ impl<V: Clone> SelectTree<V> {
             limit: self.limit,
             offset: self.offset,
             lock_for: self.lock_for,
+            set_operations: self
+                .set_operations
+                .into_iter()
+                .map(|(op, t)| (op, t.map_values(f)))
+                .collect(),
         }
     }
 }
@@ -104,11 +108,6 @@ impl<V: Clone> SelectTree<V> {
 
 impl<V: Clone + std::fmt::Debug> SelectTree<V> {
     pub fn from_query(query: &crate::Query<V>) -> Self {
-        debug_assert!(
-            query.set_operations.is_empty(),
-            "SelectTree::from_query called on a compound query; use to_set_operation_tree()"
-        );
-
         let select = SelectClause::Columns(query.selects.clone());
 
         let source = match &query.from_subquery {
@@ -139,16 +138,16 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             limit: query.limit_val,
             offset: query.offset_val,
             lock_for: query.lock_for.clone(),
+            set_operations: query
+                .set_operations
+                .iter()
+                .map(|(op, q)| (op.clone(), SelectTree::from_query(q)))
+                .collect(),
         }
     }
 
     /// Convert a Query into a SelectTree by moving fields instead of cloning.
     pub fn from_query_owned(query: crate::Query<V>) -> Self {
-        debug_assert!(
-            query.set_operations.is_empty(),
-            "SelectTree::from_query_owned called on a compound query; use to_set_operation_tree()"
-        );
-
         let select = SelectClause::Columns(query.selects);
 
         let source = match query.from_subquery {
@@ -163,6 +162,12 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
         );
         let mut join_subqueries = query.join_subqueries;
         join_subqueries.resize_with(join_count, || None);
+
+        let set_operations: Vec<_> = query
+            .set_operations
+            .into_iter()
+            .map(|(op, q)| (op, SelectTree::from_query(&q)))
+            .collect();
 
         SelectTree {
             from: FromClause {
@@ -180,6 +185,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             limit: query.limit_val,
             offset: query.offset_val,
             lock_for: query.lock_for,
+            set_operations,
         }
     }
 }
