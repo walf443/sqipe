@@ -30,13 +30,8 @@ pub trait Dialect {
     }
 }
 
-// Re-export all public types at the crate root for backwards compatibility.
+// Re-export all public types at the crate root.
 pub use aggregate::AggregateExpr;
-#[deprecated(
-    since = "0.2.0",
-    note = "Use `Col` instead. `Col` now supports both qualified and unqualified columns."
-)]
-pub use column::QualifiedCol;
 pub use column::{Col, ColRef, OrderByClause, SelectItem, SortDir, TableRef, col, table};
 pub use delete::DeleteQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};

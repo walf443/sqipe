@@ -300,15 +300,6 @@ impl<V: Clone + std::fmt::Debug> Query<V> {
         self
     }
 
-    /// Alias for [`select()`](Self::select).
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `select()` instead, which now accepts both `&str` and `Col`."
-    )]
-    pub fn select_cols(&mut self, cols: &[Col]) -> &mut Self {
-        self.select(cols)
-    }
-
     /// Append a single column to the select list.
     pub fn add_select(&mut self, col: Col) -> &mut Self {
         self.selects.push(SelectItem::Col(col));

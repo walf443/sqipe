@@ -281,6 +281,3 @@ impl<'a> From<&'a str> for SelectItem {
         })
     }
 }
-
-/// Backwards-compatible alias for `Col`.
-pub type QualifiedCol = Col;
