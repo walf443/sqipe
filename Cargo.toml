@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "sqipe",
-    "sqipe-mysql",
+    "qbey",
+    "qbey-mysql",
 ]
 resolver = "3"

@@ -1,6 +1,6 @@
 # TODO: Pipe Syntax Operator Coverage
 
-SQL pipe syntax operators and their implementation status in sqipe.
+SQL pipe syntax operators and their implementation status in qbey.
 
 Reference: [Spark SQL Pipe Syntax](https://spark.apache.org/docs/latest/sql-pipe-syntax.html), [BigQuery Pipe Syntax](https://cloud.google.com/bigquery/docs/reference/standard-sql/pipe-syntax)
 

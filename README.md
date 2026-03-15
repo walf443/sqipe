@@ -1,5 +1,5 @@
 
-# sqipe
+# qbey
 
 pipe syntax based sql query builder
 
@@ -10,8 +10,8 @@ pipe syntax based sql query builder
 ### Basic usage
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.and_where(("name", "Alice"));   // tuple shorthand for Eq
 q.select(&["id", "name"]);
 
@@ -28,9 +28,9 @@ assert_eq!(sql, "FROM \"employee\" |> WHERE \"name\" = ? |> SELECT \"id\", \"nam
 
 - **Standard SQL & pipe syntax** — Generate both traditional `SELECT ... FROM ... WHERE` and pipe syntax `FROM ... |> WHERE ... |> SELECT ...` from the same query builder
 - **Driver agnostic** — Works with any database driver. Tested with [sqlx](https://github.com/launchbadge/sqlx) (SQLite, MySQL), [rusqlite](https://github.com/rusqlite/rusqlite), [tokio-postgres](https://github.com/sfackler/rust-postgres), and [postgres](https://github.com/sfackler/rust-postgres)
-- **Extensible bind value types** — Use the built-in `Value` enum for quick prototyping, or define your own type with `sqipe_with::<V>()` to match your driver's parameter types
+- **Extensible bind value types** — Use the built-in `Value` enum for quick prototyping, or define your own type with `qbey_with::<V>()` to match your driver's parameter types
 - **Dialect support** — Customize placeholder style (`?`, `$1`, ...) and identifier quoting via the `Dialect` trait. MySQL dialect is available as a separate crate:
-  - [sqipe-mysql](./sqipe-mysql/README.md) — backtick quoting, index hints, STRAIGHT_JOIN
+  - [qbey-mysql](./qbey-mysql/README.md) — backtick quoting, index hints, STRAIGHT_JOIN
 - **Dynamic query building** — Conditionally add WHERE clauses, JOINs, and other clauses at runtime
 
 ## API
@@ -38,8 +38,8 @@ assert_eq!(sql, "FROM \"employee\" |> WHERE \"name\" = ? |> SELECT \"id\", \"nam
 ### Comparison operators
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.and_where(("name", "Alice"));               // tuple shorthand for Eq
 q.and_where(col("age").gt(20));               // age > ?
 q.and_where(col("age").lte(60));              // age <= ?
@@ -55,8 +55,8 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 ### BETWEEN / NOT BETWEEN
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.and_where(col("age").between(20, 30));
 q.select(&["id", "name"]);
 
@@ -64,7 +64,7 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" BETWEEN ? AND ?");
 
 // NOT BETWEEN
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(col("age").not_between(20, 30));
 q.select(&["id", "name"]);
 
@@ -77,33 +77,33 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BET
 Rust range types are automatically converted to the appropriate SQL conditions.
 
 ```rust
-# use sqipe::{sqipe, col};
+# use qbey::{qbey, col};
 // Inclusive range: BETWEEN
-let (sql, _) = sqipe("t").and_where(col("age").in_range(20..=30)).to_sql();
+let (sql, _) = qbey("t").and_where(col("age").in_range(20..=30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" BETWEEN ? AND ?");
 
 // Exclusive range: >= AND <
-let (sql, _) = sqipe("t").and_where(col("age").in_range(20..30)).to_sql();
+let (sql, _) = qbey("t").and_where(col("age").in_range(20..30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" >= ? AND \"age\" < ?");
 
 // From range: >=
-let (sql, _) = sqipe("t").and_where(col("age").in_range(20..)).to_sql();
+let (sql, _) = qbey("t").and_where(col("age").in_range(20..)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" >= ?");
 
 // To range: <
-let (sql, _) = sqipe("t").and_where(col("age").in_range(..30)).to_sql();
+let (sql, _) = qbey("t").and_where(col("age").in_range(..30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" < ?");
 
 // To inclusive range: <=
-let (sql, _) = sqipe("t").and_where(col("age").in_range(..=30)).to_sql();
+let (sql, _) = qbey("t").and_where(col("age").in_range(..=30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" <= ?");
 ```
 
 ### Dynamic query building
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 
 let name: Option<&str> = Some("Alice");
 let min_age: Option<i32> = Some(20);
@@ -122,9 +122,9 @@ let (sql, binds) = q.to_sql();
 ### or_where
 
 ```rust
-# use sqipe::{sqipe, col};
+# use qbey::{qbey, col};
 // Simple OR
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
 q.or_where(col("role").eq("admin"));
 let (sql, binds) = q.to_sql();
@@ -134,15 +134,15 @@ assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"name\" = ? OR \"role\" = ?")
 ### Grouping conditions with any / all
 
 ```rust
-# use sqipe::{sqipe, col, any, all};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col, any, all};
+let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
 q.and_where(any(col("role").eq("admin"), col("role").eq("manager")));
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"name\" = ? AND (\"role\" = ? OR \"role\" = ?)");
 
 // Combining all + any
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(
     any(
         all(col("role").eq("admin"), col("dept").eq("eng")),
@@ -156,22 +156,22 @@ assert_eq!(sql, "SELECT * FROM \"employee\" WHERE (\"role\" = ? AND \"dept\" = ?
 ### Negating conditions with not
 
 ```rust
-# use sqipe::{sqipe, col, not, any};
+# use qbey::{qbey, col, not, any};
 // Function style
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
 q.and_where(not(col("role").eq("admin")));
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"name\" = ? AND NOT (\"role\" = ?)");
 
 // Operator style (! operator)
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(!col("role").eq("admin"));
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE NOT (\"role\" = ?)");
 
 // Combined with any/all
-let mut q = sqipe("employee");
+let mut q = qbey("employee");
 q.and_where(not(any(col("role").eq("admin"), col("role").eq("manager"))));
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE NOT ((\"role\" = ? OR \"role\" = ?))");
@@ -180,8 +180,8 @@ assert_eq!(sql, "SELECT * FROM \"employee\" WHERE NOT ((\"role\" = ? OR \"role\"
 ### Aggregate / GROUP BY
 
 ```rust
-# use sqipe::{sqipe, col, aggregate};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col, aggregate};
+let mut q = qbey("employee");
 q.aggregate(&[
     aggregate::count_all().as_("cnt"),
     aggregate::sum("salary").as_("total_salary"),
@@ -202,8 +202,8 @@ Available aggregate functions: `count_all()`, `count(col)`, `sum(col)`, `avg(col
 `and_where` / `or_where` called after `aggregate()` automatically become HAVING conditions.
 
 ```rust
-# use sqipe::{sqipe, col, aggregate};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col, aggregate};
+let mut q = qbey("employee");
 q.and_where(col("active").eq(true));       // WHERE (before aggregate)
 q.aggregate(&[aggregate::count_all().as_("cnt")]);
 q.group_by(&["dept"]);
@@ -219,8 +219,8 @@ assert_eq!(sql, "FROM \"employee\" |> WHERE \"active\" = ? |> AGGREGATE COUNT(*)
 ### Order By
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.select(&["id", "name", "age"]);
 q.order_by(col("name").asc());
 q.order_by(col("age").desc());
@@ -239,8 +239,8 @@ The expression is rendered as-is, so the caller is responsible for including the
 [`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
 
 ```rust
-# use sqipe::{sqipe, col, RawSql};
-let mut q = sqipe("users");
+# use qbey::{qbey, col, RawSql};
+let mut q = qbey("users");
 q.select(&["id", "name"]);
 q.order_by_expr(RawSql::new("RAND()"));
 
@@ -251,8 +251,8 @@ assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
 Column-based and expression-based ORDER BY can be mixed:
 
 ```rust
-# use sqipe::{sqipe, col, RawSql};
-let mut q = sqipe("users");
+# use qbey::{qbey, col, RawSql};
+let mut q = qbey("users");
 q.select(&["id", "name"]);
 q.order_by(col("name").asc());
 q.order_by_expr(RawSql::new("RAND()"));
@@ -264,8 +264,8 @@ assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"
 ### Limit / Offset
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.select(&["id", "name"]);
 q.limit(10);
 q.offset(20);
@@ -280,8 +280,8 @@ assert_eq!(sql, "FROM \"employee\" |> SELECT \"id\", \"name\" |> LIMIT 10 OFFSET
 ### Method chaining
 
 ```rust
-# use sqipe::{sqipe, col};
-let (sql, binds) = sqipe("employee")
+# use qbey::{qbey, col};
+let (sql, binds) = qbey("employee")
     .and_where(("name", "Alice"))
     .and_where(col("age").gt(20))
     .select(&["id", "name"])
@@ -292,12 +292,12 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 ### UNION / UNION ALL
 
 ```rust
-# use sqipe::{sqipe, col, UnionQueryOps};
-let mut q1 = sqipe("employee");
+# use qbey::{qbey, col, UnionQueryOps};
+let mut q1 = qbey("employee");
 q1.and_where(("dept", "eng"));
 q1.select(&["id", "name"]);
 
-let mut q2 = sqipe("employee");
+let mut q2 = qbey("employee");
 q2.and_where(("dept", "sales"));
 q2.select(&["id", "name"]);
 
@@ -309,8 +309,8 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UN
 ### IN clause
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("users");
+# use qbey::{qbey, col};
+let mut q = qbey("users");
 q.and_where(col("status").included(&["active", "pending"]));
 q.select(&["id", "name"]);
 
@@ -323,8 +323,8 @@ Empty lists are safely handled as `1 = 0`.
 ### NOT IN clause
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("users");
+# use qbey::{qbey, col};
+let mut q = qbey("users");
 q.and_where(col("status").not_included(&["inactive", "banned"]));
 q.select(&["id", "name"]);
 
@@ -337,12 +337,12 @@ Empty lists are safely handled as `1 = 1`.
 Subqueries are also supported:
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut sub = sqipe("orders");
+# use qbey::{qbey, col};
+let mut sub = qbey("orders");
 sub.select(&["user_id"]);
 sub.and_where(col("status").eq("cancelled"));
 
-let mut q = sqipe("users");
+let mut q = qbey("users");
 q.and_where(col("id").not_included(sub));
 q.select(&["id", "name"]);
 
@@ -355,27 +355,27 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SEL
 `LikeExpression` provides safe pattern construction with automatic escaping of `%` and `_` in user input.
 
 ```rust
-# use sqipe::{sqipe, col, LikeExpression};
+# use qbey::{qbey, col, LikeExpression};
 // contains: %...%
-let (sql, _) = sqipe("users")
+let (sql, _) = qbey("users")
     .and_where(col("name").like(LikeExpression::contains("Ali")))
     .to_sql();
 assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
 
 // starts_with: ...%
-let (sql, _) = sqipe("users")
+let (sql, _) = qbey("users")
     .and_where(col("name").like(LikeExpression::starts_with("Ali")))
     .to_sql();
 assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
 
 // ends_with: %...
-let (sql, _) = sqipe("users")
+let (sql, _) = qbey("users")
     .and_where(col("name").like(LikeExpression::ends_with("ice")))
     .to_sql();
 assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
 
 // NOT LIKE
-let (sql, _) = sqipe("users")
+let (sql, _) = qbey("users")
     .and_where(col("name").not_like(LikeExpression::contains("Bob")))
     .to_sql();
 assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" NOT LIKE ? ESCAPE '\'"#);
@@ -386,9 +386,9 @@ Raw strings are not accepted — `LikeExpression` must be used to prevent wildca
 ### JOIN
 
 ```rust
-# use sqipe::{sqipe, col, table, join};
+# use qbey::{qbey, col, table, join};
 // INNER JOIN with ON
-let mut q = sqipe("users");
+let mut q = qbey("users");
 q.join("orders", table("users").col("id").eq_col("user_id"));
 q.select(&["id", "name"]);
 
@@ -396,7 +396,7 @@ let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\"");
 
 // LEFT JOIN
-let mut q = sqipe("users");
+let mut q = qbey("users");
 q.left_join("addresses", table("users").col("id").eq_col("user_id"));
 q.select(&["id", "name"]);
 
@@ -404,7 +404,7 @@ let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\"");
 
 // JOIN with USING
-let mut q = sqipe("users");
+let mut q = qbey("users");
 q.join("orders", join::using_col("user_id"));
 q.select(&["id", "name"]);
 
@@ -412,7 +412,7 @@ let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\")");
 
 // Multiple columns USING
-let mut q = sqipe("users");
+let mut q = qbey("users");
 q.join("orders", join::using_cols(&["user_id", "tenant_id"]));
 q.select(&["id", "name"]);
 
@@ -427,8 +427,8 @@ In pipe syntax, this naturally produces `FROM ... |> WHERE ... |> JOIN ...`.
 In standard SQL, a CTE (Common Table Expression) is automatically generated to preserve the intended semantics.
 
 ```rust
-# use sqipe::{sqipe, col, table};
-let mut q = sqipe("users");
+# use qbey::{qbey, col, table};
+let mut q = qbey("users");
 q.and_where(col("age").gt(25));   // WHERE first
 q.join("orders", table("users").col("id").eq_col("user_id"));  // then JOIN
 q.select(&["id", "name"]);
@@ -447,8 +447,8 @@ When `join` is called before `and_where` (the traditional order), no CTE is gene
 ### Table aliases and qualified columns
 
 ```rust
-# use sqipe::{sqipe, col, table};
-let mut q = sqipe("users");
+# use qbey::{qbey, col, table};
+let mut q = qbey("users");
 q.as_("u");
 q.join(
     table("orders").as_("o"),
@@ -464,8 +464,8 @@ assert_eq!(sql, "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\
 ### Column aliases
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("users");
+# use qbey::{qbey, col};
+let mut q = qbey("users");
 q.add_select(col("name").as_("user_name"));
 
 let (sql, _) = q.to_sql();
@@ -478,8 +478,8 @@ Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in t
 The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
 
 ```rust
-# use sqipe::{sqipe, col, RawSql};
-let mut q = sqipe("users");
+# use qbey::{qbey, col, RawSql};
+let mut q = qbey("users");
 q.add_select(col("id"));
 q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
 q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display_name"));
@@ -493,9 +493,9 @@ assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nicknam
 `Query::into_update()` converts a SELECT query builder into an UPDATE statement builder.
 
 ```rust
-# use sqipe::{sqipe, col};
+# use qbey::{qbey, col};
 // Basic UPDATE
-let mut u = sqipe("employee").into_update();
+let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
 
@@ -506,8 +506,8 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to UPDATE:
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let mut u = q.into_update();
 u.set(col("name"), "Alice");
@@ -520,8 +520,8 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#)
 By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `allow_without_where()` to explicitly opt in:
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut u = sqipe("employee").into_update();
+# use qbey::{qbey, col};
+let mut u = qbey("employee").into_update();
 u.set(col("status"), "inactive");
 u.allow_without_where();
 
@@ -532,12 +532,12 @@ assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
 Dialect support works via `to_sql_with`:
 
 ```rust
-# use sqipe::{sqipe, col, Dialect};
+# use qbey::{qbey, col, Dialect};
 # struct PgDialect;
 # impl Dialect for PgDialect {
 #     fn placeholder(&self, index: usize) -> String { format!("${}", index) }
 # }
-let mut u = sqipe("employee").into_update();
+let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
 
@@ -548,8 +548,8 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSql`:
 
 ```rust
-# use sqipe::{sqipe, col, RawSql};
-let mut u = sqipe("employee").into_update();
+# use qbey::{qbey, col, RawSql};
+let mut u = qbey("employee").into_update();
 u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 u.and_where(col("id").eq(1));
 
@@ -562,9 +562,9 @@ assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE
 `Query::into_delete()` converts a SELECT query builder into a DELETE statement builder.
 
 ```rust
-# use sqipe::{sqipe, col};
+# use qbey::{qbey, col};
 // Basic DELETE
-let mut d = sqipe("employee").into_delete();
+let mut d = qbey("employee").into_delete();
 d.and_where(col("id").eq(1));
 
 let (sql, binds) = d.to_sql();
@@ -574,8 +574,8 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to DELETE:
 
 ```rust
-# use sqipe::{sqipe, col};
-let mut q = sqipe("employee");
+# use qbey::{qbey, col};
+let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let d = q.into_delete();
 
@@ -586,8 +586,8 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table deletes. Use `allow_without_where()` to explicitly opt in:
 
 ```rust
-# use sqipe::sqipe;
-let mut d = sqipe("employee").into_delete();
+# use qbey::qbey;
+let mut d = qbey("employee").into_delete();
 d.allow_without_where();
 
 let (sql, binds) = d.to_sql();
@@ -596,4 +596,4 @@ assert_eq!(sql, r#"DELETE FROM "employee""#);
 
 ### MySQL dialect
 
-See [sqipe-mysql](./sqipe-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
+See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
