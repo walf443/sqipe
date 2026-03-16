@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::Dialect;
 use crate::tree::SelectTree;
@@ -153,7 +153,7 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
             // First call: establish column order.
             self.columns = pairs.iter().map(|(c, _)| c.to_string()).collect();
             {
-                let mut seen = std::collections::HashSet::with_capacity(self.columns.len());
+                let mut seen = HashSet::with_capacity(self.columns.len());
                 for col in &self.columns {
                     assert!(
                         seen.insert(col.as_str()),

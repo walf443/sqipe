@@ -1,6 +1,8 @@
 #![cfg(feature = "test-rusqlite")]
 
-use qbey::{LikeExpression, col, count_all, qbey_from_subquery_with, qbey_with, table};
+use qbey::{
+    LikeExpression, ToInsertRow, col, count_all, qbey_from_subquery_with, qbey_with, table,
+};
 use rusqlite::{Connection, params_from_iter};
 
 #[derive(Debug, Clone)]
@@ -19,6 +21,12 @@ impl From<&str> for SqliteValue {
 impl From<i32> for SqliteValue {
     fn from(n: i32) -> Self {
         SqliteValue::Integer(n as i64)
+    }
+}
+
+impl From<i64> for SqliteValue {
+    fn from(n: i64) -> Self {
+        SqliteValue::Integer(n)
     }
 }
 
@@ -755,4 +763,60 @@ fn test_insert_from_select() {
         .map(|r| r.unwrap())
         .collect();
     assert_eq!(names, vec!["Charlie"]);
+}
+
+struct User {
+    id: i64,
+    name: String,
+    age: i64,
+}
+
+impl ToInsertRow<SqliteValue> for User {
+    fn to_insert_row(&self) -> Vec<(&'static str, SqliteValue)> {
+        vec![
+            ("id", self.id.into()),
+            ("name", self.name.as_str().into()),
+            ("age", self.age.into()),
+        ]
+    }
+}
+
+#[test]
+fn test_insert_with_to_insert_row_trait() {
+    let conn = setup_db();
+
+    let users = vec![
+        User {
+            id: 4,
+            name: "Dave".to_string(),
+            age: 40,
+        },
+        User {
+            id: 5,
+            name: "Eve".to_string(),
+            age: 28,
+        },
+    ];
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    for u in &users {
+        ins.add_value(u);
+    }
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    let mut stmt = conn
+        .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" >= 4 ORDER BY "id" ASC"#)
+        .unwrap();
+    let rows: Vec<(String, i64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0], ("Dave".to_string(), 40));
+    assert_eq!(rows[1], ("Eve".to_string(), 28));
 }
