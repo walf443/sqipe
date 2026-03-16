@@ -491,6 +491,118 @@ fn test_col_max_with_alias() {
 }
 
 #[test]
+fn test_having() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(5));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt" FROM "orders" GROUP BY "product" HAVING "cnt" > ?"#
+    );
+    assert_eq!(binds, vec![Value::Int(5)]);
+}
+
+#[test]
+fn test_having_multiple_conditions() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.add_select(col("price").sum().as_("total"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(5));
+    q.and_having(col("total").gt(100));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt", SUM("price") AS "total" FROM "orders" GROUP BY "product" HAVING "cnt" > ? AND "total" > ?"#
+    );
+    assert_eq!(binds, vec![Value::Int(5), Value::Int(100)]);
+}
+
+#[test]
+fn test_having_or() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(10));
+    q.or_having(col("cnt").lt(2));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt" FROM "orders" GROUP BY "product" HAVING "cnt" > ? OR "cnt" < ?"#
+    );
+    assert_eq!(binds, vec![Value::Int(10), Value::Int(2)]);
+}
+
+#[test]
+fn test_having_with_where() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.and_where(col("status").eq("completed"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(5));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt" FROM "orders" WHERE "status" = ? GROUP BY "product" HAVING "cnt" > ?"#
+    );
+    assert_eq!(
+        binds,
+        vec![
+            Value::String("completed".to_string()),
+            Value::Int(5),
+        ]
+    );
+}
+
+#[test]
+fn test_having_in_subquery() {
+    let mut sub = qbey("popular_products");
+    sub.select(&["product"]);
+
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("product").included(sub));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt" FROM "orders" GROUP BY "product" HAVING "product" IN (SELECT "product" FROM "popular_products")"#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_having_not_in_subquery() {
+    let mut sub = qbey("blocked_products");
+    sub.select(&["product"]);
+
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("product").not_included(sub));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt" FROM "orders" GROUP BY "product" HAVING "product" NOT IN (SELECT "product" FROM "blocked_products")"#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
 fn test_multiple_aggregates() {
     let mut q = qbey("orders");
     q.select(&["product"]);

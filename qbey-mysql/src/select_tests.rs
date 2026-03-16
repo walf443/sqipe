@@ -648,3 +648,81 @@ fn test_intersect_with_force_index() {
         "SELECT `dept` FROM `employee` FORCE INDEX (idx_dept) INTERSECT SELECT `dept` FROM `contractor` FORCE INDEX (idx_dept)"
     );
 }
+
+#[test]
+fn test_having() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(5));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT `product`, COUNT(`id`) AS `cnt` FROM `orders` GROUP BY `product` HAVING `cnt` > ?"
+    );
+    assert_eq!(binds, vec![qbey::Value::Int(5)]);
+}
+
+#[test]
+fn test_having_with_where() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.and_where(col("status").eq("completed"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(5));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT `product`, COUNT(`id`) AS `cnt` FROM `orders` WHERE `status` = ? GROUP BY `product` HAVING `cnt` > ?"
+    );
+    assert_eq!(
+        binds,
+        vec![
+            qbey::Value::String("completed".to_string()),
+            qbey::Value::Int(5),
+        ]
+    );
+}
+
+#[test]
+fn test_having_or() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("cnt").gt(10));
+    q.or_having(col("cnt").lt(2));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT `product`, COUNT(`id`) AS `cnt` FROM `orders` GROUP BY `product` HAVING `cnt` > ? OR `cnt` < ?"
+    );
+    assert_eq!(
+        binds,
+        vec![qbey::Value::Int(10), qbey::Value::Int(2)]
+    );
+}
+
+#[test]
+fn test_having_in_subquery() {
+    let mut sub = qbey("popular_products");
+    sub.select(&["product"]);
+
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.group_by(&["product"]);
+    q.and_having(col("product").included(sub));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT `product`, COUNT(`id`) AS `cnt` FROM `orders` GROUP BY `product` HAVING `product` IN (SELECT `product` FROM `popular_products`)"
+    );
+    assert!(binds.is_empty());
+}

@@ -74,6 +74,10 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
     /// Add an OR WHERE condition.
     fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Add an AND HAVING condition.
+    fn and_having(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Add an OR HAVING condition.
+    fn or_having(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
     /// Append columns to the select list.
     ///
     /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
@@ -312,6 +316,16 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
 
     fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
         self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    fn and_having(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.havings.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    fn or_having(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.havings.push(WhereEntry::Or(cond.into_where_clause()));
         self
     }
 

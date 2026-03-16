@@ -59,6 +59,16 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         self
     }
 
+    fn and_having(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.and_having(cond);
+        self
+    }
+
+    fn or_having(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.or_having(cond);
+        self
+    }
+
     fn select(&mut self, cols: &[impl Into<qbey::SelectItem> + Clone]) -> &mut Self {
         self.inner.select(cols);
         self
