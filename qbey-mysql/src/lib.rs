@@ -43,9 +43,9 @@ pub enum IndexHintScope {
 /// A single MySQL index hint, e.g. `FORCE INDEX FOR JOIN (idx1, idx2)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexHint {
-    pub hint_type: IndexHintType,
-    pub scope: Option<IndexHintScope>,
-    pub indexes: Vec<String>,
+    pub(crate) hint_type: IndexHintType,
+    pub(crate) scope: Option<IndexHintScope>,
+    pub(crate) indexes: Vec<String>,
 }
 
 impl IndexHint {
@@ -56,10 +56,10 @@ impl IndexHint {
             IndexHintType::Ignore => "IGNORE INDEX",
         };
         let scope = match &self.scope {
-            None => String::new(),
-            Some(IndexHintScope::Join) => " FOR JOIN".to_string(),
-            Some(IndexHintScope::OrderBy) => " FOR ORDER BY".to_string(),
-            Some(IndexHintScope::GroupBy) => " FOR GROUP BY".to_string(),
+            None => "",
+            Some(IndexHintScope::Join) => " FOR JOIN",
+            Some(IndexHintScope::OrderBy) => " FOR ORDER BY",
+            Some(IndexHintScope::GroupBy) => " FOR GROUP BY",
         };
         format!("{}{} ({})", action, scope, self.indexes.join(", "))
     }
