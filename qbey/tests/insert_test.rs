@@ -277,6 +277,44 @@ fn test_insert_col_expr_duplicate_expr_column_panics() {
 }
 
 #[test]
+fn test_insert_col_expr_only() {
+    let mut ins = qbey("employee").into_insert();
+    ins.add_value_col_expr("created_at", RawSql::new("NOW()"));
+    let (sql, binds) = ins.to_sql();
+    assert_eq!(
+        sql,
+        r#"INSERT INTO "employee" ("created_at") VALUES (NOW())"#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_insert_col_expr_only_multiple() {
+    let mut ins = qbey("employee").into_insert();
+    ins.add_value_col_expr("created_at", RawSql::new("NOW()"));
+    ins.add_value_col_expr("uuid", RawSql::new("UUID()"));
+    let (sql, binds) = ins.to_sql();
+    assert_eq!(
+        sql,
+        r#"INSERT INTO "employee" ("created_at", "uuid") VALUES (NOW(), UUID())"#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_insert_col_expr_with_qualified_col_ignores_table() {
+    let mut ins = qbey("employee").into_insert();
+    ins.add_value(&[("name", "Alice".into())]);
+    ins.add_value_col_expr(table("employee").col("created_at"), RawSql::new("NOW()"));
+    let (sql, _) = ins.to_sql();
+    // table qualifier is ignored in INSERT column lists
+    assert_eq!(
+        sql,
+        r#"INSERT INTO "employee" ("name", "created_at") VALUES (?, NOW())"#
+    );
+}
+
+#[test]
 fn test_insert_tree_map_values() {
     let mut ins = qbey("employee").into_insert();
     ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);

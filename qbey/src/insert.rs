@@ -20,6 +20,8 @@ impl IntoColumnName for &str {
     }
 }
 
+/// Only the column name is used; the table qualifier and alias are ignored
+/// because INSERT column lists do not support table qualification.
 impl IntoColumnName for Col {
     fn into_column_name(self) -> String {
         self.column
@@ -312,18 +314,25 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         match &self.source {
             InsertSource::Values(rows) => {
                 assert!(
-                    !rows.is_empty(),
-                    "INSERT requires at least one row of values or a SELECT subquery"
+                    !rows.is_empty() || !self.col_exprs.is_empty(),
+                    "INSERT requires at least one row of values, a col_expr, or a SELECT subquery"
                 );
                 let col_exprs = self
                     .col_exprs
                     .iter()
                     .map(|(c, e)| (c.clone(), e.as_str().to_string()))
                     .collect();
+                // When only col_exprs are provided (no add_value rows),
+                // produce a single empty row so the renderer emits one VALUES tuple.
+                let rows = if rows.is_empty() {
+                    vec![vec![]]
+                } else {
+                    rows.clone()
+                };
                 crate::tree::InsertTree {
                     table: self.table.clone(),
                     columns: self.columns.clone(),
-                    source: crate::tree::InsertTreeSource::Values(rows.clone()),
+                    source: crate::tree::InsertTreeSource::Values(rows),
                     col_exprs,
                 }
             }
