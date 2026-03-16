@@ -23,14 +23,54 @@ pub enum SetClause<V: Clone> {
 /// When a new builder method is added here, all implementations must follow.
 pub trait UpdateQueryBuilder<V: Clone> {
     /// Add a SET clause: `SET "col" = ?`.
+    ///
+    /// Use [`col()`](crate::col) to create a column reference for the first argument.
+    /// Column names are quoted as identifiers but **not** parameterized,
+    /// so never pass external (user-supplied) input as a column name.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, UpdateQueryBuilder};
+    ///
+    /// let mut u = qbey("employee").into_update();
+    /// u.set(col("name"), "Alice");
+    /// u.and_where(col("id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
+    /// ```
     fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self;
+
     /// Add a raw SQL expression to the SET clause.
+    ///
+    /// Use [`RawSql::new()`] to create the expression, making it explicit
+    /// that raw SQL is being injected.
+    ///
+    /// # Security
+    ///
+    /// The expression is embedded directly into the generated SQL **without
+    /// escaping or parameterization**. Never pass user-supplied input;
+    /// doing so opens the door to SQL injection.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, RawSql, UpdateQueryBuilder};
+    ///
+    /// let mut u = qbey("employee").into_update();
+    /// u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
+    /// u.and_where(col("id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
+    /// ```
     fn set_expr(&mut self, expr: RawSql) -> &mut Self;
+
     /// Add an AND WHERE condition.
     fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+
     /// Add an OR WHERE condition.
     fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+
     /// Explicitly allow this UPDATE to have no WHERE clause.
+    ///
+    /// By default, `to_sql()` panics if no WHERE conditions are set,
+    /// to prevent accidental full-table updates.
     fn allow_without_where(&mut self) -> &mut Self;
 }
 

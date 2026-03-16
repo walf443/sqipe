@@ -16,6 +16,9 @@ pub trait DeleteQueryBuilder<V: Clone> {
     /// Add an OR WHERE condition.
     fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
     /// Explicitly allow this DELETE to have no WHERE clause.
+    ///
+    /// By default, `to_sql()` panics if no WHERE conditions are set,
+    /// to prevent accidental full-table deletes.
     fn allow_without_where(&mut self) -> &mut Self;
 }
 

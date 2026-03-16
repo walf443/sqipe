@@ -67,10 +67,38 @@ impl<V: Clone, const N: usize> ToInsertRow<V> for [(&'static str, V); N] {
 /// When a new builder method is added here, all implementations must follow.
 pub trait InsertQueryBuilder<V: Clone> {
     /// Add a row of column-value pairs.
+    ///
+    /// Accepts any type that implements [`ToInsertRow<V>`], including:
+    /// - A slice of `(&str, V)` tuples: `&[("name", "Alice".into())]`
+    /// - A custom struct that implements `ToInsertRow<V>`
+    ///
+    /// The first call establishes the column list. Subsequent calls must provide
+    /// the same set of column names (order may differ — values are reordered to
+    /// match the column order established by the first call).
+    ///
+    /// # Panics
+    ///
+    /// - Panics if called after [`from_select()`](InsertQueryBuilder::from_select).
+    /// - Panics if the row is empty.
+    /// - Panics if the column set does not match the first call's column set.
     fn add_value(&mut self, row: &(impl ToInsertRow<V> + ?Sized)) -> &mut Self;
+
     /// Add an extra column whose value is a raw SQL expression applied to every row.
+    ///
+    /// This is useful for columns like `created_at` that should use a database
+    /// function such as `NOW()` rather than a bind parameter.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the column name duplicates a column already added via
+    /// `add_value()` or a previous `add_col_value_expr()` call.
     fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self;
+
     /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `add_value()` has already been called.
     #[allow(clippy::wrong_self_convention)]
     fn from_select(&mut self, sub: impl crate::query::IntoSelectTree<V>) -> &mut Self;
 }

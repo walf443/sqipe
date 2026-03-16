@@ -75,10 +75,22 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Add an OR WHERE condition.
     fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
     /// Append columns to the select list.
+    ///
+    /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
+    /// Can be called multiple times — each call appends to the existing list.
     fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self;
     /// Append a single item to the select list.
+    ///
+    /// Accepts a `Col`, `SelectItem`, or any type that implements `Into<SelectItem>`.
     fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self;
     /// Append a raw SQL expression to the select list.
+    ///
+    /// # Security
+    ///
+    /// The `raw` string is embedded directly into the generated SQL **without
+    /// escaping or parameterization**. Never pass user-supplied input as `raw`;
+    /// doing so opens the door to SQL injection. Only use hard-coded or
+    /// application-controlled expressions.
     fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self;
     /// Set the GROUP BY columns.
     fn group_by(&mut self, cols: &[&str]) -> &mut Self;
@@ -86,7 +98,8 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
     /// Add a LEFT JOIN clause.
     fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
-    /// Add a JOIN clause with a custom join type.
+    /// Add a JOIN clause with a custom join type. Used by dialect crates for
+    /// dialect-specific join types (e.g., STRAIGHT_JOIN in MySQL).
     fn add_join(
         &mut self,
         join_type: JoinType,
@@ -118,12 +131,22 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Add an ORDER BY clause.
     fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
     /// Append a raw SQL expression to the ORDER BY clause.
+    ///
+    /// The expression is rendered as-is without quoting. Use this for
+    /// expressions like `RAND()`, `id DESC NULLS FIRST`, etc.
+    ///
+    /// # Security
+    ///
+    /// Never pass user-supplied input as `raw`.
     fn order_by_expr(&mut self, raw: RawSql) -> &mut Self;
     /// Set the LIMIT value.
     fn limit(&mut self, n: u64) -> &mut Self;
     /// Set the OFFSET value.
     fn offset(&mut self, n: u64) -> &mut Self;
     /// Append a `FOR <clause>` locking clause to the generated SQL.
+    ///
+    /// This is the base method for row-level locking. Use [`for_update`](Self::for_update)
+    /// for the common case.
     fn for_with(&mut self, clause: &str) -> &mut Self;
 
     /// Append `FOR UPDATE` to the generated SQL.
