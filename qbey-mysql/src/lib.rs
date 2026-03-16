@@ -8,11 +8,10 @@ use qbey::renderer::standard::StandardSqlRenderer;
 use qbey::renderer::{RenderConfig, Renderer};
 use qbey::tree::SelectTree;
 
-// Re-export builder traits so users of qbey-mysql get them automatically.
-pub use qbey::DeleteQueryBuilder;
-pub use qbey::InsertQueryBuilder;
-pub use qbey::SelectQueryBuilder;
-pub use qbey::UpdateQueryBuilder;
+use qbey::DeleteQueryBuilder;
+use qbey::InsertQueryBuilder;
+use qbey::SelectQueryBuilder;
+use qbey::UpdateQueryBuilder;
 
 /// MySQL dialect: `?` placeholders and backtick identifier quoting.
 pub struct MySQL;
@@ -227,7 +226,8 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     ///
     /// ```
     /// use qbey::{col, Value};
-    /// use qbey_mysql::{qbey, InsertQueryBuilder};
+    /// use qbey_mysql::qbey;
+    /// use qbey::InsertQueryBuilder;
     ///
     /// let mut ins = qbey("users").into_insert();
     /// ins.add_value(&[("id", 1.into()), ("name", "Alice".into())]);
@@ -263,7 +263,8 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     ///
     /// ```
     /// use qbey::{col, Value, RawSql};
-    /// use qbey_mysql::{qbey, InsertQueryBuilder};
+    /// use qbey_mysql::qbey;
+    /// use qbey::InsertQueryBuilder;
     ///
     /// let mut ins = qbey("users").into_insert();
     /// ins.add_value(&[("id", 1.into()), ("age", 30.into())]);

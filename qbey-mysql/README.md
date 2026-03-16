@@ -5,7 +5,8 @@ MySQL dialect for [qbey](../README.md) query builder.
 ## Usage
 
 ```rust
-use qbey_mysql::{qbey, SelectQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::SelectQueryBuilder;
 use qbey::col;
 
 let mut q = qbey("employee");
@@ -18,7 +19,8 @@ assert_eq!(sql, "SELECT `id`, `name` FROM `employee` WHERE `name` = ?");
 ## Index hints
 
 ```rust
-use qbey_mysql::{qbey, SelectQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::SelectQueryBuilder;
 
 // FORCE INDEX
 let mut q = qbey("employee");
@@ -48,7 +50,8 @@ assert_eq!(sql, "SELECT `id`, `name` FROM `employee` IGNORE INDEX (idx_old) WHER
 ## STRAIGHT_JOIN
 
 ```rust
-use qbey_mysql::{qbey, SelectQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::SelectQueryBuilder;
 use qbey::table;
 
 let mut q = qbey("users");
@@ -62,7 +65,8 @@ assert_eq!(sql, "SELECT `id`, `name` FROM `users` STRAIGHT_JOIN `orders` ON `use
 ## INSERT
 
 ```rust
-use qbey_mysql::{qbey, InsertQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::InsertQueryBuilder;
 use qbey::{col, Value, RawSql};
 
 let mut ins = qbey("users").into_insert();
@@ -76,7 +80,8 @@ assert_eq!(sql, "INSERT INTO `users` (`id`, `name`, `age`) VALUES (?, ?, ?)");
 With bind values:
 
 ```rust
-use qbey_mysql::{qbey, InsertQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::InsertQueryBuilder;
 use qbey::{col, Value};
 
 let mut ins = qbey("users").into_insert();
@@ -92,7 +97,8 @@ assert_eq!(
 With raw SQL expressions:
 
 ```rust
-use qbey_mysql::{qbey, InsertQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::InsertQueryBuilder;
 use qbey::{col, Value, RawSql};
 
 let mut ins = qbey("users").into_insert();
@@ -109,7 +115,8 @@ assert_eq!(
 ## UPDATE
 
 ```rust
-use qbey_mysql::{qbey, UpdateQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::UpdateQueryBuilder;
 use qbey::col;
 
 let mut u = qbey("users").into_update();
@@ -123,7 +130,8 @@ assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
 By default, UPDATE without WHERE will panic. Use `allow_without_where()` to explicitly allow full-table updates:
 
 ```rust
-use qbey_mysql::{qbey, UpdateQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::UpdateQueryBuilder;
 use qbey::col;
 
 let mut u = qbey("users").into_update();
@@ -137,7 +145,8 @@ assert_eq!(sql, "UPDATE `users` SET `age` = ?");
 MySQL supports `ORDER BY` and `LIMIT` in UPDATE statements (not available in standard SQL):
 
 ```rust
-use qbey_mysql::{qbey, UpdateQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::UpdateQueryBuilder;
 use qbey::col;
 
 let mut u = qbey("users").into_update();
@@ -153,7 +162,8 @@ assert_eq!(sql, "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY `crea
 ## DELETE
 
 ```rust
-use qbey_mysql::{qbey, DeleteQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::DeleteQueryBuilder;
 use qbey::col;
 
 let mut d = qbey("users").into_delete();
@@ -166,7 +176,8 @@ assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ?");
 By default, DELETE without WHERE will panic. Use `allow_without_where()` to explicitly allow full-table deletes:
 
 ```rust
-use qbey_mysql::{qbey, DeleteQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::DeleteQueryBuilder;
 
 let mut d = qbey("users").into_delete();
 d.allow_without_where();
@@ -178,7 +189,8 @@ assert_eq!(sql, "DELETE FROM `users`");
 MySQL supports `ORDER BY` and `LIMIT` in DELETE statements (not available in standard SQL):
 
 ```rust
-use qbey_mysql::{qbey, DeleteQueryBuilder};
+use qbey_mysql::qbey;
+use qbey::DeleteQueryBuilder;
 use qbey::col;
 
 let mut d = qbey("users").into_delete();

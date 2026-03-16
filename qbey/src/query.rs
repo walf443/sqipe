@@ -127,11 +127,41 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     fn for_with(&mut self, clause: &str) -> &mut Self;
 
     /// Append `FOR UPDATE` to the generated SQL.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, SelectQueryBuilder};
+    ///
+    /// let mut q = qbey("users");
+    /// q.select(&["id", "name"]);
+    /// q.and_where(col("id").eq(1));
+    /// q.for_update();
+    ///
+    /// let (sql, _binds) = q.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR UPDATE"#
+    /// );
+    /// ```
     fn for_update(&mut self) -> &mut Self {
         self.for_with("UPDATE")
     }
 
     /// Append `FOR UPDATE` with an option (e.g., `NOWAIT`, `SKIP LOCKED`).
+    ///
+    /// ```
+    /// use qbey::{qbey, col, SelectQueryBuilder};
+    ///
+    /// let mut q = qbey("users");
+    /// q.select(&["id", "name"]);
+    /// q.and_where(col("id").eq(1));
+    /// q.for_update_with("NOWAIT");
+    ///
+    /// let (sql, _binds) = q.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR UPDATE NOWAIT"#
+    /// );
+    /// ```
     fn for_update_with(&mut self, option: &str) -> &mut Self {
         self.for_with(&format!("UPDATE {}", option))
     }

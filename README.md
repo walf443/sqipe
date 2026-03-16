@@ -10,7 +10,7 @@ sql query builder
 ### Basic usage
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));   // tuple shorthand for Eq
 q.select(&["id", "name"]);
@@ -34,7 +34,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ?");
 ### Comparison operators
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));               // tuple shorthand for Eq
 q.and_where(col("age").gt(20));               // age > ?
@@ -51,7 +51,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 ### BETWEEN / NOT BETWEEN
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("age").between(20, 30));
 q.select(&["id", "name"]);
@@ -73,7 +73,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BET
 Rust range types are automatically converted to the appropriate SQL conditions.
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 // Inclusive range: BETWEEN
 let (sql, _) = qbey("t").and_where(col("age").in_range(20..=30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" BETWEEN ? AND ?");
@@ -98,7 +98,7 @@ assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" <= ?");
 ### Dynamic query building
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 
 let name: Option<&str> = Some("Alice");
@@ -118,7 +118,7 @@ let (sql, binds) = q.to_sql();
 ### or_where
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 // Simple OR
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
@@ -189,7 +189,7 @@ assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" GROUP BY
 Raw SQL expressions can also be used for aggregate functions not yet covered by the builder API:
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.select(&["dept"]);
 q.add_select_expr(RawSql::new("COUNT(*)"), Some("cnt"));
@@ -203,7 +203,7 @@ assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"tota
 ### Order By
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.select(&["id", "name", "age"]);
 q.order_by(col("name").asc());
@@ -220,7 +220,7 @@ The expression is rendered as-is, so the caller is responsible for including the
 [`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
 q.select(&["id", "name"]);
 q.order_by_expr(RawSql::new("RAND()"));
@@ -232,7 +232,7 @@ assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
 Column-based and expression-based ORDER BY can be mixed:
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
 q.select(&["id", "name"]);
 q.order_by(col("name").asc());
@@ -245,7 +245,7 @@ assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"
 ### Limit / Offset
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.select(&["id", "name"]);
 q.limit(10);
@@ -258,7 +258,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
 ### Method chaining
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let (sql, binds) = qbey("employee")
     .and_where(("name", "Alice"))
     .and_where(col("age").gt(20))
@@ -272,7 +272,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 `union()` / `union_all()` returns a new `Query`, so you can use the same `order_by()`, `limit()`, etc. on the result:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q1 = qbey("employee");
 q1.and_where(("dept", "eng"));
 q1.select(&["id", "name"]);
@@ -292,7 +292,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UN
 ### IN clause
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("users");
 q.and_where(col("status").included(&["active", "pending"]));
 q.select(&["id", "name"]);
@@ -306,7 +306,7 @@ Empty lists are safely handled as `1 = 0`.
 ### NOT IN clause
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("users");
 q.and_where(col("status").not_included(&["inactive", "banned"]));
 q.select(&["id", "name"]);
@@ -320,7 +320,7 @@ Empty lists are safely handled as `1 = 1`.
 Subqueries are also supported:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut sub = qbey("orders");
 sub.select(&["user_id"]);
 sub.and_where(col("status").eq("cancelled"));
@@ -423,7 +423,7 @@ assert_eq!(sql, "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\
 ### Column aliases
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("users");
 q.add_select(col("name").as_("user_name"));
 
@@ -437,7 +437,7 @@ Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in t
 The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
 q.add_select(col("id"));
 q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
@@ -452,7 +452,7 @@ assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nicknam
 `Query::into_update()` converts a SELECT query builder into an UPDATE statement builder.
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, UpdateQueryBuilder};
 // Basic UPDATE
 let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
@@ -465,7 +465,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to UPDATE:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let mut u = q.into_update();
@@ -479,7 +479,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#)
 By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `allow_without_where()` to explicitly opt in:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
 u.set(col("status"), "inactive");
 u.allow_without_where();
@@ -507,7 +507,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSql`:
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
 u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 u.and_where(col("id").eq(1));
@@ -521,7 +521,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE
 `Query::into_delete()` converts a SELECT query builder into a DELETE statement builder.
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, DeleteQueryBuilder};
 // Basic DELETE
 let mut d = qbey("employee").into_delete();
 d.and_where(col("id").eq(1));
@@ -533,7 +533,7 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to DELETE:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let d = q.into_delete();
@@ -575,7 +575,7 @@ assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (
 INSERT ... SELECT is also supported via `from_select()`:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, SelectQueryBuilder, InsertQueryBuilder};
 let mut sub = qbey("old_employee");
 sub.select(&["name", "age"]);
 sub.and_where(col("active").eq(true));
