@@ -93,14 +93,17 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let mut tree = self.inner.to_tree();
-        tree.order_bys = self.order_bys.clone();
-        tree.limit = self.limit_val;
         let ph = |_: usize| "?".to_string();
         let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        qbey::renderer::update::render_update(
-            &tree,
-            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect),
-        )
+        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
+        if let Some(order_by) = qbey::renderer::render_order_by(&self.order_bys, &cfg) {
+            tree.tokens.push(qbey::tree::UpdateToken::Raw(order_by));
+        }
+        if let Some(n) = self.limit_val {
+            tree.tokens
+                .push(qbey::tree::UpdateToken::Raw(format!("LIMIT {}", n)));
+        }
+        qbey::renderer::update::render_update(&tree, &cfg)
     }
 }
 
@@ -154,14 +157,17 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let mut tree = self.inner.to_tree();
-        tree.order_bys = self.order_bys.clone();
-        tree.limit = self.limit_val;
         let ph = |_: usize| "?".to_string();
         let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        qbey::renderer::delete::render_delete(
-            &tree,
-            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect),
-        )
+        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
+        if let Some(order_by) = qbey::renderer::render_order_by(&self.order_bys, &cfg) {
+            tree.tokens.push(qbey::tree::DeleteToken::Raw(order_by));
+        }
+        if let Some(n) = self.limit_val {
+            tree.tokens
+                .push(qbey::tree::DeleteToken::Raw(format!("LIMIT {}", n)));
+        }
+        qbey::renderer::delete::render_delete(&tree, &cfg)
     }
 }
 
@@ -271,31 +277,30 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
 
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.inner.to_tree();
+        let mut tree = self.inner.to_tree();
+
+        if !self.on_duplicate_key_updates.is_empty() {
+            let sets: Vec<qbey::SetClause<V>> = self
+                .on_duplicate_key_updates
+                .iter()
+                .map(|clause| match clause {
+                    OnDuplicateKeyUpdateClause::Value(col, val) => {
+                        qbey::SetClause::Value(col.clone(), val.clone())
+                    }
+                    OnDuplicateKeyUpdateClause::Expr(expr) => qbey::SetClause::Expr(expr.clone()),
+                })
+                .collect();
+            tree.tokens
+                .push(qbey::tree::InsertToken::KeywordAssignments {
+                    keyword: "ON DUPLICATE KEY UPDATE".to_string(),
+                    sets,
+                });
+        }
+
         let ph = |_: usize| "?".to_string();
         let qi = |name: &str| MySqlDialect.quote_identifier(name);
         let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
-        let (mut sql, mut binds) = qbey::renderer::insert::render_insert(&tree, &cfg);
-
-        if !self.on_duplicate_key_updates.is_empty() {
-            sql.push_str(" ON DUPLICATE KEY UPDATE ");
-            for (i, clause) in self.on_duplicate_key_updates.iter().enumerate() {
-                if i > 0 {
-                    sql.push_str(", ");
-                }
-                match clause {
-                    OnDuplicateKeyUpdateClause::Value(col, val) => {
-                        binds.push(val.clone());
-                        sql.push_str(&format!("{} = {}", (cfg.qi)(col), (cfg.ph)(binds.len())));
-                    }
-                    OnDuplicateKeyUpdateClause::Expr(expr) => {
-                        sql.push_str(expr.as_str());
-                    }
-                }
-            }
-        }
-
-        (sql, binds)
+        qbey::renderer::insert::render_insert(&tree, &cfg)
     }
 }
 
@@ -334,20 +339,40 @@ fn apply_index_hints_to<V: Clone>(
     use_indexes: &[String],
     ignore_indexes: &[String],
 ) {
+    use qbey::tree::SelectToken;
+    // Collect Raw tokens to insert after the From token
+    let mut hints = Vec::new();
     if !force_indexes.is_empty() {
-        tree.from
-            .table_suffix
-            .push(format!("FORCE INDEX ({})", force_indexes.join(", ")));
+        hints.push(SelectToken::Raw(format!(
+            "FORCE INDEX ({})",
+            force_indexes.join(", ")
+        )));
     }
     if !use_indexes.is_empty() {
-        tree.from
-            .table_suffix
-            .push(format!("USE INDEX ({})", use_indexes.join(", ")));
+        hints.push(SelectToken::Raw(format!(
+            "USE INDEX ({})",
+            use_indexes.join(", ")
+        )));
     }
     if !ignore_indexes.is_empty() {
-        tree.from
-            .table_suffix
-            .push(format!("IGNORE INDEX ({})", ignore_indexes.join(", ")));
+        hints.push(SelectToken::Raw(format!(
+            "IGNORE INDEX ({})",
+            ignore_indexes.join(", ")
+        )));
+    }
+    if hints.is_empty() {
+        return;
+    }
+    // Insert hints right after the From token
+    if let Some(pos) = tree
+        .tokens
+        .iter()
+        .position(|t| matches!(t, SelectToken::From(_)))
+    {
+        // Insert in reverse order so they end up in the correct order
+        for (i, hint) in hints.into_iter().enumerate() {
+            tree.tokens.insert(pos + 1 + i, hint);
+        }
     }
 }
 
@@ -684,14 +709,28 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Each part's tree is built with MySQL index hints applied.
     /// The outer order_bys/limit/offset come from inner (set via Deref).
     fn to_compound_tree(&self) -> SelectTree<V> {
-        let parts: Vec<_> = self
-            .set_operations
-            .iter()
-            .map(|(op, mq)| (op.clone(), mq.to_tree()))
-            .collect();
-        let mut tree = self.inner.to_tree();
-        tree.set_operations = parts;
-        tree
+        use qbey::tree::SelectToken;
+        let mut tokens = Vec::new();
+
+        for (i, (op, mq)) in self.set_operations.iter().enumerate() {
+            if i > 0 {
+                tokens.push(SelectToken::SetOperator(op.clone()));
+            }
+            tokens.push(SelectToken::SubSelect(Box::new(mq.to_tree())));
+        }
+
+        // Compound-level ORDER BY / LIMIT / OFFSET from inner
+        if !self.inner.order_bys().is_empty() {
+            tokens.push(SelectToken::OrderBy(self.inner.order_bys().to_vec()));
+        }
+        if let Some(n) = self.inner.limit_val() {
+            tokens.push(SelectToken::Limit(n));
+        }
+        if let Some(n) = self.inner.offset_val() {
+            tokens.push(SelectToken::Offset(n));
+        }
+
+        SelectTree { tokens }
     }
 
     /// Build standard SQL with MySQL dialect.

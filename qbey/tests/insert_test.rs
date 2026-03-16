@@ -313,13 +313,24 @@ fn test_insert_tree_map_values() {
         _ => format!("{:?}", v),
     });
 
-    assert_eq!(mapped.table, "employee");
-    assert_eq!(mapped.columns, vec!["name", "age"]);
-    match mapped.source {
-        qbey::tree::InsertTreeSource::Values(rows) => {
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0], vec!["str:Alice", "int:30"]);
+    // Verify token structure after map_values
+    let mut found_insert_into = false;
+    let mut found_values = false;
+    for token in &mapped.tokens {
+        match token {
+            qbey::tree::InsertToken::InsertInto { table, columns, .. } => {
+                assert_eq!(table, "employee");
+                assert_eq!(columns, &vec!["name", "age"]);
+                found_insert_into = true;
+            }
+            qbey::tree::InsertToken::Values(rows) => {
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0], vec!["str:Alice", "int:30"]);
+                found_values = true;
+            }
+            _ => {}
         }
-        _ => panic!("expected Values source"),
     }
+    assert!(found_insert_into, "expected InsertInto token");
+    assert!(found_values, "expected Values token");
 }

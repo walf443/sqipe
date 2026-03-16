@@ -244,17 +244,23 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Panics if no values or subquery have been provided.
     pub fn to_tree(&self) -> crate::tree::InsertTree<V> {
+        let mut tokens = Vec::new();
         match &self.source {
             InsertSource::Values(rows) => {
                 assert!(
                     !rows.is_empty() || !self.col_exprs.is_empty(),
                     "INSERT requires at least one row of values, a col_expr, or a SELECT subquery"
                 );
-                let col_exprs = self
+                let col_exprs: Vec<(String, String)> = self
                     .col_exprs
                     .iter()
                     .map(|(c, e)| (c.clone(), e.as_str().to_string()))
                     .collect();
+                tokens.push(crate::tree::InsertToken::InsertInto {
+                    table: self.table.clone(),
+                    columns: self.columns.clone(),
+                    col_exprs,
+                });
                 // When only col_exprs are provided (no add_value rows),
                 // produce a single empty row so the renderer emits one VALUES tuple.
                 let rows = if rows.is_empty() {
@@ -262,20 +268,18 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
                 } else {
                     rows.clone()
                 };
-                crate::tree::InsertTree {
+                tokens.push(crate::tree::InsertToken::Values(rows));
+            }
+            InsertSource::Select(sub) => {
+                tokens.push(crate::tree::InsertToken::InsertInto {
                     table: self.table.clone(),
                     columns: self.columns.clone(),
-                    source: crate::tree::InsertTreeSource::Values(rows),
-                    col_exprs,
-                }
+                    col_exprs: Vec::new(),
+                });
+                tokens.push(crate::tree::InsertToken::SelectSource(sub.clone()));
             }
-            InsertSource::Select(sub) => crate::tree::InsertTree {
-                table: self.table.clone(),
-                columns: self.columns.clone(),
-                source: crate::tree::InsertTreeSource::Select(sub.clone()),
-                col_exprs: Vec::new(),
-            },
         }
+        crate::tree::InsertTree { tokens }
     }
 
     /// Build standard SQL with `?` placeholders and double-quote identifiers.

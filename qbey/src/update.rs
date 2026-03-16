@@ -149,14 +149,16 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// has not been called.
     pub fn to_tree(&self) -> crate::tree::UpdateTree<V> {
         self.assert_where_present();
-        crate::tree::UpdateTree {
+        let mut tokens = Vec::new();
+        tokens.push(crate::tree::UpdateToken::Update {
             table: self.table.clone(),
-            table_alias: self.table_alias.clone(),
-            sets: self.sets.clone(),
-            wheres: self.wheres.clone(),
-            order_bys: Vec::new(),
-            limit: None,
+            alias: self.table_alias.clone(),
+        });
+        tokens.push(crate::tree::UpdateToken::Set(self.sets.clone()));
+        if !self.wheres.is_empty() {
+            tokens.push(crate::tree::UpdateToken::Where(self.wheres.clone()));
         }
+        crate::tree::UpdateTree { tokens }
     }
 
     fn assert_where_present(&self) {

@@ -68,13 +68,15 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     /// has not been called.
     pub fn to_tree(&self) -> crate::tree::DeleteTree<V> {
         self.assert_where_present();
-        crate::tree::DeleteTree {
+        let mut tokens = Vec::new();
+        tokens.push(crate::tree::DeleteToken::DeleteFrom {
             table: self.table.clone(),
-            table_alias: self.table_alias.clone(),
-            wheres: self.wheres.clone(),
-            order_bys: Vec::new(),
-            limit: None,
+            alias: self.table_alias.clone(),
+        });
+        if !self.wheres.is_empty() {
+            tokens.push(crate::tree::DeleteToken::Where(self.wheres.clone()));
         }
+        crate::tree::DeleteTree { tokens }
     }
 
     fn assert_where_present(&self) {

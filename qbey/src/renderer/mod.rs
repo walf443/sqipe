@@ -8,7 +8,7 @@ pub mod insert;
 pub mod standard;
 pub mod update;
 
-use crate::tree::{FromClause, FromSource, SelectTree};
+use crate::tree::{FromClause, FromSource, SelectToken, SelectTree};
 
 /// Configuration for rendering SQL from trees.
 pub struct RenderConfig<'a> {
@@ -51,29 +51,6 @@ pub(super) fn set_op_keyword(op: &crate::SetOp) -> &'static str {
         crate::SetOp::IntersectAll => "INTERSECT ALL",
         crate::SetOp::Except => "EXCEPT",
         crate::SetOp::ExceptAll => "EXCEPT ALL",
-    }
-}
-
-pub(super) fn append_order_by(
-    sql: &mut String,
-    order_bys: &[OrderByClause],
-    cfg: &RenderConfig,
-    sep: &str,
-) {
-    if let Some(clause) = render_order_by(order_bys, cfg) {
-        sql.push_str(sep);
-        sql.push_str(&clause);
-    }
-}
-
-/// Append LIMIT/OFFSET as separate space-separated clauses (standard SQL style).
-pub(super) fn append_limit_offset_flat(sql: &mut String, limit: Option<u64>, offset: Option<u64>) {
-    let (l, o) = render_limit_offset(limit, offset);
-    if let Some(l) = l {
-        sql.push_str(&format!(" {}", l));
-    }
-    if let Some(o) = o {
-        sql.push_str(&format!(" {}", o));
     }
 }
 
@@ -120,10 +97,6 @@ pub(super) fn render_from<V: Clone>(
     if let Some(alias) = &from.alias {
         s.push_str(&format!(" AS {}", (cfg.qi)(alias)));
     }
-    for suffix in &from.table_suffix {
-        s.push(' ');
-        s.push_str(suffix);
-    }
     s
 }
 
@@ -150,7 +123,7 @@ pub(super) fn render_join_condition(cond: &JoinCondition, cfg: &RenderConfig) ->
                 .collect();
             parts.join(" AND ")
         }
-        JoinCondition::Using(_) => unreachable!("Using is handled in render_joins"),
+        JoinCondition::Using(_) => unreachable!("Using is handled in render_join"),
         JoinCondition::Expr(raw) => raw.to_string(),
     }
 }
@@ -162,42 +135,37 @@ fn render_join_table(table: &str, alias: &Option<String>, cfg: &RenderConfig) ->
     }
 }
 
-pub(super) fn render_joins<V: Clone>(
-    joins: &[JoinClause],
-    join_subqueries: &[Option<Box<SelectTree<V>>>],
+/// Render a single JOIN token.
+pub(super) fn render_join<V: Clone>(
+    join: &JoinClause,
+    subquery: &Option<Box<SelectTree<V>>>,
     cfg: &RenderConfig,
     binds: &mut Vec<V>,
-) -> Vec<String> {
-    joins
-        .iter()
-        .enumerate()
-        .map(|(i, j)| {
-            let keyword = match &j.join_type {
-                JoinType::Inner => "INNER JOIN",
-                JoinType::Left => "LEFT JOIN",
-                JoinType::Custom(s) => s.as_str(),
-            };
-            let table = if let Some(Some(sub)) = join_subqueries.get(i) {
-                let sub_sql = render_subquery_sql(sub, cfg, binds);
-                match &j.alias {
-                    Some(a) => format!("({}) AS {}", sub_sql, (cfg.qi)(a)),
-                    None => format!("({})", sub_sql),
-                }
-            } else {
-                render_join_table(&j.table, &j.alias, cfg)
-            };
-            if let JoinCondition::Using(cols) = &j.condition {
-                let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
-                return format!("{} {} USING ({})", keyword, table, quoted.join(", "));
-            }
-            format!(
-                "{} {} ON {}",
-                keyword,
-                table,
-                render_join_condition(&j.condition, cfg)
-            )
-        })
-        .collect()
+) -> String {
+    let keyword = match &join.join_type {
+        JoinType::Inner => "INNER JOIN",
+        JoinType::Left => "LEFT JOIN",
+        JoinType::Custom(s) => s.as_str(),
+    };
+    let table = if let Some(sub) = subquery {
+        let sub_sql = render_subquery_sql(sub, cfg, binds);
+        match &join.alias {
+            Some(a) => format!("({}) AS {}", sub_sql, (cfg.qi)(a)),
+            None => format!("({})", sub_sql),
+        }
+    } else {
+        render_join_table(&join.table, &join.alias, cfg)
+    };
+    if let JoinCondition::Using(cols) = &join.condition {
+        let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
+        return format!("{} {} USING ({})", keyword, table, quoted.join(", "));
+    }
+    format!(
+        "{} {} ON {}",
+        keyword,
+        table,
+        render_join_condition(&join.condition, cfg)
+    )
 }
 
 pub(super) fn render_select_columns(items: &[SelectItem], cfg: &RenderConfig) -> String {
@@ -258,53 +226,91 @@ pub(super) fn render_select_clause(
     }
 }
 
-/// Render the core of a SELECT statement (SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING)
-/// without ORDER BY / LIMIT / OFFSET. Shared by StandardSqlRenderer and subquery rendering.
-pub(super) fn render_select_core<V: Clone>(
+/// Render a SelectTree as standard SQL for use in subqueries.
+/// Uses the shared binds accumulator so placeholder indices are correct.
+pub(super) fn render_subquery_sql<V: Clone>(
     tree: &SelectTree<V>,
     cfg: &RenderConfig,
     binds: &mut Vec<V>,
 ) -> String {
     let mut parts = Vec::new();
-
-    parts.push(render_select_clause(&tree.select, cfg));
-
-    parts.push(render_from(&tree.from, cfg, binds));
-
-    for join_sql in render_joins(&tree.joins, &tree.join_subqueries, cfg, binds) {
-        parts.push(join_sql);
-    }
-
-    if let Some(where_sql) = render_wheres(&tree.wheres, cfg, binds) {
-        parts.push(format!("WHERE {}", where_sql));
-    }
-
-    if !tree.group_bys.is_empty() {
-        let cols: Vec<String> = tree.group_bys.iter().map(|c| (cfg.qi)(c)).collect();
-        parts.push(format!("GROUP BY {}", cols.join(", ")));
-    }
-
-    if let Some(having_sql) = render_wheres(&tree.havings, cfg, binds) {
-        parts.push(format!("HAVING {}", having_sql));
-    }
-
+    render_select_tokens(&tree.tokens, cfg, binds, &mut parts);
     parts.join(" ")
 }
 
-/// Render a SelectTree as standard SQL for use in subqueries.
-/// Uses the shared binds accumulator so placeholder indices are correct.
-///
-/// Always renders standard SQL because subqueries appear
-/// inside parentheses.
-fn render_subquery_sql<V: Clone>(
-    tree: &SelectTree<V>,
+/// Core token-walking logic shared by render_select and render_subquery_sql.
+pub(super) fn render_select_tokens<V: Clone>(
+    tokens: &[SelectToken<V>],
     cfg: &RenderConfig,
     binds: &mut Vec<V>,
-) -> String {
-    let mut sql = render_select_core(tree, cfg, binds);
-    append_order_by(&mut sql, &tree.order_bys, cfg, " ");
-    append_limit_offset_flat(&mut sql, tree.limit, tree.offset);
-    sql
+    parts: &mut Vec<String>,
+) {
+    for token in tokens {
+        match token {
+            SelectToken::Select(clause) => {
+                parts.push(render_select_clause(clause, cfg));
+            }
+            SelectToken::From(from) => {
+                parts.push(render_from(from, cfg, binds));
+            }
+            SelectToken::Join { clause, subquery } => {
+                parts.push(render_join(clause, subquery, cfg, binds));
+            }
+            SelectToken::Where(wheres) => {
+                if let Some(where_sql) = render_wheres(wheres, cfg, binds) {
+                    parts.push(format!("WHERE {}", where_sql));
+                }
+            }
+            SelectToken::GroupBy(cols) => {
+                if !cols.is_empty() {
+                    let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
+                    parts.push(format!("GROUP BY {}", quoted.join(", ")));
+                }
+            }
+            SelectToken::Having(havings) => {
+                if let Some(having_sql) = render_wheres(havings, cfg, binds) {
+                    parts.push(format!("HAVING {}", having_sql));
+                }
+            }
+            SelectToken::OrderBy(obs) => {
+                if let Some(clause) = render_order_by(obs, cfg) {
+                    parts.push(clause);
+                }
+            }
+            SelectToken::Limit(n) => {
+                parts.push(format!("LIMIT {}", n));
+            }
+            SelectToken::Offset(n) => {
+                parts.push(format!("OFFSET {}", n));
+            }
+            SelectToken::LockFor(s) => {
+                parts.push(format!("FOR {}", s));
+            }
+            SelectToken::Raw(s) => {
+                parts.push(s.clone());
+            }
+            SelectToken::SubSelect(sub) => {
+                let mut sub_parts = Vec::new();
+                render_select_tokens(&sub.tokens, cfg, binds, &mut sub_parts);
+                let sub_sql = sub_parts.join(" ");
+                // Wrap in parens if sub-select has ORDER BY/LIMIT/OFFSET
+                let has_extra = sub.tokens.iter().any(|t| {
+                    matches!(
+                        t,
+                        SelectToken::OrderBy(_) | SelectToken::Limit(_) | SelectToken::Offset(_)
+                    )
+                });
+                if has_extra {
+                    parts.push(format!("({})", sub_sql));
+                } else {
+                    parts.push(sub_sql);
+                }
+            }
+            SelectToken::SetOperator(op) => {
+                parts.push(set_op_keyword(op).to_string());
+            }
+        }
+    }
 }
 
 fn render_where_clause<V: Clone>(
@@ -439,7 +445,12 @@ fn render_where_clause<V: Clone>(
     }
 }
 
-fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<String> {
+/// Render an ORDER BY clause from a slice of `OrderByClause`.
+///
+/// Returns `None` if the slice is empty; otherwise returns `Some("ORDER BY ...")`.
+/// Exposed publicly so dialect crates can reuse this for dialect-specific
+/// ORDER BY support (e.g., MySQL's ORDER BY in UPDATE/DELETE).
+pub fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<String> {
     if order_bys.is_empty() {
         return None;
     }
@@ -457,21 +468,4 @@ fn render_order_by(order_bys: &[OrderByClause], cfg: &RenderConfig) -> Option<St
         })
         .collect();
     Some(format!("ORDER BY {}", clauses.join(", ")))
-}
-
-fn render_limit_offset(
-    limit: Option<u64>,
-    offset: Option<u64>,
-) -> (Option<String>, Option<String>) {
-    (
-        limit.map(|n| format!("LIMIT {}", n)),
-        offset.map(|n| format!("OFFSET {}", n)),
-    )
-}
-
-pub fn append_lock_clause(sql: &mut String, lock_for: Option<&str>) {
-    if let Some(clause) = lock_for {
-        sql.push_str(" FOR ");
-        sql.push_str(clause);
-    }
 }
