@@ -1,7 +1,7 @@
 #![cfg(feature = "test-postgres")]
 
 use postgres::{Client, NoTls, types::ToSql};
-use qbey::{Dialect, LikeExpression, col, count_all, qbey_from_subquery_with, qbey_with, table};
+use qbey::{Dialect, LikeExpression, col, count_all, qbey_from_subquery_with, qbey_with, table, SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder};
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;

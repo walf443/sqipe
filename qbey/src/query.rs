@@ -62,6 +62,81 @@ impl<T: IntoFromTable> IntoJoinTable for T {
     }
 }
 
+/// Trait for SELECT query builder methods.
+///
+/// Implement this trait on dialect-specific SELECT wrappers to ensure they
+/// expose the same builder API as the core [`SelectQuery`].
+/// When a new builder method is added here, all implementations must follow.
+pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
+    /// Set a table alias.
+    fn as_(&mut self, alias: &str) -> &mut Self;
+    /// Add an AND WHERE condition.
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Add an OR WHERE condition.
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Append columns to the select list.
+    fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self;
+    /// Append a single item to the select list.
+    fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self;
+    /// Append a raw SQL expression to the select list.
+    fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self;
+    /// Set the GROUP BY columns.
+    fn group_by(&mut self, cols: &[&str]) -> &mut Self;
+    /// Add an INNER JOIN clause.
+    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
+    /// Add a LEFT JOIN clause.
+    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
+    /// Add a JOIN clause with a custom join type.
+    fn add_join(
+        &mut self,
+        join_type: JoinType,
+        table: impl IntoJoinTable,
+        condition: JoinCondition,
+    ) -> &mut Self;
+    /// Add an INNER JOIN with a subquery as the join target.
+    fn join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self;
+    /// Add a LEFT JOIN with a subquery as the join target.
+    fn left_join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self;
+    /// Add a JOIN with a subquery and a custom join type.
+    fn add_join_subquery(
+        &mut self,
+        join_type: JoinType,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self;
+    /// Add an ORDER BY clause.
+    fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
+    /// Append a raw SQL expression to the ORDER BY clause.
+    fn order_by_expr(&mut self, raw: RawSql) -> &mut Self;
+    /// Set the LIMIT value.
+    fn limit(&mut self, n: u64) -> &mut Self;
+    /// Set the OFFSET value.
+    fn offset(&mut self, n: u64) -> &mut Self;
+    /// Append a `FOR <clause>` locking clause to the generated SQL.
+    fn for_with(&mut self, clause: &str) -> &mut Self;
+
+    /// Append `FOR UPDATE` to the generated SQL.
+    fn for_update(&mut self) -> &mut Self {
+        self.for_with("UPDATE")
+    }
+
+    /// Append `FOR UPDATE` with an option (e.g., `NOWAIT`, `SKIP LOCKED`).
+    fn for_update_with(&mut self, option: &str) -> &mut Self {
+        self.for_with(&format!("UPDATE {}", option))
+    }
+}
+
 /// The SELECT query builder, generic over the bind value type `V`.
 ///
 /// Supports both simple SELECT queries and compound queries with set operations
@@ -171,6 +246,164 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
     }
 }
 
+impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
+    fn as_(&mut self, alias: &str) -> &mut Self {
+        self.table_alias = Some(alias.to_string());
+        self
+    }
+
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self {
+        self.selects.extend(cols.iter().map(|c| c.clone().into()));
+        self
+    }
+
+    fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self {
+        self.selects.push(item.into());
+        self
+    }
+
+    fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self {
+        self.selects.push(SelectItem::Expr {
+            raw,
+            alias: alias.map(|a| a.to_string()),
+        });
+        self
+    }
+
+    fn group_by(&mut self, cols: &[&str]) -> &mut Self {
+        self.group_bys = cols.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
+        let (name, alias) = table.into_join_table();
+        let resolve_name = alias.as_deref().unwrap_or(&name);
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, resolve_name);
+
+        self.joins.push(JoinClause {
+            join_type: JoinType::Inner,
+            table: name,
+            alias,
+            condition,
+        });
+        self.join_subqueries.push(None);
+        self
+    }
+
+    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
+        let (name, alias) = table.into_join_table();
+        let resolve_name = alias.as_deref().unwrap_or(&name);
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, resolve_name);
+
+        self.joins.push(JoinClause {
+            join_type: JoinType::Left,
+            table: name,
+            alias,
+            condition,
+        });
+        self.join_subqueries.push(None);
+        self
+    }
+
+    fn add_join(
+        &mut self,
+        join_type: JoinType,
+        table: impl IntoJoinTable,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        let (name, alias) = table.into_join_table();
+        let resolve_name = alias.as_deref().unwrap_or(&name);
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, resolve_name);
+
+        self.joins.push(JoinClause {
+            join_type,
+            table: name,
+            alias,
+            condition,
+        });
+        self.join_subqueries.push(None);
+        self
+    }
+
+    fn join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        self.add_join_subquery(JoinType::Inner, sub, alias, condition)
+    }
+
+    fn left_join_subquery(
+        &mut self,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        self.add_join_subquery(JoinType::Left, sub, alias, condition)
+    }
+
+    fn add_join_subquery(
+        &mut self,
+        join_type: JoinType,
+        sub: impl IntoSelectTree<V>,
+        alias: &str,
+        condition: JoinCondition,
+    ) -> &mut Self {
+        let tree = sub.into_select_tree();
+        let mut condition = condition;
+        resolve_join_condition(&mut condition, alias);
+
+        self.joins.push(JoinClause {
+            join_type,
+            table: String::new(),
+            alias: Some(alias.to_string()),
+            condition,
+        });
+        self.join_subqueries.push(Some(Box::new(tree)));
+        self
+    }
+
+    fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
+        self.order_bys.push(clause);
+        self
+    }
+
+    fn order_by_expr(&mut self, raw: RawSql) -> &mut Self {
+        self.order_bys.push(OrderByClause::Expr(raw));
+        self
+    }
+
+    fn limit(&mut self, n: u64) -> &mut Self {
+        self.limit_val = Some(n);
+        self
+    }
+
+    fn offset(&mut self, n: u64) -> &mut Self {
+        self.offset_val = Some(n);
+        self
+    }
+
+    fn for_with(&mut self, clause: &str) -> &mut Self {
+        debug_assert!(!clause.is_empty(), "lock clause must not be empty");
+        self.lock_for = Some(clause.to_string());
+        self
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     pub fn new(table: impl IntoFromTable) -> Self {
         let (name, alias) = table.into_from_table();
@@ -195,7 +428,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Create a query that selects from a subquery instead of a table.
     ///
     /// ```
-    /// use qbey::{qbey, qbey_from_subquery, col};
+    /// use qbey::{qbey, qbey_from_subquery, col, SelectQueryBuilder};
     ///
     /// let mut sub = qbey("orders");
     /// sub.select(&["user_id", "amount"]);
@@ -227,187 +460,6 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             lock_for: None,
             set_operations: Vec::new(),
         }
-    }
-
-    pub fn as_(&mut self, alias: &str) -> &mut Self {
-        self.table_alias = Some(alias.to_string());
-        self
-    }
-
-    pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
-        self
-    }
-
-    pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
-        self
-    }
-
-    /// Append columns to the select list.
-    ///
-    /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
-    /// Can be called multiple times — each call appends to the existing list.
-    pub fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self {
-        self.selects.extend(cols.iter().map(|c| c.clone().into()));
-        self
-    }
-
-    /// Append a single item to the select list.
-    ///
-    /// Accepts a `Col`, `SelectItem`, or any type that implements `Into<SelectItem>`.
-    pub fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self {
-        self.selects.push(item.into());
-        self
-    }
-
-    /// Append a raw SQL expression to the select list.
-    ///
-    /// The expression is rendered as-is without quoting. Use this for
-    /// expressions like `COUNT(*)`, `price * quantity`, etc.
-    ///
-    /// # Security
-    ///
-    /// The `raw` string is embedded directly into the generated SQL **without
-    /// escaping or parameterization**. Never pass user-supplied input as `raw`;
-    /// doing so opens the door to SQL injection. Only use hard-coded or
-    /// application-controlled expressions.
-    ///
-    /// ```
-    /// use qbey::{qbey, RawSql};
-    ///
-    /// let mut q = qbey("users");
-    /// q.add_select_expr(RawSql::new("COUNT(*)"), Some("cnt"));
-    ///
-    /// let (sql, _) = q.to_sql();
-    /// assert_eq!(sql, r#"SELECT COUNT(*) AS "cnt" FROM "users""#);
-    /// ```
-    pub fn add_select_expr(&mut self, raw: RawSql, alias: Option<&str>) -> &mut Self {
-        self.selects.push(SelectItem::Expr {
-            raw,
-            alias: alias.map(|a| a.to_string()),
-        });
-        self
-    }
-
-    pub fn group_by(&mut self, cols: &[&str]) -> &mut Self {
-        self.group_bys = cols.iter().map(|s| s.to_string()).collect();
-        self
-    }
-
-    /// Add an INNER JOIN clause.
-    pub fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
-        let (name, alias) = table.into_join_table();
-        let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
-        resolve_join_condition(&mut condition, resolve_name);
-
-        self.joins.push(JoinClause {
-            join_type: JoinType::Inner,
-            table: name,
-            alias,
-            condition,
-        });
-        self.join_subqueries.push(None);
-        self
-    }
-
-    /// Add a LEFT JOIN clause.
-    pub fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
-        let (name, alias) = table.into_join_table();
-        let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
-        resolve_join_condition(&mut condition, resolve_name);
-
-        self.joins.push(JoinClause {
-            join_type: JoinType::Left,
-            table: name,
-            alias,
-            condition,
-        });
-        self.join_subqueries.push(None);
-        self
-    }
-
-    /// Add a JOIN clause with a custom join type. Used by dialect crates for
-    /// dialect-specific join types (e.g., STRAIGHT_JOIN in MySQL).
-    pub fn add_join(
-        &mut self,
-        join_type: JoinType,
-        table: impl IntoJoinTable,
-        condition: JoinCondition,
-    ) -> &mut Self {
-        let (name, alias) = table.into_join_table();
-        let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
-        resolve_join_condition(&mut condition, resolve_name);
-
-        self.joins.push(JoinClause {
-            join_type,
-            table: name,
-            alias,
-            condition,
-        });
-        self.join_subqueries.push(None);
-        self
-    }
-
-    /// Add an INNER JOIN with a subquery as the join target.
-    ///
-    /// ```
-    /// use qbey::{qbey, col, table};
-    ///
-    /// let mut sub = qbey("orders");
-    /// sub.select(&["user_id", "total"]);
-    /// sub.and_where(col("status").eq("shipped"));
-    ///
-    /// let mut q = qbey("users");
-    /// q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
-    /// let (sql, _) = q.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"SELECT * FROM "users" INNER JOIN (SELECT "user_id", "total" FROM "orders" WHERE "status" = ?) AS "o" ON "users"."id" = "o"."user_id""#
-    /// );
-    /// ```
-    pub fn join_subquery(
-        &mut self,
-        sub: impl IntoSelectTree<V>,
-        alias: &str,
-        condition: JoinCondition,
-    ) -> &mut Self {
-        self.add_join_subquery(JoinType::Inner, sub, alias, condition)
-    }
-
-    /// Add a LEFT JOIN with a subquery as the join target.
-    pub fn left_join_subquery(
-        &mut self,
-        sub: impl IntoSelectTree<V>,
-        alias: &str,
-        condition: JoinCondition,
-    ) -> &mut Self {
-        self.add_join_subquery(JoinType::Left, sub, alias, condition)
-    }
-
-    /// Add a JOIN with a subquery and a custom join type.
-    pub fn add_join_subquery(
-        &mut self,
-        join_type: JoinType,
-        sub: impl IntoSelectTree<V>,
-        alias: &str,
-        condition: JoinCondition,
-    ) -> &mut Self {
-        let tree = sub.into_select_tree();
-        let mut condition = condition;
-        resolve_join_condition(&mut condition, alias);
-
-        self.joins.push(JoinClause {
-            join_type,
-            table: String::new(),
-            alias: Some(alias.to_string()),
-            condition,
-        });
-        self.join_subqueries.push(Some(Box::new(tree)));
-        self
     }
 
     /// Create a new compound query by combining `self` and `other` with the given set operation.
@@ -544,106 +596,6 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
         self.offset_val
     }
 
-    pub fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
-        self.order_bys.push(clause);
-        self
-    }
-
-    /// Append a raw SQL expression to the ORDER BY clause.
-    ///
-    /// The expression is rendered as-is without quoting. Use this for
-    /// expressions like `RAND()`, `id DESC NULLS FIRST`, etc.
-    ///
-    /// ```
-    /// use qbey::{qbey, RawSql};
-    ///
-    /// let mut q = qbey("users");
-    /// q.select(&["id", "name"]);
-    /// q.order_by_expr(RawSql::new("RAND()"));
-    ///
-    /// let (sql, _) = q.to_sql();
-    /// assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
-    /// ```
-    pub fn order_by_expr(&mut self, raw: crate::RawSql) -> &mut Self {
-        self.order_bys.push(OrderByClause::Expr(raw));
-        self
-    }
-
-    pub fn limit(&mut self, n: u64) -> &mut Self {
-        self.limit_val = Some(n);
-        self
-    }
-
-    pub fn offset(&mut self, n: u64) -> &mut Self {
-        self.offset_val = Some(n);
-        self
-    }
-
-    /// Append a `FOR <clause>` locking clause to the generated SQL.
-    ///
-    /// This is the base method for row-level locking. Use [`for_update`](Self::for_update)
-    /// for the common case.
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut q = qbey("users");
-    /// q.select(&["id", "name"]);
-    /// q.and_where(col("id").eq(1));
-    /// q.for_with("NO KEY UPDATE");
-    ///
-    /// let (sql, _binds) = q.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR NO KEY UPDATE"#
-    /// );
-    /// ```
-    pub fn for_with(&mut self, clause: &str) -> &mut Self {
-        debug_assert!(!clause.is_empty(), "lock clause must not be empty");
-        self.lock_for = Some(clause.to_string());
-        self
-    }
-
-    /// Append `FOR UPDATE` to the generated SQL.
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut q = qbey("users");
-    /// q.select(&["id", "name"]);
-    /// q.and_where(col("id").eq(1));
-    /// q.for_update();
-    ///
-    /// let (sql, _binds) = q.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR UPDATE"#
-    /// );
-    /// ```
-    pub fn for_update(&mut self) -> &mut Self {
-        self.for_with("UPDATE")
-    }
-
-    /// Append `FOR UPDATE` with an option (e.g., `NOWAIT`, `SKIP LOCKED`).
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut q = qbey("users");
-    /// q.select(&["id", "name"]);
-    /// q.and_where(col("id").eq(1));
-    /// q.for_update_with("NOWAIT");
-    ///
-    /// let (sql, _binds) = q.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"SELECT "id", "name" FROM "users" WHERE "id" = ? FOR UPDATE NOWAIT"#
-    /// );
-    /// ```
-    pub fn for_update_with(&mut self, option: &str) -> &mut Self {
-        self.for_with(&format!("UPDATE {}", option))
-    }
-
     /// Build a SelectTree from this query.
     pub fn to_tree(&self) -> SelectTree<V> {
         SelectTree::from_query(self)
@@ -675,7 +627,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     ///
     /// ```
-    /// use qbey::{qbey, col};
+    /// use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder};
     ///
     /// let mut q = qbey("employee");
     /// q.and_where(col("id").eq(1));
@@ -711,7 +663,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// if present.
     ///
     /// ```
-    /// use qbey::{qbey, Value};
+    /// use qbey::{qbey, Value, InsertQueryBuilder};
     ///
     /// let mut ins = qbey("employee").into_insert();
     /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
@@ -747,7 +699,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     ///
     /// ```
-    /// use qbey::{qbey, col};
+    /// use qbey::{qbey, col, SelectQueryBuilder};
     ///
     /// let mut q = qbey("employee");
     /// q.and_where(col("id").eq(1));

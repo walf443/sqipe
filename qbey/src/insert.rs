@@ -15,7 +15,7 @@ use crate::tree::default_quote_identifier;
 /// Implement this trait on your domain structs to enable direct insertion:
 ///
 /// ```
-/// use qbey::{qbey, Value, ToInsertRow};
+/// use qbey::{qbey, Value, ToInsertRow, InsertQueryBuilder};
 ///
 /// struct Employee {
 ///     name: String,
@@ -60,6 +60,20 @@ impl<V: Clone, const N: usize> ToInsertRow<V> for [(&'static str, V); N] {
     }
 }
 
+/// Trait for INSERT query builder methods.
+///
+/// Implement this trait on dialect-specific INSERT wrappers to ensure they
+/// expose the same builder API as the core [`InsertQuery`].
+/// When a new builder method is added here, all implementations must follow.
+pub trait InsertQueryBuilder<V: Clone> {
+    /// Add a row of column-value pairs.
+    fn add_value(&mut self, row: &(impl ToInsertRow<V> + ?Sized)) -> &mut Self;
+    /// Add an extra column whose value is a raw SQL expression applied to every row.
+    fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self;
+    /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
+    fn from_select(&mut self, sub: impl crate::query::IntoSelectTree<V>) -> &mut Self;
+}
+
 /// The source of values for an INSERT statement.
 #[derive(Debug, Clone)]
 pub(crate) enum InsertSource<V: Clone> {
@@ -81,7 +95,7 @@ pub(crate) enum InsertSource<V: Clone> {
 /// collection is non-empty before calling `to_sql()`.
 ///
 /// ```
-/// use qbey::{qbey, Value};
+/// use qbey::{qbey, Value, InsertQueryBuilder};
 ///
 /// let mut ins = qbey("employee").into_insert();
 /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
@@ -99,52 +113,8 @@ pub struct InsertQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) col_exprs: Vec<(String, RawSql)>,
 }
 
-impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
-    pub(crate) fn new(table: String) -> Self {
-        InsertQuery {
-            table,
-            columns: Vec::new(),
-            source: InsertSource::Values(Vec::new()),
-            col_exprs: Vec::new(),
-        }
-    }
-
-    /// Add a row of column-value pairs.
-    ///
-    /// Accepts any type that implements [`ToInsertRow<V>`], including:
-    /// - A slice of `(&str, V)` tuples: `&[("name", "Alice".into())]`
-    /// - A custom struct that implements `ToInsertRow<V>`
-    ///
-    /// The first call establishes the column list. Subsequent calls must provide
-    /// the same set of column names (order may differ — values are reordered to
-    /// match the column order established by the first call).
-    ///
-    /// # Panics
-    ///
-    /// - Panics if called after [`from_select()`](InsertQuery::from_select).
-    /// - Panics if the row is empty.
-    /// - Panics if the column set does not match the first call's column set.
-    ///
-    /// ```
-    /// use qbey::{qbey, Value};
-    ///
-    /// let mut ins = qbey("employee").into_insert();
-    /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
-    /// ins.add_value(&[("age", 25.into()), ("name", "Bob".into())]);
-    /// let (sql, binds) = ins.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?), (?, ?)"#
-    /// );
-    /// assert_eq!(
-    ///     binds,
-    ///     vec![
-    ///         Value::String("Alice".to_string()), Value::Int(30),
-    ///         Value::String("Bob".to_string()), Value::Int(25),
-    ///     ]
-    /// );
-    /// ```
-    pub fn add_value(&mut self, row: &(impl ToInsertRow<V> + ?Sized)) -> &mut Self {
+impl<V: Clone + std::fmt::Debug> InsertQueryBuilder<V> for InsertQuery<V> {
+    fn add_value(&mut self, row: &(impl ToInsertRow<V> + ?Sized)) -> &mut Self {
         let pairs = row.to_insert_row();
         assert!(
             !pairs.is_empty(),
@@ -156,7 +126,6 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         );
 
         if self.columns.is_empty() {
-            // First call: establish column order.
             self.columns = pairs.iter().map(|(c, _)| c.to_string()).collect();
             {
                 let mut seen = HashSet::with_capacity(self.columns.len());
@@ -173,7 +142,6 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
                 rows.push(row);
             }
         } else {
-            // Subsequent calls: validate and reorder.
             assert_eq!(
                 pairs.len(),
                 self.columns.len(),
@@ -203,50 +171,17 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         self
     }
 
-    /// Add an extra column whose value is a raw SQL expression applied to every row.
-    ///
-    /// This is useful for columns like `created_at` that should use a database
-    /// function such as `NOW()` rather than a bind parameter.
-    ///
-    /// The column is appended after the normal bind-value columns established
-    /// by [`add_value()`](InsertQuery::add_value).
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the column name duplicates a column already added via
-    ///   `add_value()` or a previous `add_col_value_expr()` call.
-    ///
-    /// The column can be specified as a `&str` or a [`Col`](crate::Col):
-    ///
-    /// ```
-    /// use qbey::{qbey, col, Value, RawSql};
-    ///
-    /// let mut ins = qbey("employee").into_insert();
-    /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
-    /// ins.add_col_value_expr("created_at", RawSql::new("NOW()"));
-    /// ins.add_col_value_expr(col("updated_at"), RawSql::new("NOW()"));
-    /// let (sql, binds) = ins.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"INSERT INTO "employee" ("name", "age", "created_at", "updated_at") VALUES (?, ?, NOW(), NOW())"#
-    /// );
-    /// assert_eq!(binds, vec![Value::String("Alice".to_string()), Value::Int(30)]);
-    /// ```
-    pub fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self {
-        // Only the column name is used; INSERT column lists do not support
-        // table qualification, so the table and alias fields are ignored.
+    fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self {
         let column = column.into().column;
         assert!(
             matches!(self.source, InsertSource::Values(_)),
             "Cannot mix add_col_value_expr() with from_select()"
         );
-        // Check for duplicates against value columns.
         assert!(
             !self.columns.iter().any(|c| c == &column),
             "add_col_value_expr: column {:?} already exists in value columns",
             column
         );
-        // Check for duplicates against existing col_exprs.
         assert!(
             !self.col_exprs.iter().any(|(c, _)| c == &column),
             "add_col_value_expr: duplicate column {:?}",
@@ -256,33 +191,23 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         self
     }
 
-    /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `add_value()` has already been called.
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut sub = qbey("old_employee");
-    /// sub.select(&["name", "age"]);
-    /// sub.and_where(col("active").eq(true));
-    ///
-    /// let mut ins = qbey("employee").into_insert();
-    /// ins.from_select(sub);
-    /// let (sql, binds) = ins.to_sql();
-    /// assert_eq!(
-    ///     sql,
-    ///     r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employee" WHERE "active" = ?"#
-    /// );
-    /// ```
-    pub fn from_select(&mut self, sub: impl crate::query::IntoSelectTree<V>) -> &mut Self {
+    fn from_select(&mut self, sub: impl crate::query::IntoSelectTree<V>) -> &mut Self {
         if let InsertSource::Values(ref rows) = self.source {
             assert!(rows.is_empty(), "Cannot mix from_select() with add_value()");
         }
         self.source = InsertSource::Select(Box::new(sub.into_select_tree()));
         self
+    }
+}
+
+impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
+    pub(crate) fn new(table: String) -> Self {
+        InsertQuery {
+            table,
+            columns: Vec::new(),
+            source: InsertSource::Values(Vec::new()),
+            col_exprs: Vec::new(),
+        }
     }
 
     /// Build an InsertTree AST from this query.

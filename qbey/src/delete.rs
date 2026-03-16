@@ -5,12 +5,43 @@ use crate::where_clause::{IntoWhereClause, WhereEntry};
 use crate::renderer::RenderConfig;
 use crate::tree::default_quote_identifier;
 
+/// Trait for DELETE query builder methods.
+///
+/// Implement this trait on dialect-specific DELETE wrappers to ensure they
+/// expose the same builder API as the core [`DeleteQuery`].
+/// When a new builder method is added here, all implementations must follow.
+pub trait DeleteQueryBuilder<V: Clone> {
+    /// Add an AND WHERE condition.
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Add an OR WHERE condition.
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Explicitly allow this DELETE to have no WHERE clause.
+    fn allow_without_where(&mut self) -> &mut Self;
+}
+
 #[derive(Debug, Clone)]
 pub struct DeleteQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) allow_without_where: bool,
+}
+
+impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for DeleteQuery<V> {
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    fn allow_without_where(&mut self) -> &mut Self {
+        self.allow_without_where = true;
+        self
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
@@ -25,36 +56,6 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
             wheres,
             allow_without_where: false,
         }
-    }
-
-    /// Add an AND WHERE condition.
-    pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
-        self
-    }
-
-    /// Add an OR WHERE condition.
-    pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
-        self
-    }
-
-    /// Explicitly allow this DELETE to have no WHERE clause.
-    ///
-    /// By default, `to_sql()` and `to_sql_with()` panic if no WHERE conditions are set,
-    /// to prevent accidental full-table deletes. Call this method to opt in to WHERE-less deletes.
-    ///
-    /// ```
-    /// use qbey::qbey;
-    ///
-    /// let mut d = qbey("employee").into_delete();
-    /// d.allow_without_where();
-    /// let (sql, _) = d.to_sql();
-    /// assert_eq!(sql, r#"DELETE FROM "employee""#);
-    /// ```
-    pub fn allow_without_where(&mut self) -> &mut Self {
-        self.allow_without_where = true;
-        self
     }
 
     /// Build a DeleteTree AST from this query.

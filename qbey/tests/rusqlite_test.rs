@@ -2,6 +2,7 @@
 
 use qbey::{
     LikeExpression, ToInsertRow, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    SelectQueryBuilder, UpdateQueryBuilder, DeleteQueryBuilder, InsertQueryBuilder,
 };
 use rusqlite::{Connection, params_from_iter};
 

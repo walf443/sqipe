@@ -35,16 +35,16 @@ pub use column::{
     Col, ColRef, OrderByClause, SelectFunc, SelectItem, SortDir, TableRef, col, count_all,
     count_one, table,
 };
-pub use delete::DeleteQuery;
-pub use insert::{InsertQuery, ToInsertRow};
+pub use delete::{DeleteQuery, DeleteQueryBuilder};
+pub use insert::{InsertQuery, InsertQueryBuilder, ToInsertRow};
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
-    IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SetOp, qbey, qbey_from_subquery,
-    qbey_from_subquery_with, qbey_with,
+    IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SelectQueryBuilder, SetOp, qbey,
+    qbey_from_subquery, qbey_from_subquery_with, qbey_with,
 };
 pub use raw_sql::RawSql;
-pub use update::{SetClause, UpdateQuery};
+pub use update::{SetClause, UpdateQuery, UpdateQueryBuilder};
 pub use value::{Op, Value};
 pub use where_clause::{
     IntoIncluded, IntoRangeClause, IntoWhereClause, WhereClause, all, any, not,

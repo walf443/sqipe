@@ -57,7 +57,7 @@ pub fn using_cols(cols: &[&str]) -> JoinCondition {
 /// injection vulnerability.
 ///
 /// ```
-/// use qbey::{qbey, join, RawSql};
+/// use qbey::{qbey, join, RawSql, SelectQueryBuilder};
 ///
 /// let mut q = qbey("texts");
 /// q.join("patterns", join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)));

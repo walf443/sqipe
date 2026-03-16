@@ -16,6 +16,24 @@ pub enum SetClause<V: Clone> {
     Expr(RawSql),
 }
 
+/// Trait for UPDATE query builder methods.
+///
+/// Implement this trait on dialect-specific UPDATE wrappers to ensure they
+/// expose the same builder API as the core [`UpdateQuery`].
+/// When a new builder method is added here, all implementations must follow.
+pub trait UpdateQueryBuilder<V: Clone> {
+    /// Add a SET clause: `SET "col" = ?`.
+    fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self;
+    /// Add a raw SQL expression to the SET clause.
+    fn set_expr(&mut self, expr: RawSql) -> &mut Self;
+    /// Add an AND WHERE condition.
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Add an OR WHERE condition.
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
+    /// Explicitly allow this UPDATE to have no WHERE clause.
+    fn allow_without_where(&mut self) -> &mut Self;
+}
+
 /// An UPDATE query builder, generic over the bind value type `V`.
 ///
 /// Created via [`SelectQuery::into_update()`] to convert a SELECT query builder into an UPDATE statement.
@@ -25,7 +43,7 @@ pub enum SetClause<V: Clone> {
 /// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
 ///
 /// ```
-/// use qbey::{qbey, col};
+/// use qbey::{qbey, col, UpdateQueryBuilder};
 ///
 /// let mut u = qbey("employee").into_update();
 /// u.set(col("name"), "Alice");
@@ -42,6 +60,33 @@ pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) allow_without_where: bool,
 }
 
+impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
+    fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
+        self.sets.push(SetClause::Value(col.column, val.into()));
+        self
+    }
+
+    fn set_expr(&mut self, expr: RawSql) -> &mut Self {
+        self.sets.push(SetClause::Expr(expr));
+        self
+    }
+
+    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    fn allow_without_where(&mut self) -> &mut Self {
+        self.allow_without_where = true;
+        self
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     pub(crate) fn new(
         table: String,
@@ -55,80 +100,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
             wheres,
             allow_without_where: false,
         }
-    }
-
-    /// Add a SET clause: `SET "col" = ?`.
-    ///
-    /// Use [`col()`] to create a column reference for the first argument.
-    /// Column names are quoted as identifiers but **not** parameterized,
-    /// so never pass external (user-supplied) input as a column name.
-    ///
-    /// If a table-qualified column (e.g., `table("t").col("name")`) is passed,
-    /// the table qualifier is ignored and only the column name is used in the
-    /// SET clause, since standard SQL does not allow qualified columns in SET.
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut u = qbey("employee").into_update();
-    /// u.set(col("name"), "Alice");
-    /// u.and_where(col("id").eq(1));
-    /// let (sql, _) = u.to_sql();
-    /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
-    /// ```
-    pub fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
-        self.sets.push(SetClause::Value(col.column, val.into()));
-        self
-    }
-
-    /// Add a raw SQL expression to the SET clause.
-    ///
-    /// Use [`RawSql::new()`] to create the expression, making it explicit
-    /// that raw SQL is being injected.
-    ///
-    /// ```
-    /// use qbey::{qbey, col, RawSql};
-    ///
-    /// let mut u = qbey("employee").into_update();
-    /// u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
-    /// u.and_where(col("id").eq(1));
-    /// let (sql, _) = u.to_sql();
-    /// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
-    /// ```
-    pub fn set_expr(&mut self, expr: RawSql) -> &mut Self {
-        self.sets.push(SetClause::Expr(expr));
-        self
-    }
-
-    /// Add an AND WHERE condition.
-    pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
-        self
-    }
-
-    /// Add an OR WHERE condition.
-    pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
-        self
-    }
-
-    /// Explicitly allow this UPDATE to have no WHERE clause.
-    ///
-    /// By default, `to_sql()` and `to_sql_with()` panic if no WHERE conditions are set,
-    /// to prevent accidental full-table updates. Call this method to opt in to WHERE-less updates.
-    ///
-    /// ```
-    /// use qbey::{qbey, col};
-    ///
-    /// let mut u = qbey("employee").into_update();
-    /// u.set(col("status"), "inactive");
-    /// u.allow_without_where();
-    /// let (sql, _) = u.to_sql();
-    /// assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
-    /// ```
-    pub fn allow_without_where(&mut self) -> &mut Self {
-        self.allow_without_where = true;
-        self
     }
 
     /// Build an UpdateTree AST from this query.

@@ -7,7 +7,12 @@ use qbey::Value;
 use qbey::renderer::standard::StandardSqlRenderer;
 use qbey::renderer::{RenderConfig, Renderer};
 use qbey::tree::SelectTree;
-use std::ops::{Deref, DerefMut};
+
+// Re-export builder traits so users of qbey-mysql get them automatically.
+pub use qbey::DeleteQueryBuilder;
+pub use qbey::InsertQueryBuilder;
+pub use qbey::SelectQueryBuilder;
+pub use qbey::UpdateQueryBuilder;
 
 /// MySQL dialect: `?` placeholders and backtick identifier quoting.
 pub struct MySQL;
@@ -50,46 +55,34 @@ pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
     limit_val: Option<u64>,
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
-    /// Add a SET clause: `` SET `col` = ? ``.
-    ///
-    /// Column names are quoted as identifiers but **not** parameterized,
-    /// so never pass external (user-supplied) input as a column name.
-    pub fn set(&mut self, col: qbey::Col, val: impl Into<V>) -> &mut Self {
+impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
+    fn set(&mut self, col: qbey::Col, val: impl Into<V>) -> &mut Self {
         self.inner.set(col, val);
         self
     }
 
-    /// Add a raw SQL expression to the SET clause.
-    ///
-    /// Use [`qbey::RawSql::new()`] to create the expression, making it explicit
-    /// that raw SQL is being injected.
-    pub fn set_expr(&mut self, expr: qbey::RawSql) -> &mut Self {
+    fn set_expr(&mut self, expr: qbey::RawSql) -> &mut Self {
         self.inner.set_expr(expr);
         self
     }
 
-    /// Add an AND WHERE condition.
-    pub fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+    fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
         self.inner.and_where(cond);
         self
     }
 
-    /// Add an OR WHERE condition.
-    pub fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+    fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
         self.inner.or_where(cond);
         self
     }
 
-    /// Explicitly allow UPDATE without WHERE clause.
-    ///
-    /// By default, calling [`to_sql()`](MysqlUpdateQuery::to_sql) without any WHERE
-    /// conditions will panic. Call this method to opt in to full-table updates.
-    pub fn allow_without_where(&mut self) -> &mut Self {
+    fn allow_without_where(&mut self) -> &mut Self {
         self.inner.allow_without_where();
         self
     }
+}
 
+impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     /// Add an ORDER BY clause (MySQL extension).
     pub fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
@@ -135,28 +128,24 @@ pub struct MysqlDeleteQuery<V: Clone + std::fmt::Debug = Value> {
     limit_val: Option<u64>,
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
-    /// Add an AND WHERE condition.
-    pub fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for MysqlDeleteQuery<V> {
+    fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
         self.inner.and_where(cond);
         self
     }
 
-    /// Add an OR WHERE condition.
-    pub fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+    fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
         self.inner.or_where(cond);
         self
     }
 
-    /// Explicitly allow DELETE without WHERE clause.
-    ///
-    /// By default, calling [`to_sql()`](MysqlDeleteQuery::to_sql) without any WHERE
-    /// conditions will panic. Call this method to opt in to full-table deletes.
-    pub fn allow_without_where(&mut self) -> &mut Self {
+    fn allow_without_where(&mut self) -> &mut Self {
         self.inner.allow_without_where();
         self
     }
+}
 
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     /// Add an ORDER BY clause (MySQL extension).
     pub fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
@@ -212,19 +201,13 @@ pub struct MysqlInsertQuery<V: Clone + std::fmt::Debug = Value> {
     on_duplicate_key_updates: Vec<OnDuplicateKeyUpdateClause<V>>,
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
-    /// Add a row of column-value pairs.
-    ///
-    /// See [`qbey::InsertQuery::add_value()`] for details.
-    pub fn add_value(&mut self, row: &(impl qbey::ToInsertRow<V> + ?Sized)) -> &mut Self {
+impl<V: Clone + std::fmt::Debug> InsertQueryBuilder<V> for MysqlInsertQuery<V> {
+    fn add_value(&mut self, row: &(impl qbey::ToInsertRow<V> + ?Sized)) -> &mut Self {
         self.inner.add_value(row);
         self
     }
 
-    /// Add an extra column whose value is a raw SQL expression applied to every row.
-    ///
-    /// See [`qbey::InsertQuery::add_col_value_expr()`] for details.
-    pub fn add_col_value_expr(
+    fn add_col_value_expr(
         &mut self,
         column: impl Into<qbey::Col>,
         expr: qbey::RawSql,
@@ -233,19 +216,18 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
         self
     }
 
-    /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
-    ///
-    /// See [`qbey::InsertQuery::from_select()`] for details.
-    pub fn from_select(&mut self, sub: impl qbey::IntoSelectTree<V>) -> &mut Self {
+    fn from_select(&mut self, sub: impl qbey::IntoSelectTree<V>) -> &mut Self {
         self.inner.from_select(sub);
         self
     }
+}
 
+impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     /// Add an ON DUPLICATE KEY UPDATE clause with a bind value.
     ///
     /// ```
     /// use qbey::{col, Value};
-    /// use qbey_mysql::qbey;
+    /// use qbey_mysql::{qbey, InsertQueryBuilder};
     ///
     /// let mut ins = qbey("users").into_insert();
     /// ins.add_value(&[("id", 1.into()), ("name", "Alice".into())]);
@@ -281,7 +263,7 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     ///
     /// ```
     /// use qbey::{col, Value, RawSql};
-    /// use qbey_mysql::qbey;
+    /// use qbey_mysql::{qbey, InsertQueryBuilder};
     ///
     /// let mut ins = qbey("users").into_insert();
     /// ins.add_value(&[("id", 1.into()), ("age", 30.into())]);
@@ -325,19 +307,6 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
         }
 
         (sql, binds)
-    }
-}
-
-impl<V: Clone + std::fmt::Debug> Deref for MysqlQuery<V> {
-    type Target = qbey::SelectQuery<V>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<V: Clone + std::fmt::Debug> DerefMut for MysqlQuery<V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
     }
 }
 
@@ -411,6 +380,127 @@ pub fn qbey_from_subquery_with<V: Clone + std::fmt::Debug>(
 /// Accepts a table name (`&str`) or a [`qbey::TableRef`] (created with [`qbey::table()`]).
 pub fn qbey_with<V: Clone + std::fmt::Debug>(table: impl qbey::IntoFromTable) -> MysqlQuery<V> {
     MysqlQuery::wrap(qbey::qbey_with(table))
+}
+
+impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
+    fn as_(&mut self, alias: &str) -> &mut Self {
+        self.inner.as_(alias);
+        self
+    }
+
+    fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.and_where(cond);
+        self
+    }
+
+    fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.or_where(cond);
+        self
+    }
+
+    fn select(&mut self, cols: &[impl Into<qbey::SelectItem> + Clone]) -> &mut Self {
+        self.inner.select(cols);
+        self
+    }
+
+    fn add_select(&mut self, item: impl Into<qbey::SelectItem>) -> &mut Self {
+        self.inner.add_select(item);
+        self
+    }
+
+    fn add_select_expr(&mut self, raw: qbey::RawSql, alias: Option<&str>) -> &mut Self {
+        self.inner.add_select_expr(raw, alias);
+        self
+    }
+
+    fn group_by(&mut self, cols: &[&str]) -> &mut Self {
+        self.inner.group_by(cols);
+        self
+    }
+
+    fn join(
+        &mut self,
+        table: impl qbey::IntoJoinTable,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.join(table, condition);
+        self
+    }
+
+    fn left_join(
+        &mut self,
+        table: impl qbey::IntoJoinTable,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.left_join(table, condition);
+        self
+    }
+
+    fn add_join(
+        &mut self,
+        join_type: qbey::JoinType,
+        table: impl qbey::IntoJoinTable,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.add_join(join_type, table, condition);
+        self
+    }
+
+    fn join_subquery(
+        &mut self,
+        sub: impl qbey::IntoSelectTree<V>,
+        alias: &str,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.join_subquery(sub, alias, condition);
+        self
+    }
+
+    fn left_join_subquery(
+        &mut self,
+        sub: impl qbey::IntoSelectTree<V>,
+        alias: &str,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.left_join_subquery(sub, alias, condition);
+        self
+    }
+
+    fn add_join_subquery(
+        &mut self,
+        join_type: qbey::JoinType,
+        sub: impl qbey::IntoSelectTree<V>,
+        alias: &str,
+        condition: qbey::JoinCondition,
+    ) -> &mut Self {
+        self.inner.add_join_subquery(join_type, sub, alias, condition);
+        self
+    }
+
+    fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
+        self.inner.order_by(clause);
+        self
+    }
+
+    fn order_by_expr(&mut self, raw: qbey::RawSql) -> &mut Self {
+        self.inner.order_by_expr(raw);
+        self
+    }
+
+    fn limit(&mut self, n: u64) -> &mut Self {
+        self.inner.limit(n);
+        self
+    }
+
+    fn offset(&mut self, n: u64) -> &mut Self {
+        self.inner.offset(n);
+        self
+    }
+
+    fn for_with(&mut self, clause: &str) -> &mut Self {
+        self.inner.for_with(clause);
+        self
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
