@@ -661,3 +661,98 @@ fn test_count_all_with_reserved_word_alias() {
     let count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
     assert_eq!(count, 3);
 }
+
+#[test]
+fn test_insert_single_row() {
+    let conn = setup_db();
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(4)),
+        ("name", SqliteValue::Text("Dave".to_string())),
+        ("age", SqliteValue::Integer(40)),
+    ]);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    let mut stmt = conn
+        .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" = 4"#)
+        .unwrap();
+    let (name, age): (String, i64) = stmt
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
+    assert_eq!(name, "Dave");
+    assert_eq!(age, 40);
+}
+
+#[test]
+fn test_insert_multiple_rows() {
+    let conn = setup_db();
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(4)),
+        ("name", SqliteValue::Text("Dave".to_string())),
+        ("age", SqliteValue::Integer(40)),
+    ]);
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(5)),
+        ("name", SqliteValue::Text("Eve".to_string())),
+        ("age", SqliteValue::Integer(28)),
+    ]);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    let mut stmt = conn
+        .prepare(r#"SELECT "name" FROM "users" WHERE "id" >= 4 ORDER BY "id" ASC"#)
+        .unwrap();
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(names, vec!["Dave", "Eve"]);
+}
+
+#[test]
+fn test_insert_from_select() {
+    let conn = setup_db();
+
+    // Create an archive table
+    conn.execute_batch(
+        "CREATE TABLE users_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            age INTEGER NOT NULL
+        );",
+    )
+    .unwrap();
+
+    let mut sub = qbey_with::<SqliteValue>("users");
+    sub.select(&["id", "name", "age"]);
+    sub.and_where(col("age").gt(30));
+
+    let mut ins = qbey_with::<SqliteValue>("users_archive").into_insert();
+    ins.from_select(sub);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    let mut stmt = conn
+        .prepare(r#"SELECT "name" FROM "users_archive" ORDER BY "name" ASC"#)
+        .unwrap();
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(names, vec!["Charlie"]);
+}

@@ -222,6 +222,43 @@ impl<V: Clone> UpdateTree<V> {
     }
 }
 
+/// The source of rows for an INSERT statement.
+#[derive(Debug, Clone)]
+pub enum InsertTreeSource<V: Clone = crate::Value> {
+    /// Explicit value rows.
+    Values(Vec<Vec<V>>),
+    /// A subquery (INSERT ... SELECT ...).
+    Select(Box<SelectTree<V>>),
+}
+
+/// AST for an INSERT statement, generic over bind value type.
+#[derive(Debug, Clone)]
+pub struct InsertTree<V: Clone = crate::Value> {
+    pub table: String,
+    pub columns: Vec<String>,
+    pub source: InsertTreeSource<V>,
+}
+
+impl<V: Clone> InsertTree<V> {
+    /// Transform all bind values in this tree.
+    pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> InsertTree<U> {
+        InsertTree {
+            table: self.table,
+            columns: self.columns,
+            source: match self.source {
+                InsertTreeSource::Values(rows) => InsertTreeSource::Values(
+                    rows.into_iter()
+                        .map(|row| row.into_iter().map(&f).collect())
+                        .collect(),
+                ),
+                InsertTreeSource::Select(sub) => {
+                    InsertTreeSource::Select(Box::new(sub.map_values(f)))
+                }
+            },
+        }
+    }
+}
+
 /// AST for a DELETE statement, generic over bind value type.
 #[derive(Debug, Clone)]
 pub struct DeleteTree<V: Clone = crate::Value> {

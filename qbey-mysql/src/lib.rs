@@ -189,6 +189,44 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     }
 }
 
+/// MySQL-specific INSERT query builder.
+///
+/// Wraps the core `InsertQuery` and renders SQL with MySQL dialect
+/// (backtick quoting, `?` placeholders).
+#[derive(Debug, Clone)]
+pub struct MysqlInsertQuery<V: Clone + std::fmt::Debug = Value> {
+    inner: qbey::InsertQuery<V>,
+}
+
+impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
+    /// Add a row of column-value pairs.
+    ///
+    /// See [`qbey::InsertQuery::add_value()`] for details.
+    pub fn add_value(&mut self, pairs: &[(&str, V)]) -> &mut Self {
+        self.inner.add_value(pairs);
+        self
+    }
+
+    /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
+    ///
+    /// See [`qbey::InsertQuery::from_select()`] for details.
+    pub fn from_select(&mut self, sub: impl qbey::IntoSelectTree<V>) -> &mut Self {
+        self.inner.from_select(sub);
+        self
+    }
+
+    /// Build standard SQL with MySQL dialect.
+    pub fn to_sql(&self) -> (String, Vec<V>) {
+        let tree = self.inner.to_tree();
+        let ph = |_: usize| "?".to_string();
+        let qi = |name: &str| MySQL.quote_identifier(name);
+        qbey::renderer::insert::render_insert(
+            &tree,
+            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL),
+        )
+    }
+}
+
 impl<V: Clone + std::fmt::Debug> Deref for MysqlQuery<V> {
     type Target = qbey::SelectQuery<V>;
     fn deref(&self) -> &Self::Target {
@@ -508,6 +546,16 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
             inner: self.inner.into_delete(),
             order_bys: Vec::new(),
             limit_val: None,
+        }
+    }
+
+    /// Convert this MySQL query builder into an INSERT query builder.
+    ///
+    /// Consumes `self` and transfers the table name.
+    /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
+    pub fn into_insert(self) -> MysqlInsertQuery<V> {
+        MysqlInsertQuery {
+            inner: self.inner.into_insert(),
         }
     }
 
@@ -1380,5 +1428,57 @@ mod tests {
             sql,
             "SELECT `dept` FROM `employee` FORCE INDEX (idx_dept) INTERSECT SELECT `dept` FROM `contractor` FORCE INDEX (idx_dept)"
         );
+    }
+
+    #[test]
+    fn test_insert_single_row() {
+        let mut ins = qbey("employee").into_insert();
+        ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+        let (sql, binds) = ins.to_sql();
+        assert_eq!(sql, "INSERT INTO `employee` (`name`, `age`) VALUES (?, ?)");
+        assert_eq!(
+            binds,
+            vec![
+                qbey::Value::String("Alice".to_string()),
+                qbey::Value::Int(30)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_insert_multiple_rows() {
+        let mut ins = qbey("employee").into_insert();
+        ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+        ins.add_value(&[("name", "Bob".into()), ("age", 25.into())]);
+        let (sql, binds) = ins.to_sql();
+        assert_eq!(
+            sql,
+            "INSERT INTO `employee` (`name`, `age`) VALUES (?, ?), (?, ?)"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                qbey::Value::String("Alice".to_string()),
+                qbey::Value::Int(30),
+                qbey::Value::String("Bob".to_string()),
+                qbey::Value::Int(25),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_insert_from_select() {
+        let mut sub = qbey("old_employee");
+        sub.select(&["name", "age"]);
+        sub.and_where(col("active").eq(true));
+
+        let mut ins = qbey("employee").into_insert();
+        ins.from_select(sub);
+        let (sql, binds) = ins.to_sql();
+        assert_eq!(
+            sql,
+            "INSERT INTO `employee` SELECT `name`, `age` FROM `old_employee` WHERE `active` = ?"
+        );
+        assert_eq!(binds, vec![qbey::Value::Bool(true)]);
     }
 }

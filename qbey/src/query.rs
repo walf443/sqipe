@@ -1,6 +1,7 @@
 use crate::column::OrderByClause;
 use crate::column::{Col, SelectItem, TableRef};
 use crate::delete::DeleteQuery;
+use crate::insert::InsertQuery;
 use crate::join::{JoinClause, JoinCondition, JoinType};
 use crate::raw_sql::RawSql;
 use crate::update::UpdateQuery;
@@ -701,6 +702,44 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             "SelectQuery has LIMIT which is not supported in UPDATE and will be discarded"
         );
         UpdateQuery::new(self.table, self.table_alias, self.wheres)
+    }
+
+    /// Convert this SELECT query builder into an INSERT query builder.
+    ///
+    /// Consumes `self` and transfers the table name. WHERE conditions, JOINs,
+    /// ORDER BY, and LIMIT are not applicable to INSERT and will cause a panic
+    /// if present.
+    ///
+    /// ```
+    /// use qbey::{qbey, Value};
+    ///
+    /// let mut ins = qbey("employee").into_insert();
+    /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+    /// let (sql, _) = ins.to_sql();
+    /// assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?)"#);
+    /// ```
+    pub fn into_insert(self) -> InsertQuery<V> {
+        assert!(
+            self.set_operations.is_empty(),
+            "Compound query (set operations) cannot be converted to INSERT"
+        );
+        assert!(
+            self.joins.is_empty(),
+            "SelectQuery has JOINs which are not supported in INSERT and will be discarded"
+        );
+        assert!(
+            self.wheres.is_empty(),
+            "SelectQuery has WHERE which is not supported in INSERT and will be discarded"
+        );
+        assert!(
+            self.order_bys.is_empty(),
+            "SelectQuery has ORDER BY which is not supported in INSERT and will be discarded"
+        );
+        assert!(
+            self.limit_val.is_none(),
+            "SelectQuery has LIMIT which is not supported in INSERT and will be discarded"
+        );
+        InsertQuery::new(self.table)
     }
 
     /// Convert this SELECT query builder into a DELETE query builder.

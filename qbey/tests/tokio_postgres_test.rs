@@ -738,3 +738,91 @@ async fn test_count_all_with_reserved_word_alias() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<_, i64>("count"), 3);
 }
+
+#[tokio::test]
+async fn test_insert_single_row() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(4)),
+        ("name", PgValue::Text("Dave".to_string())),
+        ("age", PgValue::Int(40)),
+    ]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 4", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "Dave");
+    assert_eq!(rows[0].get::<_, i32>("age"), 40);
+}
+
+#[tokio::test]
+async fn test_insert_multiple_rows() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(4)),
+        ("name", PgValue::Text("Dave".to_string())),
+        ("age", PgValue::Int(40)),
+    ]);
+    ins.add_value(&[
+        ("id", PgValue::Int(5)),
+        ("name", PgValue::Text("Eve".to_string())),
+        ("age", PgValue::Int(28)),
+    ]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT name FROM users WHERE id >= 4 ORDER BY id ASC", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "Dave");
+    assert_eq!(rows[1].get::<_, String>("name"), "Eve");
+}
+
+#[tokio::test]
+async fn test_insert_from_select() {
+    let client = setup_client().await;
+
+    client
+        .batch_execute(
+            "CREATE TABLE users_archive (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                age INT NOT NULL
+            );",
+        )
+        .await
+        .unwrap();
+
+    let mut sub = qbey_with::<PgValue>("users");
+    sub.select(&["id", "name", "age"]);
+    sub.and_where(col("age").gt(30));
+
+    let mut ins = qbey_with::<PgValue>("users_archive").into_insert();
+    ins.from_select(sub);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT name FROM users_archive ORDER BY name ASC", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Charlie");
+}

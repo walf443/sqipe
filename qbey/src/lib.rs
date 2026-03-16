@@ -4,6 +4,7 @@ struct ReadmeDocTests;
 
 pub mod column;
 pub mod delete;
+pub mod insert;
 pub mod join;
 pub mod like;
 pub mod query;
@@ -35,6 +36,7 @@ pub use column::{
     count_one, table,
 };
 pub use delete::DeleteQuery;
+pub use insert::InsertQuery;
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
