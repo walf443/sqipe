@@ -36,7 +36,7 @@ pub use column::{
     count_one, table,
 };
 pub use delete::DeleteQuery;
-pub use insert::{InsertQuery, IntoColumnName, ToInsertRow};
+pub use insert::{InsertQuery, ToInsertRow};
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{

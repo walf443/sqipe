@@ -6,28 +6,6 @@ use crate::raw_sql::RawSql;
 use crate::tree::SelectTree;
 use crate::value::Value;
 
-/// Trait for types that can be used as a column name in
-/// [`InsertQuery::add_value_col_expr()`].
-///
-/// Implemented for `&str` and [`Col`].
-pub trait IntoColumnName {
-    fn into_column_name(self) -> String;
-}
-
-impl IntoColumnName for &str {
-    fn into_column_name(self) -> String {
-        self.to_string()
-    }
-}
-
-/// Only the column name is used; the table qualifier and alias are ignored
-/// because INSERT column lists do not support table qualification.
-impl IntoColumnName for Col {
-    fn into_column_name(self) -> String {
-        self.column
-    }
-}
-
 use crate::renderer::RenderConfig;
 use crate::tree::default_quote_identifier;
 
@@ -254,8 +232,10 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     /// );
     /// assert_eq!(binds, vec![Value::String("Alice".to_string()), Value::Int(30)]);
     /// ```
-    pub fn add_value_col_expr(&mut self, column: impl IntoColumnName, expr: RawSql) -> &mut Self {
-        let column = column.into_column_name();
+    pub fn add_value_col_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self {
+        // Only the column name is used; INSERT column lists do not support
+        // table qualification, so the table and alias fields are ignored.
+        let column = column.into().column;
         assert!(
             matches!(self.source, InsertSource::Values(_)),
             "Cannot mix add_value_col_expr() with from_select()"
