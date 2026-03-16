@@ -85,6 +85,16 @@ pub fn col(name: &str) -> Col {
     }
 }
 
+impl From<&str> for Col {
+    fn from(name: &str) -> Self {
+        Col {
+            table: None,
+            column: name.to_string(),
+            alias: None,
+        }
+    }
+}
+
 impl Col {
     pub fn eq<V: Clone>(self, val: V) -> WhereClause<V> {
         WhereClause::Condition {

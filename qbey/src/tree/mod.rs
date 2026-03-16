@@ -237,6 +237,9 @@ pub struct InsertTree<V: Clone = crate::Value> {
     pub table: String,
     pub columns: Vec<String>,
     pub source: InsertTreeSource<V>,
+    /// Extra columns with raw SQL expressions (column name, raw SQL).
+    /// These are appended after the normal bind-value columns.
+    pub col_exprs: Vec<(String, String)>,
 }
 
 impl<V: Clone> InsertTree<V> {
@@ -255,6 +258,7 @@ impl<V: Clone> InsertTree<V> {
                     InsertTreeSource::Select(Box::new(sub.map_values(f)))
                 }
             },
+            col_exprs: self.col_exprs,
         }
     }
 }

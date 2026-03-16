@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::Dialect;
+use crate::column::Col;
+use crate::raw_sql::RawSql;
 use crate::tree::SelectTree;
 use crate::value::Value;
 
@@ -92,6 +94,9 @@ pub struct InsertQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table: String,
     pub(crate) columns: Vec<String>,
     pub(crate) source: InsertSource<V>,
+    /// Extra columns whose values are raw SQL expressions (e.g., `NOW()`).
+    /// These are appended after the normal bind-value columns in every row.
+    pub(crate) col_exprs: Vec<(String, RawSql)>,
 }
 
 impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
@@ -100,6 +105,7 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
             table,
             columns: Vec::new(),
             source: InsertSource::Values(Vec::new()),
+            col_exprs: Vec::new(),
         }
     }
 
@@ -197,6 +203,59 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         self
     }
 
+    /// Add an extra column whose value is a raw SQL expression applied to every row.
+    ///
+    /// This is useful for columns like `created_at` that should use a database
+    /// function such as `NOW()` rather than a bind parameter.
+    ///
+    /// The column is appended after the normal bind-value columns established
+    /// by [`add_value()`](InsertQuery::add_value).
+    ///
+    /// # Panics
+    ///
+    /// - Panics if the column name duplicates a column already added via
+    ///   `add_value()` or a previous `add_col_value_expr()` call.
+    ///
+    /// The column can be specified as a `&str` or a [`Col`](crate::Col):
+    ///
+    /// ```
+    /// use qbey::{qbey, col, Value, RawSql};
+    ///
+    /// let mut ins = qbey("employee").into_insert();
+    /// ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+    /// ins.add_col_value_expr("created_at", RawSql::new("NOW()"));
+    /// ins.add_col_value_expr(col("updated_at"), RawSql::new("NOW()"));
+    /// let (sql, binds) = ins.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"INSERT INTO "employee" ("name", "age", "created_at", "updated_at") VALUES (?, ?, NOW(), NOW())"#
+    /// );
+    /// assert_eq!(binds, vec![Value::String("Alice".to_string()), Value::Int(30)]);
+    /// ```
+    pub fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self {
+        // Only the column name is used; INSERT column lists do not support
+        // table qualification, so the table and alias fields are ignored.
+        let column = column.into().column;
+        assert!(
+            matches!(self.source, InsertSource::Values(_)),
+            "Cannot mix add_col_value_expr() with from_select()"
+        );
+        // Check for duplicates against value columns.
+        assert!(
+            !self.columns.iter().any(|c| c == &column),
+            "add_col_value_expr: column {:?} already exists in value columns",
+            column
+        );
+        // Check for duplicates against existing col_exprs.
+        assert!(
+            !self.col_exprs.iter().any(|(c, _)| c == &column),
+            "add_col_value_expr: duplicate column {:?}",
+            column
+        );
+        self.col_exprs.push((column, expr));
+        self
+    }
+
     /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
     ///
     /// # Panics
@@ -235,19 +294,33 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         match &self.source {
             InsertSource::Values(rows) => {
                 assert!(
-                    !rows.is_empty(),
-                    "INSERT requires at least one row of values or a SELECT subquery"
+                    !rows.is_empty() || !self.col_exprs.is_empty(),
+                    "INSERT requires at least one row of values, a col_expr, or a SELECT subquery"
                 );
+                let col_exprs = self
+                    .col_exprs
+                    .iter()
+                    .map(|(c, e)| (c.clone(), e.as_str().to_string()))
+                    .collect();
+                // When only col_exprs are provided (no add_value rows),
+                // produce a single empty row so the renderer emits one VALUES tuple.
+                let rows = if rows.is_empty() {
+                    vec![vec![]]
+                } else {
+                    rows.clone()
+                };
                 crate::tree::InsertTree {
                     table: self.table.clone(),
                     columns: self.columns.clone(),
-                    source: crate::tree::InsertTreeSource::Values(rows.clone()),
+                    source: crate::tree::InsertTreeSource::Values(rows),
+                    col_exprs,
                 }
             }
             InsertSource::Select(sub) => crate::tree::InsertTree {
                 table: self.table.clone(),
                 columns: self.columns.clone(),
                 source: crate::tree::InsertTreeSource::Select(sub.clone()),
+                col_exprs: Vec::new(),
             },
         }
     }

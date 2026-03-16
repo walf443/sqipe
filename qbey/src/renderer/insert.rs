@@ -8,7 +8,10 @@ pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (Str
     match &tree.source {
         InsertTreeSource::Values(rows) => {
             // INSERT INTO "table" ("col1", "col2") VALUES (?, ?), (?, ?)
-            let quoted_cols: Vec<String> = tree.columns.iter().map(|c| (cfg.qi)(c)).collect();
+            let mut quoted_cols: Vec<String> = tree.columns.iter().map(|c| (cfg.qi)(c)).collect();
+            for (col, _) in &tree.col_exprs {
+                quoted_cols.push((cfg.qi)(col));
+            }
             let mut sql = format!(
                 "INSERT INTO {} ({}) VALUES ",
                 (cfg.qi)(&tree.table),
@@ -26,6 +29,12 @@ pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (Str
                     }
                     binds.push(val.clone());
                     sql.push_str(&(cfg.ph)(binds.len()));
+                }
+                for (k, (_, expr)) in tree.col_exprs.iter().enumerate() {
+                    if !row.is_empty() || k > 0 {
+                        sql.push_str(", ");
+                    }
+                    sql.push_str(expr);
                 }
                 sql.push(')');
             }
