@@ -363,3 +363,147 @@ fn test_count_one() {
     let (sql, _) = q.to_sql();
     assert_eq!(sql, r#"SELECT COUNT(1) AS "cnt" FROM "employee""#);
 }
+
+#[test]
+fn test_col_sum() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").sum());
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", SUM("price") FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_sum_with_alias() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").sum().as_("total"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", SUM("price") AS "total" FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_sum_with_table_qualified() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(table("orders").col("price").sum().as_("total"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", SUM("orders"."price") AS "total" FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_avg() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").avg());
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", AVG("price") FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_avg_with_alias() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").avg().as_("avg_price"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", AVG("price") AS "avg_price" FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_min() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").min());
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", MIN("price") FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_min_with_alias() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").min().as_("min_price"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", MIN("price") AS "min_price" FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_max() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").max());
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", MAX("price") FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_col_max_with_alias() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("price").max().as_("max_price"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", MAX("price") AS "max_price" FROM "orders" GROUP BY "product""#
+    );
+}
+
+#[test]
+fn test_multiple_aggregates() {
+    let mut q = qbey("orders");
+    q.select(&["product"]);
+    q.add_select(col("id").count().as_("cnt"));
+    q.add_select(col("price").sum().as_("total"));
+    q.add_select(col("price").avg().as_("avg_price"));
+    q.add_select(col("price").min().as_("min_price"));
+    q.add_select(col("price").max().as_("max_price"));
+    q.group_by(&["product"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "product", COUNT("id") AS "cnt", SUM("price") AS "total", AVG("price") AS "avg_price", MIN("price") AS "min_price", MAX("price") AS "max_price" FROM "orders" GROUP BY "product""#
+    );
+}

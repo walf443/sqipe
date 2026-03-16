@@ -238,6 +238,54 @@ impl Col {
         }
     }
 
+    /// Create a `SUM(col)` aggregate expression.
+    ///
+    /// - `col("price").sum()` → `SUM("price")`
+    /// - `col("price").sum().as_("total")` → `SUM("price") AS "total"`
+    pub fn sum(self) -> SelectItem {
+        SelectItem::Function {
+            func: SelectFunc::Sum,
+            col: Some(self),
+            alias: None,
+        }
+    }
+
+    /// Create an `AVG(col)` aggregate expression.
+    ///
+    /// - `col("price").avg()` → `AVG("price")`
+    /// - `col("price").avg().as_("avg_price")` → `AVG("price") AS "avg_price"`
+    pub fn avg(self) -> SelectItem {
+        SelectItem::Function {
+            func: SelectFunc::Avg,
+            col: Some(self),
+            alias: None,
+        }
+    }
+
+    /// Create a `MIN(col)` aggregate expression.
+    ///
+    /// - `col("price").min()` → `MIN("price")`
+    /// - `col("price").min().as_("min_price")` → `MIN("price") AS "min_price"`
+    pub fn min(self) -> SelectItem {
+        SelectItem::Function {
+            func: SelectFunc::Min,
+            col: Some(self),
+            alias: None,
+        }
+    }
+
+    /// Create a `MAX(col)` aggregate expression.
+    ///
+    /// - `col("price").max()` → `MAX("price")`
+    /// - `col("price").max().as_("max_price")` → `MAX("price") AS "max_price"`
+    pub fn max(self) -> SelectItem {
+        SelectItem::Function {
+            func: SelectFunc::Max,
+            col: Some(self),
+            alias: None,
+        }
+    }
+
     pub fn asc(self) -> OrderByClause {
         OrderByClause::Col {
             col: self,
@@ -292,6 +340,14 @@ pub enum SelectFunc {
     Count,
     /// `COUNT(1)`.
     CountOne,
+    /// `SUM(col)`.
+    Sum,
+    /// `AVG(col)`.
+    Avg,
+    /// `MIN(col)`.
+    Min,
+    /// `MAX(col)`.
+    Max,
 }
 
 impl SelectFunc {
@@ -299,6 +355,10 @@ impl SelectFunc {
         match self {
             SelectFunc::Count => "COUNT",
             SelectFunc::CountOne => "COUNT",
+            SelectFunc::Sum => "SUM",
+            SelectFunc::Avg => "AVG",
+            SelectFunc::Min => "MIN",
+            SelectFunc::Max => "MAX",
         }
     }
 }
