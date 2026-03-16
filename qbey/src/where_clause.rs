@@ -332,7 +332,7 @@ pub fn not<V: Clone>(clause: WhereClause<V>) -> WhereClause<V> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum WhereEntry<V: Clone = Value> {
+pub enum WhereEntry<V: Clone = Value> {
     And(WhereClause<V>),
     Or(WhereClause<V>),
 }
