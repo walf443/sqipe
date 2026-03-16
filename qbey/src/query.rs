@@ -10,7 +10,7 @@ use crate::where_clause::{IntoIncluded, IntoWhereClause, WhereClause, WhereEntry
 
 use crate::renderer::standard::StandardSqlRenderer;
 use crate::renderer::{RenderConfig, Renderer};
-use crate::tree::{SelectTree, default_quote_identifier};
+use crate::tree::SelectTree;
 
 use crate::Dialect;
 
@@ -656,13 +656,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
 
     /// Build standard SQL with `?` placeholders and double-quote identifiers.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        StandardSqlRenderer.render_select(&tree, &cfg)
+        self.to_sql_with(&crate::DefaultDialect)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.

@@ -7,7 +7,6 @@ use crate::tree::SelectTree;
 use crate::value::Value;
 
 use crate::renderer::RenderConfig;
-use crate::tree::default_quote_identifier;
 
 /// Trait for types that can be converted into a row of column-value pairs
 /// for use with [`InsertQuery::add_value()`].
@@ -285,13 +284,7 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Panics if no values or subquery have been provided.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        crate::renderer::insert::render_insert(&tree, &cfg)
+        self.to_sql_with(&crate::DefaultDialect)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.

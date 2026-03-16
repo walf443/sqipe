@@ -2,20 +2,14 @@
 
 use postgres::{Client, NoTls, types::ToSql};
 use qbey::{
-    DeleteQueryBuilder, Dialect, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder, UpdateQueryBuilder,
+    col, count_all, qbey_from_subquery_with, qbey_with, table,
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
-struct PostgresDialect;
-
-impl Dialect for PostgresDialect {
-    fn placeholder(&self, index: usize) -> String {
-        format!("${}", index)
-    }
-}
+use qbey::PgDialect as PostgresDialect;
 
 /// Custom value type for PostgreSQL — stores i32 directly.
 #[derive(Debug, Clone)]

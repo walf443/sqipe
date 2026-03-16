@@ -60,13 +60,6 @@ fn test_update_from_query_with_where() {
 
 #[test]
 fn test_update_with_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut u = qbey("employee").into_update();
     u.set(col("name"), "Alice");
     u.set(col("age"), 30);
@@ -279,13 +272,6 @@ fn test_update_with_set_expr_bind_order() {
 
 #[test]
 fn test_update_with_set_expr_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut u = qbey("employee").into_update();
     u.set(col("name"), "Alice");
     u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));

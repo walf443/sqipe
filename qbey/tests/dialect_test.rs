@@ -1,12 +1,5 @@
 use qbey::*;
 
-struct PgDialect;
-impl Dialect for PgDialect {
-    fn placeholder(&self, index: usize) -> String {
-        format!("${}", index)
-    }
-}
-
 #[test]
 fn test_numbered_placeholders() {
     let mut q = qbey("employee");

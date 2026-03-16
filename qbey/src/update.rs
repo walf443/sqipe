@@ -5,7 +5,6 @@ use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 
 use crate::renderer::RenderConfig;
-use crate::tree::default_quote_identifier;
 
 /// A single SET clause entry in an UPDATE statement.
 #[derive(Debug, Clone)]
@@ -177,13 +176,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        crate::renderer::update::render_update(&tree, &cfg)
+        self.to_sql_with(&crate::DefaultDialect)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.

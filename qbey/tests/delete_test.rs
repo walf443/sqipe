@@ -30,13 +30,6 @@ fn test_delete_from_query_with_where() {
 
 #[test]
 fn test_delete_with_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut d = qbey("employee").into_delete();
     d.and_where(col("id").eq(1));
     let (sql, binds) = d.to_sql_with(&PgDialect);

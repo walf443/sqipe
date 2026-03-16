@@ -40,13 +40,6 @@ fn test_from_subquery_with_outer_where() {
 
 #[test]
 fn test_from_subquery_numbered_placeholders() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut sub = qbey("orders");
     sub.select(&["user_id", "amount"]);
     sub.and_where(col("status").eq("completed"));

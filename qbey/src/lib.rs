@@ -30,6 +30,27 @@ pub trait Dialect {
     }
 }
 
+/// Default dialect: `?` placeholders and double-quote identifier quoting.
+///
+/// Matches the defaults of the `Dialect` trait and works with SQLite out of the box.
+/// Use `PgDialect` or `MySqlDialect` when targeting those databases.
+pub struct DefaultDialect;
+
+impl Dialect for DefaultDialect {
+    fn placeholder(&self, _index: usize) -> String {
+        "?".to_string()
+    }
+}
+
+/// PostgreSQL dialect: `$1`, `$2`, … placeholders and double-quote identifier quoting.
+pub struct PgDialect;
+
+impl Dialect for PgDialect {
+    fn placeholder(&self, index: usize) -> String {
+        format!("${}", index)
+    }
+}
+
 /// MySQL dialect: `?` placeholders and backtick identifier quoting.
 pub struct MySqlDialect;
 

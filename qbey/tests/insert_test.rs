@@ -75,13 +75,6 @@ fn test_insert_from_select() {
 
 #[test]
 fn test_insert_with_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut ins = qbey("employee").into_insert();
     ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
     let (sql, binds) = ins.to_sql_with(&PgDialect);
@@ -97,13 +90,6 @@ fn test_insert_with_dialect() {
 
 #[test]
 fn test_insert_multiple_rows_with_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut ins = qbey("employee").into_insert();
     ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
     ins.add_value(&[("name", "Bob".into()), ("age", 25.into())]);
@@ -226,13 +212,6 @@ fn test_insert_multiple_rows_with_col_expr() {
 
 #[test]
 fn test_insert_col_expr_with_dialect() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut ins = qbey("employee").into_insert();
     ins.add_value(&[("name", "Alice".into())]);
     ins.add_col_value_expr("created_at", RawSql::new("NOW()"));

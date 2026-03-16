@@ -1,21 +1,15 @@
 #![cfg(feature = "test-tokio-postgres")]
 
 use qbey::{
-    DeleteQueryBuilder, Dialect, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder, UpdateQueryBuilder,
+    col, count_all, qbey_from_subquery_with, qbey_with, table,
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
 
-struct PostgresDialect;
-
-impl Dialect for PostgresDialect {
-    fn placeholder(&self, index: usize) -> String {
-        format!("${}", index)
-    }
-}
+use qbey::PgDialect as PostgresDialect;
 
 /// Custom value type for PostgreSQL — stores i32 directly instead of i64,
 /// matching PostgreSQL's INT type without needing a cast.

@@ -192,13 +192,6 @@ fn test_join_subquery_with_outer_where() {
 
 #[test]
 fn test_join_subquery_numbered_placeholders() {
-    struct PgDialect;
-    impl Dialect for PgDialect {
-        fn placeholder(&self, index: usize) -> String {
-            format!("${}", index)
-        }
-    }
-
     let mut sub = qbey("orders");
     sub.select(&["user_id", "total"]);
     sub.and_where(col("status").eq("shipped"));

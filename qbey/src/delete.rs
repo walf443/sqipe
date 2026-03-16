@@ -3,7 +3,6 @@ use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 
 use crate::renderer::RenderConfig;
-use crate::tree::default_quote_identifier;
 
 /// Trait for DELETE query builder methods.
 ///
@@ -93,13 +92,7 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     /// Panics if no WHERE conditions are set and [`allow_without_where()`](DeleteQuery::allow_without_where)
     /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let cfg = RenderConfig {
-            ph: &|_| "?".to_string(),
-            qi: &default_quote_identifier,
-            backslash_escape: false,
-        };
-        crate::renderer::delete::render_delete(&tree, &cfg)
+        self.to_sql_with(&crate::DefaultDialect)
     }
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
