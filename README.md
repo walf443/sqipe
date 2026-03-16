@@ -593,3 +593,7 @@ When building rows from a dynamic collection, the caller is responsible for ensu
 ### MySQL dialect
 
 See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
+
+### Example
+
+you can see [https://github.com/walf443/isucon13/pull/3](https://github.com/walf443/isucon13/pull/3) for the practical example
