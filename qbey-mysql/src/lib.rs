@@ -13,22 +13,10 @@ use qbey::InsertQueryBuilder;
 use qbey::SelectQueryBuilder;
 use qbey::UpdateQueryBuilder;
 
-/// MySQL dialect: `?` placeholders and backtick identifier quoting.
-pub struct MySQL;
+pub use qbey::MySqlDialect;
 
-impl qbey::Dialect for MySQL {
-    fn placeholder(&self, _index: usize) -> String {
-        "?".to_string()
-    }
-
-    fn quote_identifier(&self, name: &str) -> String {
-        format!("`{}`", name.replace('`', "``"))
-    }
-
-    fn backslash_escape(&self) -> bool {
-        true
-    }
-}
+#[deprecated(note = "use qbey::MySqlDialect instead")]
+pub type MySQL = qbey::MySqlDialect;
 
 /// MySQL-specific query builder wrapping the core SelectQuery.
 ///
@@ -108,10 +96,10 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
         tree.order_bys = self.order_bys.clone();
         tree.limit = self.limit_val;
         let ph = |_: usize| "?".to_string();
-        let qi = |name: &str| MySQL.quote_identifier(name);
+        let qi = |name: &str| MySqlDialect.quote_identifier(name);
         qbey::renderer::update::render_update(
             &tree,
-            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL),
+            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect),
         )
     }
 }
@@ -169,10 +157,10 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
         tree.order_bys = self.order_bys.clone();
         tree.limit = self.limit_val;
         let ph = |_: usize| "?".to_string();
-        let qi = |name: &str| MySQL.quote_identifier(name);
+        let qi = |name: &str| MySqlDialect.quote_identifier(name);
         qbey::renderer::delete::render_delete(
             &tree,
-            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL),
+            &qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect),
         )
     }
 }
@@ -285,8 +273,8 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     pub fn to_sql(&self) -> (String, Vec<V>) {
         let tree = self.inner.to_tree();
         let ph = |_: usize| "?".to_string();
-        let qi = |name: &str| MySQL.quote_identifier(name);
-        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySQL);
+        let qi = |name: &str| MySqlDialect.quote_identifier(name);
+        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
         let (mut sql, mut binds) = qbey::renderer::insert::render_insert(&tree, &cfg);
 
         if !self.on_duplicate_key_updates.is_empty() {
@@ -713,9 +701,9 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         } else {
             self.to_compound_tree()
         };
-        let ph = |n: usize| MySQL.placeholder(n);
-        let qi = |name: &str| MySQL.quote_identifier(name);
-        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySQL))
+        let ph = |n: usize| MySqlDialect.placeholder(n);
+        let qi = |name: &str| MySqlDialect.quote_identifier(name);
+        StandardSqlRenderer.render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySqlDialect))
     }
 
     /// Convert this MySQL query builder into an UPDATE query builder.

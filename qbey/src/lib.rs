@@ -30,6 +30,23 @@ pub trait Dialect {
     }
 }
 
+/// MySQL dialect: `?` placeholders and backtick identifier quoting.
+pub struct MySqlDialect;
+
+impl Dialect for MySqlDialect {
+    fn placeholder(&self, _index: usize) -> String {
+        "?".to_string()
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("`{}`", name.replace('`', "``"))
+    }
+
+    fn backslash_escape(&self) -> bool {
+        true
+    }
+}
+
 // Re-export all public types at the crate root.
 pub use column::{
     Col, ColRef, OrderByClause, SelectFunc, SelectItem, SortDir, TableRef, col, count_all,

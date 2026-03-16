@@ -9,24 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
-/// Minimal MySQL dialect defined locally — no dependency on qbey-mysql.
-struct MySQL;
-
-impl qbey::Dialect for MySQL {
-    fn placeholder(&self, _index: usize) -> String {
-        "?".to_string()
-    }
-
-    fn quote_identifier(&self, name: &str) -> String {
-        format!("`{}`", name.replace('`', "``"))
-    }
-
-    fn backslash_escape(&self) -> bool {
-        true
-    }
-}
-
-static DIALECT: MySQL = MySQL;
+static DIALECT: qbey::MySqlDialect = qbey::MySqlDialect;
 
 /// Custom value type for MySQL — maps directly to sqlx bind types.
 #[derive(Debug, Clone)]
