@@ -71,6 +71,7 @@ pub trait InsertQueryBuilder<V: Clone> {
     /// Add an extra column whose value is a raw SQL expression applied to every row.
     fn add_col_value_expr(&mut self, column: impl Into<Col>, expr: RawSql) -> &mut Self;
     /// Use a SELECT query as the source of rows (INSERT ... SELECT ...).
+    #[allow(clippy::wrong_self_convention)]
     fn from_select(&mut self, sub: impl crate::query::IntoSelectTree<V>) -> &mut Self;
 }
 
