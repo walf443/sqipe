@@ -45,6 +45,24 @@ q.and_where(("name", "Alice"));
 q.select(&["id", "name"]);
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT `id`, `name` FROM `employee` IGNORE INDEX (idx_old) WHERE `name` = ?");
+
+// FORCE INDEX FOR JOIN
+use qbey_mysql::IndexHintScope;
+let mut q = qbey("employee");
+q.force_index_for(IndexHintScope::Join, &["idx_name"]);
+q.and_where(("name", "Alice"));
+q.select(&["id", "name"]);
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT `id`, `name` FROM `employee` FORCE INDEX FOR JOIN (idx_name) WHERE `name` = ?");
+
+// Multiple hints: USE INDEX FOR JOIN + USE INDEX FOR ORDER BY
+let mut q = qbey("employee");
+q.use_index_for(IndexHintScope::Join, &["idx_a"]);
+q.use_index_for(IndexHintScope::OrderBy, &["idx_b"]);
+q.and_where(("name", "Alice"));
+q.select(&["id", "name"]);
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT `id`, `name` FROM `employee` USE INDEX FOR JOIN (idx_a) USE INDEX FOR ORDER BY (idx_b) WHERE `name` = ?");
 ```
 
 ## STRAIGHT_JOIN

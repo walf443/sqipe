@@ -18,6 +18,53 @@ pub use qbey::MySqlDialect;
 #[deprecated(note = "use MySqlDialect (re-exported from this crate) or qbey::MySqlDialect instead")]
 pub type MySQL = qbey::MySqlDialect;
 
+/// The type of index hint action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexHintType {
+    /// `USE INDEX` – suggest indexes to the optimizer.
+    Use,
+    /// `FORCE INDEX` – force the optimizer to use specified indexes.
+    Force,
+    /// `IGNORE INDEX` – tell the optimizer to skip specified indexes.
+    Ignore,
+}
+
+/// Optional `FOR` clause that restricts the scope of an index hint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexHintScope {
+    /// `FOR JOIN`
+    Join,
+    /// `FOR ORDER BY`
+    OrderBy,
+    /// `FOR GROUP BY`
+    GroupBy,
+}
+
+/// A single MySQL index hint, e.g. `FORCE INDEX FOR JOIN (idx1, idx2)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexHint {
+    pub(crate) hint_type: IndexHintType,
+    pub(crate) scope: Option<IndexHintScope>,
+    pub(crate) indexes: Vec<String>,
+}
+
+impl IndexHint {
+    fn to_sql_fragment(&self) -> String {
+        let action = match self.hint_type {
+            IndexHintType::Use => "USE INDEX",
+            IndexHintType::Force => "FORCE INDEX",
+            IndexHintType::Ignore => "IGNORE INDEX",
+        };
+        let scope = match &self.scope {
+            None => "",
+            Some(IndexHintScope::Join) => " FOR JOIN",
+            Some(IndexHintScope::OrderBy) => " FOR ORDER BY",
+            Some(IndexHintScope::GroupBy) => " FOR GROUP BY",
+        };
+        format!("{}{} ({})", action, scope, self.indexes.join(", "))
+    }
+}
+
 /// MySQL-specific query builder wrapping the core SelectQuery.
 ///
 /// Supports set operations (UNION, INTERSECT, EXCEPT) via `union()`, `union_all()`, etc.
@@ -25,9 +72,7 @@ pub type MySQL = qbey::MySqlDialect;
 #[derive(Clone)]
 pub struct MysqlQuery<V: Clone + std::fmt::Debug = Value> {
     inner: qbey::SelectQuery<V>,
-    force_indexes: Vec<String>,
-    use_indexes: Vec<String>,
-    ignore_indexes: Vec<String>,
+    index_hints: Vec<IndexHint>,
     set_operations: Vec<(qbey::SetOp, MysqlQuery<V>)>,
 }
 
@@ -333,34 +378,9 @@ pub fn qbey(table: impl qbey::IntoFromTable) -> MysqlQuery<Value> {
     MysqlQuery::wrap(qbey::qbey(table))
 }
 
-fn apply_index_hints_to<V: Clone>(
-    tree: &mut SelectTree<V>,
-    force_indexes: &[String],
-    use_indexes: &[String],
-    ignore_indexes: &[String],
-) {
+fn apply_index_hints_to<V: Clone>(tree: &mut SelectTree<V>, index_hints: &[IndexHint]) {
     use qbey::tree::SelectToken;
-    // Collect Raw tokens to insert after the From token
-    let mut hints = Vec::new();
-    if !force_indexes.is_empty() {
-        hints.push(SelectToken::Raw(format!(
-            "FORCE INDEX ({})",
-            force_indexes.join(", ")
-        )));
-    }
-    if !use_indexes.is_empty() {
-        hints.push(SelectToken::Raw(format!(
-            "USE INDEX ({})",
-            use_indexes.join(", ")
-        )));
-    }
-    if !ignore_indexes.is_empty() {
-        hints.push(SelectToken::Raw(format!(
-            "IGNORE INDEX ({})",
-            ignore_indexes.join(", ")
-        )));
-    }
-    if hints.is_empty() {
+    if index_hints.is_empty() {
         return;
     }
     // Insert hints right after the From token
@@ -369,8 +389,9 @@ fn apply_index_hints_to<V: Clone>(
         .iter()
         .position(|t| matches!(t, SelectToken::From(_)))
     {
-        for (i, hint) in hints.into_iter().enumerate() {
-            tree.tokens.insert(pos + 1 + i, hint);
+        for (i, hint) in index_hints.iter().enumerate() {
+            tree.tokens
+                .insert(pos + 1 + i, SelectToken::Raw(hint.to_sql_fragment()));
         }
     }
 }
@@ -521,25 +542,68 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     fn wrap(inner: qbey::SelectQuery<V>) -> Self {
         MysqlQuery {
             inner,
-            force_indexes: Vec::new(),
-            use_indexes: Vec::new(),
-            ignore_indexes: Vec::new(),
+            index_hints: Vec::new(),
             set_operations: Vec::new(),
         }
     }
 
+    /// Add a `FORCE INDEX (idx1, idx2, ...)` hint.
     pub fn force_index(&mut self, indexes: &[&str]) -> &mut Self {
-        self.force_indexes = indexes.iter().map(|s| s.to_string()).collect();
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Force,
+            scope: None,
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
         self
     }
 
+    /// Add a `USE INDEX (idx1, idx2, ...)` hint.
     pub fn use_index(&mut self, indexes: &[&str]) -> &mut Self {
-        self.use_indexes = indexes.iter().map(|s| s.to_string()).collect();
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Use,
+            scope: None,
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
         self
     }
 
+    /// Add an `IGNORE INDEX (idx1, idx2, ...)` hint.
     pub fn ignore_index(&mut self, indexes: &[&str]) -> &mut Self {
-        self.ignore_indexes = indexes.iter().map(|s| s.to_string()).collect();
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Ignore,
+            scope: None,
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
+        self
+    }
+
+    /// Add a `FORCE INDEX FOR {JOIN|ORDER BY|GROUP BY} (idx1, ...)` hint.
+    pub fn force_index_for(&mut self, scope: IndexHintScope, indexes: &[&str]) -> &mut Self {
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Force,
+            scope: Some(scope),
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
+        self
+    }
+
+    /// Add a `USE INDEX FOR {JOIN|ORDER BY|GROUP BY} (idx1, ...)` hint.
+    pub fn use_index_for(&mut self, scope: IndexHintScope, indexes: &[&str]) -> &mut Self {
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Use,
+            scope: Some(scope),
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
+        self
+    }
+
+    /// Add an `IGNORE INDEX FOR {JOIN|ORDER BY|GROUP BY} (idx1, ...)` hint.
+    pub fn ignore_index_for(&mut self, scope: IndexHintScope, indexes: &[&str]) -> &mut Self {
+        self.index_hints.push(IndexHint {
+            hint_type: IndexHintType::Ignore,
+            scope: Some(scope),
+            indexes: indexes.iter().map(|s| s.to_string()).collect(),
+        });
         self
     }
 
@@ -595,9 +659,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
             // inner is a dummy SelectQuery; for compound queries it only serves as a
             // container for union-level order_bys / limit / offset via Deref.
             inner: qbey::qbey_with(""),
-            force_indexes: Vec::new(),
-            use_indexes: Vec::new(),
-            ignore_indexes: Vec::new(),
+            index_hints: Vec::new(),
             set_operations: parts,
         }
     }
@@ -694,12 +756,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Convert into a SelectTree by moving fields, with MySQL-specific index hints applied.
     pub(crate) fn into_tree(self) -> SelectTree<V> {
         let mut tree = qbey::tree::SelectTree::from_query_owned(self.inner);
-        apply_index_hints_to(
-            &mut tree,
-            &self.force_indexes,
-            &self.use_indexes,
-            &self.ignore_indexes,
-        );
+        apply_index_hints_to(&mut tree, &self.index_hints);
         tree
     }
 
@@ -788,12 +845,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     }
 
     fn apply_index_hints(&self, tree: &mut SelectTree<V>) {
-        apply_index_hints_to(
-            tree,
-            &self.force_indexes,
-            &self.use_indexes,
-            &self.ignore_indexes,
-        );
+        apply_index_hints_to(tree, &self.index_hints);
     }
 }
 
@@ -865,6 +917,63 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT `id`, `name` FROM `employee` IGNORE INDEX (idx_old) WHERE `name` = ?"
+        );
+    }
+
+    #[test]
+    fn test_force_index_for_join() {
+        let mut q = qbey("employee");
+        q.force_index_for(IndexHintScope::Join, &["idx_name"]);
+        q.and_where(("name", "Alice"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` FORCE INDEX FOR JOIN (idx_name) WHERE `name` = ?"
+        );
+    }
+
+    #[test]
+    fn test_use_index_for_order_by() {
+        let mut q = qbey("employee");
+        q.use_index_for(IndexHintScope::OrderBy, &["idx_name"]);
+        q.and_where(("name", "Alice"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` USE INDEX FOR ORDER BY (idx_name) WHERE `name` = ?"
+        );
+    }
+
+    #[test]
+    fn test_ignore_index_for_group_by() {
+        let mut q = qbey("employee");
+        q.ignore_index_for(IndexHintScope::GroupBy, &["idx_dept"]);
+        q.and_where(("name", "Alice"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` IGNORE INDEX FOR GROUP BY (idx_dept) WHERE `name` = ?"
+        );
+    }
+
+    #[test]
+    fn test_multiple_index_hints_combined() {
+        let mut q = qbey("employee");
+        q.use_index_for(IndexHintScope::Join, &["idx_a"]);
+        q.use_index_for(IndexHintScope::OrderBy, &["idx_b"]);
+        q.and_where(("name", "Alice"));
+        q.select(&["id", "name"]);
+
+        let (sql, _) = q.to_sql();
+        assert_eq!(
+            sql,
+            "SELECT `id`, `name` FROM `employee` USE INDEX FOR JOIN (idx_a) USE INDEX FOR ORDER BY (idx_b) WHERE `name` = ?"
         );
     }
 

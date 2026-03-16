@@ -288,6 +288,85 @@ async fn test_force_index() {
 }
 
 #[tokio::test]
+async fn test_force_index_for_join() {
+    let pool = setup_pool().await;
+
+    // Create an index on the join column
+    sqlx::query("CREATE INDEX idx_user_id ON orders (user_id)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.force_index_for(qbey_mysql::IndexHintScope::Join, &["PRIMARY"]);
+    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.select(&table("users").cols(&["id", "name"]));
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 3);
+}
+
+#[tokio::test]
+async fn test_use_index_for_order_by() {
+    let pool = setup_pool().await;
+
+    sqlx::query("CREATE INDEX idx_name_ob ON users (name)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.use_index_for(qbey_mysql::IndexHintScope::OrderBy, &["idx_name_ob"]);
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert!(!rows.is_empty());
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_multiple_index_hints() {
+    let pool = setup_pool().await;
+
+    sqlx::query("CREATE INDEX idx_name_mh ON users (name)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE INDEX idx_age_mh ON users (age)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // MySQL allows combining USE INDEX FOR JOIN + USE INDEX FOR ORDER BY on the same table
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.use_index_for(qbey_mysql::IndexHintScope::Join, &["idx_name_mh"]);
+    q.use_index_for(qbey_mysql::IndexHintScope::OrderBy, &["idx_age_mh"]);
+    q.and_where(("name", "Alice"));
+    q.select(&["id", "name", "age"]);
+    q.order_by(col("age").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
 async fn test_between() {
     let pool = setup_pool().await;
 
