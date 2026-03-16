@@ -441,11 +441,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
     pub fn into_update(self) -> MysqlUpdateQuery<V> {
-        MysqlUpdateQuery {
-            inner: self.inner.into_update(),
-            order_bys: Vec::new(),
-            limit_val: None,
-        }
+        MysqlUpdateQuery::new(self.inner.into_update())
     }
 
     /// Convert this MySQL query builder into a DELETE query builder.
@@ -453,11 +449,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
     pub fn into_delete(self) -> MysqlDeleteQuery<V> {
-        MysqlDeleteQuery {
-            inner: self.inner.into_delete(),
-            order_bys: Vec::new(),
-            limit_val: None,
-        }
+        MysqlDeleteQuery::new(self.inner.into_delete())
     }
 
     /// Convert this MySQL query builder into an INSERT query builder.

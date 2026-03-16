@@ -8,9 +8,19 @@ use qbey::{DeleteQueryBuilder, MySqlDialect};
 /// `ORDER BY` and `LIMIT` in DELETE statements.
 #[derive(Debug, Clone)]
 pub struct MysqlDeleteQuery<V: Clone + std::fmt::Debug = Value> {
-    pub(crate) inner: qbey::DeleteQuery<V>,
-    pub(crate) order_bys: Vec<qbey::OrderByClause>,
-    pub(crate) limit_val: Option<u64>,
+    inner: qbey::DeleteQuery<V>,
+    order_bys: Vec<qbey::OrderByClause>,
+    limit_val: Option<u64>,
+}
+
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
+    pub(crate) fn new(inner: qbey::DeleteQuery<V>) -> Self {
+        MysqlDeleteQuery {
+            inner,
+            order_bys: Vec::new(),
+            limit_val: None,
+        }
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for MysqlDeleteQuery<V> {

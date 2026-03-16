@@ -8,9 +8,19 @@ use qbey::{MySqlDialect, UpdateQueryBuilder};
 /// `ORDER BY` and `LIMIT` in UPDATE statements.
 #[derive(Debug, Clone)]
 pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
-    pub(crate) inner: qbey::UpdateQuery<V>,
-    pub(crate) order_bys: Vec<qbey::OrderByClause>,
-    pub(crate) limit_val: Option<u64>,
+    inner: qbey::UpdateQuery<V>,
+    order_bys: Vec<qbey::OrderByClause>,
+    limit_val: Option<u64>,
+}
+
+impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
+    pub(crate) fn new(inner: qbey::UpdateQuery<V>) -> Self {
+        MysqlUpdateQuery {
+            inner,
+            order_bys: Vec::new(),
+            limit_val: None,
+        }
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
