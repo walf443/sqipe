@@ -553,6 +553,41 @@ let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee""#);
 ```
 
+### INSERT
+
+`Query::into_insert()` converts a SELECT query builder into an INSERT statement builder.
+Values are set using `add_value()` with column-value pairs.
+Multiple rows can be inserted by calling `add_value()` multiple times.
+Column order may differ between calls — values are automatically reordered to match the first call:
+
+```rust
+# use qbey::{qbey, col, Value};
+let mut ins = qbey("employee").into_insert();
+ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+ins.add_value(&[("age", 25.into()), ("name", "Bob".into())]);
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?), (?, ?)"#);
+```
+
+INSERT ... SELECT is also supported via `from_select()`:
+
+```rust
+# use qbey::{qbey, col};
+let mut sub = qbey("old_employee");
+sub.select(&["name", "age"]);
+sub.and_where(col("active").eq(true));
+
+let mut ins = qbey("employee").into_insert();
+ins.from_select(sub);
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employee" WHERE "active" = ?"#);
+```
+
+Calling `to_sql()` without any `add_value()` or `from_select()` will panic.
+When building rows from a dynamic collection, the caller is responsible for ensuring the collection is non-empty.
+
 ### MySQL dialect
 
 See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).

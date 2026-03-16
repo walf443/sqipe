@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub mod delete;
+pub mod insert;
 pub mod standard;
 pub mod update;
 
