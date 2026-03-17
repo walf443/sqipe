@@ -304,6 +304,9 @@ impl<V: Clone> ConditionExpr for SelectItem<V> {
             SelectItem::Expr { .. } => {
                 panic!("cannot convert raw Expr SelectItem to Col for WHERE/HAVING")
             }
+            SelectItem::WindowFunction { .. } => {
+                panic!("cannot convert WindowFunction SelectItem to Col for WHERE/HAVING")
+            }
         }
     }
 }
@@ -375,6 +378,56 @@ impl Col {
         }
     }
 
+    /// Create a `COUNT(col) OVER (...)` window function expression.
+    pub fn count_over(self, spec: WindowSpec) -> SelectItem {
+        SelectItem::WindowFunction {
+            func: WindowFunc::Count,
+            col: Some(self),
+            window: spec,
+            alias: None,
+        }
+    }
+
+    /// Create a `SUM(col) OVER (...)` window function expression.
+    pub fn sum_over(self, spec: WindowSpec) -> SelectItem {
+        SelectItem::WindowFunction {
+            func: WindowFunc::Sum,
+            col: Some(self),
+            window: spec,
+            alias: None,
+        }
+    }
+
+    /// Create an `AVG(col) OVER (...)` window function expression.
+    pub fn avg_over(self, spec: WindowSpec) -> SelectItem {
+        SelectItem::WindowFunction {
+            func: WindowFunc::Avg,
+            col: Some(self),
+            window: spec,
+            alias: None,
+        }
+    }
+
+    /// Create a `MIN(col) OVER (...)` window function expression.
+    pub fn min_over(self, spec: WindowSpec) -> SelectItem {
+        SelectItem::WindowFunction {
+            func: WindowFunc::Min,
+            col: Some(self),
+            window: spec,
+            alias: None,
+        }
+    }
+
+    /// Create a `MAX(col) OVER (...)` window function expression.
+    pub fn max_over(self, spec: WindowSpec) -> SelectItem {
+        SelectItem::WindowFunction {
+            func: WindowFunc::Max,
+            col: Some(self),
+            window: spec,
+            alias: None,
+        }
+    }
+
     pub fn asc(self) -> OrderByClause {
         OrderByClause::Col {
             col: self,
@@ -420,6 +473,13 @@ pub enum SelectItem<V: Clone = Value> {
         col: Option<Col>,
         alias: Option<String>,
     },
+    /// A window function (e.g., `ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary" DESC)`).
+    WindowFunction {
+        func: WindowFunc,
+        col: Option<Col>,
+        window: WindowSpec<V>,
+        alias: Option<String>,
+    },
 }
 
 impl<V: Clone> SelectItem<V> {
@@ -432,7 +492,158 @@ impl<V: Clone> SelectItem<V> {
                 alias,
             },
             SelectItem::Function { func, col, alias } => SelectItem::Function { func, col, alias },
+            SelectItem::WindowFunction {
+                func,
+                col,
+                window,
+                alias,
+            } => SelectItem::WindowFunction {
+                func,
+                col,
+                window: window.map_values(f),
+                alias,
+            },
         }
+    }
+}
+
+/// Window function names (includes both pure window functions and aggregates used with OVER).
+#[derive(Debug, Clone)]
+pub enum WindowFunc {
+    RowNumber,
+    Rank,
+    DenseRank,
+    /// Aggregate functions used as window functions.
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+impl WindowFunc {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WindowFunc::RowNumber => "ROW_NUMBER",
+            WindowFunc::Rank => "RANK",
+            WindowFunc::DenseRank => "DENSE_RANK",
+            WindowFunc::Count => "COUNT",
+            WindowFunc::Sum => "SUM",
+            WindowFunc::Avg => "AVG",
+            WindowFunc::Min => "MIN",
+            WindowFunc::Max => "MAX",
+        }
+    }
+}
+
+/// Window specification for OVER clauses.
+#[derive(Debug, Clone)]
+pub struct WindowSpec<V: Clone = Value> {
+    pub partition_by: Vec<Col>,
+    pub order_by: Vec<OrderByClause<V>>,
+    /// When set, this window spec is rendered as a named WINDOW clause
+    /// and referenced by name in OVER.
+    pub name: Option<String>,
+}
+
+/// Create an empty window specification.
+pub fn window() -> WindowSpec {
+    WindowSpec {
+        partition_by: Vec::new(),
+        order_by: Vec::new(),
+        name: None,
+    }
+}
+
+impl<V: Clone> WindowSpec<V> {
+    /// Add PARTITION BY columns.
+    pub fn partition_by(mut self, cols: &[Col]) -> Self {
+        self.partition_by.extend(cols.iter().cloned());
+        self
+    }
+
+    /// Add an ORDER BY clause.
+    pub fn order_by(mut self, clause: OrderByClause<V>) -> Self {
+        self.order_by.push(clause);
+        self
+    }
+
+    /// Assign a name to this window spec for use in a WINDOW clause.
+    ///
+    /// When a named `WindowSpec` is used with `.over()` or `.*_over()`,
+    /// the query generates `OVER "name"` references and a
+    /// `WINDOW "name" AS (...)` clause.
+    pub fn as_(mut self, name: &str) -> Self {
+        self.name = Some(name.to_string());
+        self
+    }
+
+    /// Transform all bind values in this spec.
+    pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> WindowSpec<U> {
+        WindowSpec {
+            partition_by: self.partition_by,
+            order_by: self
+                .order_by
+                .into_iter()
+                .map(|ob| ob.map_values(f))
+                .collect(),
+            name: self.name,
+        }
+    }
+
+    /// Convert a `WindowSpec<Value>` into `WindowSpec<V>` for any `V`.
+    pub fn from_default(spec: WindowSpec) -> Self {
+        WindowSpec {
+            partition_by: spec.partition_by,
+            order_by: spec
+                .order_by
+                .into_iter()
+                .map(OrderByClause::from_default)
+                .collect(),
+            name: spec.name,
+        }
+    }
+}
+
+/// Create a `ROW_NUMBER()` window function select item (no OVER clause yet).
+pub fn row_number() -> SelectItem {
+    SelectItem::WindowFunction {
+        func: WindowFunc::RowNumber,
+        col: None,
+        window: WindowSpec {
+            partition_by: Vec::new(),
+            order_by: Vec::new(),
+            name: None,
+        },
+        alias: None,
+    }
+}
+
+/// Create a `RANK()` window function select item.
+pub fn rank() -> SelectItem {
+    SelectItem::WindowFunction {
+        func: WindowFunc::Rank,
+        col: None,
+        window: WindowSpec {
+            partition_by: Vec::new(),
+            order_by: Vec::new(),
+            name: None,
+        },
+        alias: None,
+    }
+}
+
+/// Create a `DENSE_RANK()` window function select item.
+pub fn dense_rank() -> SelectItem {
+    SelectItem::WindowFunction {
+        func: WindowFunc::DenseRank,
+        col: None,
+        window: WindowSpec {
+            partition_by: Vec::new(),
+            order_by: Vec::new(),
+            name: None,
+        },
+        alias: None,
     }
 }
 
@@ -505,8 +716,33 @@ impl<V: Clone> SelectItem<V> {
             SelectItem::Function { alias: a, .. } => {
                 *a = Some(alias.to_string());
             }
+            SelectItem::WindowFunction { alias: a, .. } => {
+                *a = Some(alias.to_string());
+            }
         }
         self
+    }
+
+    /// Attach an OVER (window specification) clause.
+    ///
+    /// Supported on `WindowFunction` variants (e.g., those created by `row_number()`).
+    /// For aggregate-as-window, use `col("x").sum_over(spec)` etc.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on a `Col`, `Expr`, or `Function` variant.
+    pub fn over(self, spec: WindowSpec<V>) -> SelectItem<V> {
+        match self {
+            SelectItem::WindowFunction {
+                func, col, alias, ..
+            } => SelectItem::WindowFunction {
+                func,
+                col,
+                window: spec,
+                alias,
+            },
+            _ => panic!("over() is only supported on WindowFunction variants"),
+        }
     }
 }
 
@@ -529,6 +765,17 @@ impl<V: Clone> SelectItem<V> {
                     alias,
                 }
             }
+            SelectItem::WindowFunction {
+                func,
+                col,
+                window,
+                alias,
+            } => SelectItem::WindowFunction {
+                func,
+                col,
+                window: WindowSpec::from_default(window),
+                alias,
+            },
         }
     }
 }

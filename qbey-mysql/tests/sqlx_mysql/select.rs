@@ -1,5 +1,5 @@
 use super::common::{MysqlValue, bind_params, setup_pool};
-use qbey::{ConditionExpr, LikeExpression, SelectQueryBuilder, col, table};
+use qbey::{ConditionExpr, LikeExpression, SelectQueryBuilder, col, row_number, table, window};
 use qbey_mysql::qbey_with;
 use sqlx::Row;
 
@@ -612,4 +612,71 @@ async fn test_having_with_where() {
         .unwrap();
     // Alice (1 shipped) and Bob (1 shipped)
     assert_eq!(rows.len(), 2);
+}
+
+// ── Window functions ──
+
+#[tokio::test]
+async fn test_row_number_over() {
+    let pool = setup_pool().await;
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.select(&["id", "name", "age"]);
+    q.add_select(
+        row_number()
+            .over(window().order_by(col("age").desc()))
+            .as_("rn"),
+    );
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+
+    // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<u64, _>("rn"), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_sum_over_partition() {
+    let pool = setup_pool().await;
+
+    let mut q = qbey_with::<MysqlValue>("orders");
+    q.select(&["id", "user_id", "total"]);
+    q.add_select(
+        col("total")
+            .sum_over(window().partition_by(&[col("user_id")]))
+            .as_("user_total"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+
+    // user_id=1 has orders 100+200=300, user_id=2 has 50
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<f64, _>("user_total"), 300.0);
+    assert_eq!(rows[2].get::<f64, _>("user_total"), 50.0);
+}
+
+#[tokio::test]
+async fn test_count_over_partition() {
+    let pool = setup_pool().await;
+
+    let mut q = qbey_with::<MysqlValue>("orders");
+    q.select(&["id", "user_id"]);
+    q.add_select(
+        col("id")
+            .count_over(window().partition_by(&[col("user_id")]))
+            .as_("user_order_count"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+
+    // user_id=1 has 2 orders, user_id=2 has 1
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<i64, _>("user_order_count"), 2);
+    assert_eq!(rows[2].get::<i64, _>("user_order_count"), 1);
 }

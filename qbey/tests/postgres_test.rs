@@ -3,7 +3,8 @@
 use postgres::{Client, NoTls, types::ToSql};
 use qbey::{
     ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, row_number, table,
+    window,
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
@@ -759,4 +760,87 @@ pg_test!(test_having_with_where, |client| {
     let rows = client.query(&sql, &param_refs).unwrap();
     // age >= 30: Alice(30), Charlie(35) → 2 age groups, each with count=1
     assert_eq!(rows.len(), 2);
+});
+
+// ── Window functions ──
+
+pg_test!(test_row_number_over, |client| {
+    let mut q = qbey_with::<PgValue>("users");
+    q.select(&["id", "name", "age"]);
+    q.add_select(
+        row_number()
+            .over(window().order_by(col("age").desc()))
+            .as_("rn"),
+    );
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).unwrap();
+
+    // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
+    assert_eq!(rows.len(), 3);
+    let first_name: String = rows[0].get("name");
+    let first_rn: i64 = rows[0].get("rn");
+    assert_eq!(first_name, "Charlie");
+    assert_eq!(first_rn, 1);
+});
+
+pg_test!(test_sum_over_partition, |client| {
+    let mut q = qbey_with::<PgValue>("orders");
+    q.select(&["id", "user_id", "total"]);
+    q.add_select(
+        col("total")
+            .sum_over(window().partition_by(&[col("user_id")]))
+            .as_("user_total"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).unwrap();
+
+    // user_id=1 has orders 100+200=300, user_id=2 has 50
+    assert_eq!(rows.len(), 3);
+    let total0: f64 = rows[0].get("user_total");
+    let total2: f64 = rows[2].get("user_total");
+    assert_eq!(total0, 300.0);
+    assert_eq!(total2, 50.0);
+});
+
+pg_test!(test_count_over_partition, |client| {
+    let mut q = qbey_with::<PgValue>("orders");
+    q.select(&["id", "user_id"]);
+    q.add_select(
+        col("id")
+            .count_over(window().partition_by(&[col("user_id")]))
+            .as_("user_order_count"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).unwrap();
+
+    // user_id=1 has 2 orders, user_id=2 has 1
+    assert_eq!(rows.len(), 3);
+    let cnt0: i64 = rows[0].get("user_order_count");
+    let cnt2: i64 = rows[2].get("user_order_count");
+    assert_eq!(cnt0, 2);
+    assert_eq!(cnt2, 1);
+});
+
+pg_test!(test_named_window, |client| {
+    let w = window().order_by(col("age").desc()).as_("w");
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.select(&["id", "name", "age"]);
+    q.add_select(row_number().over(w.clone()).as_("rn"));
+    q.add_select(col("age").sum_over(w).as_("running"));
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).unwrap();
+
+    // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
+    assert_eq!(rows.len(), 3);
+    let first_name: String = rows[0].get("name");
+    let first_rn: i64 = rows[0].get("rn");
+    assert_eq!(first_name, "Charlie");
+    assert_eq!(first_rn, 1);
 });

@@ -1,4 +1,4 @@
-use crate::{JoinClause, OrderByClause, SelectItem, WhereEntry};
+use crate::{JoinClause, OrderByClause, SelectItem, WhereEntry, WindowSpec};
 
 /// The source of a FROM clause — either a table name or a subquery.
 #[derive(Debug, Clone)]
@@ -68,6 +68,8 @@ pub enum SelectToken<V: Clone = crate::Value> {
     CloseParen,
     /// Set operation keyword (UNION, UNION ALL, INTERSECT, EXCEPT, etc.).
     SetOperator(crate::SetOp),
+    /// Named WINDOW definitions (e.g., `WINDOW "w" AS (...)`).
+    Window(Vec<(String, WindowSpec<V>)>),
 }
 
 /// Token for INSERT query construction.
@@ -188,6 +190,11 @@ impl<V: Clone> SelectTree<V> {
                     SelectToken::OpenParen => SelectToken::OpenParen,
                     SelectToken::CloseParen => SelectToken::CloseParen,
                     SelectToken::SetOperator(op) => SelectToken::SetOperator(op),
+                    SelectToken::Window(defs) => SelectToken::Window(
+                        defs.into_iter()
+                            .map(|(name, spec)| (name, spec.map_values(f)))
+                            .collect(),
+                    ),
                 })
                 .collect(),
         }
@@ -230,6 +237,9 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 tokens.push(SelectToken::Offset(n));
             }
 
+            // Note: Named WINDOW clauses are not extracted here for compound queries.
+            // Each sub-select handles its own WINDOW clause independently via
+            // the recursive `from_query_owned` call above.
             return SelectTree { tokens };
         }
 
@@ -274,6 +284,34 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 
         if !query.havings.is_empty() {
             tokens.push(SelectToken::Having(query.havings));
+        }
+
+        // Extract named window specs from select items for WINDOW clause.
+        {
+            let mut window_defs: Vec<(String, WindowSpec<V>)> = Vec::new();
+            if let Some(SelectToken::Select(SelectClause::Columns { items, .. })) = tokens.first() {
+                for item in items {
+                    if let SelectItem::WindowFunction { window, .. } = item
+                        && let Some(ref name) = window.name
+                    {
+                        if let Some((_, existing)) = window_defs.iter().find(|(n, _)| n == name) {
+                            // Same name must have identical definition.
+                            assert!(
+                                existing.partition_by.len() == window.partition_by.len()
+                                    && existing.order_by.len() == window.order_by.len(),
+                                "conflicting WINDOW definitions for name {:?}: \
+                                 all WindowSpecs sharing a name must have the same partition_by and order_by",
+                                name,
+                            );
+                        } else {
+                            window_defs.push((name.clone(), window.clone()));
+                        }
+                    }
+                }
+            }
+            if !window_defs.is_empty() {
+                tokens.push(SelectToken::Window(window_defs));
+            }
         }
 
         if !query.order_bys.is_empty() {

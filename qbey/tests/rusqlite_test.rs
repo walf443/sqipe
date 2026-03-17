@@ -2,7 +2,8 @@
 
 use qbey::{
     ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    ToInsertRow, UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    ToInsertRow, UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with,
+    row_number, table, window,
 };
 use rusqlite::{Connection, params_from_iter};
 
@@ -897,4 +898,121 @@ fn test_having_with_where() {
 
     // Alice (1 shipped) and Bob (1 shipped)
     assert_eq!(rows.len(), 2);
+}
+
+// ── Window functions ──
+
+#[test]
+fn test_row_number_over() {
+    let conn = setup_db();
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.select(&["id", "name", "age"]);
+    q.add_select(
+        row_number()
+            .over(window().order_by(col("age").desc()))
+            .as_("rn"),
+    );
+    let (sql, _) = q.to_sql();
+
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String, i64, i64)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0], (3, "Charlie".to_string(), 35, 1));
+    assert_eq!(rows[1], (1, "Alice".to_string(), 30, 2));
+    assert_eq!(rows[2], (2, "Bob".to_string(), 25, 3));
+}
+
+#[test]
+fn test_sum_over_partition() {
+    let conn = setup_db();
+
+    let mut q = qbey_with::<SqliteValue>("orders");
+    q.select(&["id", "user_id", "total"]);
+    q.add_select(
+        col("total")
+            .sum_over(window().partition_by(&[col("user_id")]))
+            .as_("user_total"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql();
+
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, i64, f64, f64)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // user_id=1 has orders 100+200=300, user_id=2 has 50
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].3, 300.0); // order 1, user 1
+    assert_eq!(rows[1].3, 300.0); // order 2, user 1
+    assert_eq!(rows[2].3, 50.0); // order 3, user 2
+}
+
+#[test]
+fn test_count_over_partition() {
+    let conn = setup_db();
+
+    let mut q = qbey_with::<SqliteValue>("orders");
+    q.select(&["id", "user_id"]);
+    q.add_select(
+        col("id")
+            .count_over(window().partition_by(&[col("user_id")]))
+            .as_("user_order_count"),
+    );
+    q.order_by(col("id").asc());
+    let (sql, _) = q.to_sql();
+
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, i64, i64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // user_id=1 has 2 orders, user_id=2 has 1
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].2, 2); // order 1, user 1
+    assert_eq!(rows[1].2, 2); // order 2, user 1
+    assert_eq!(rows[2].2, 1); // order 3, user 2
+}
+
+#[test]
+fn test_named_window() {
+    let conn = setup_db();
+
+    let w = window().order_by(col("age").desc()).as_("w");
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.select(&["id", "name", "age"]);
+    q.add_select(row_number().over(w.clone()).as_("rn"));
+    q.add_select(col("age").sum_over(w).as_("running"));
+    let (sql, _) = q.to_sql();
+
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String, i64, i64)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0], (3, "Charlie".to_string(), 35, 1));
+    assert_eq!(rows[1], (1, "Alice".to_string(), 30, 2));
+    assert_eq!(rows[2], (2, "Bob".to_string(), 25, 3));
 }
