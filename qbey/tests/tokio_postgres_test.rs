@@ -832,6 +832,26 @@ async fn test_insert_from_select() {
     assert_eq!(rows[0].get::<_, String>("name"), "Charlie");
 }
 
+// --- DISTINCT ---
+
+#[tokio::test]
+async fn test_distinct() {
+    let client = setup_client().await;
+
+    let mut q = qbey_with::<PgValue>("orders");
+    q.distinct();
+    q.select(&["status"]);
+    q.order_by(col("status").asc());
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).await.unwrap();
+
+    // orders has: shipped, pending, shipped → distinct gives: pending, shipped
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("status"), "pending");
+    assert_eq!(rows[1].get::<_, String>("status"), "shipped");
+}
+
 // --- HAVING ---
 
 #[tokio::test]

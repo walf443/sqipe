@@ -185,6 +185,31 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE NOT ((\"role\" = ? OR \"role\" = ?))");
 ```
 
+### DISTINCT
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.distinct();
+q.select(&["department"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT DISTINCT "department" FROM "employee""#);
+```
+
+DISTINCT can be combined with WHERE and other clauses:
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.distinct();
+q.select(&["department", "role"]);
+q.and_where(col("active").eq(true));
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "active" = ?"#);
+```
+
 ### Aggregate / GROUP BY
 
 ```rust

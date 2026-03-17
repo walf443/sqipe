@@ -822,6 +822,29 @@ fn test_insert_with_to_insert_row_trait() {
     assert_eq!(rows[1], ("Eve".to_string(), 28));
 }
 
+// --- DISTINCT ---
+
+#[test]
+fn test_distinct() {
+    let conn = setup_db();
+
+    let mut q = qbey_with::<SqliteValue>("orders");
+    q.distinct();
+    q.select(&["status"]);
+    q.order_by(col("status").asc());
+    let (sql, _) = q.to_sql();
+
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let statuses: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // orders has: shipped, pending, shipped → distinct gives: pending, shipped
+    assert_eq!(statuses, vec!["pending", "shipped"]);
+}
+
 // --- HAVING ---
 
 #[test]

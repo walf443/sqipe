@@ -168,12 +168,21 @@ pub(super) fn render_join<V: Clone>(
     )
 }
 
-pub(super) fn render_select_columns(items: &[SelectItem], cfg: &RenderConfig) -> String {
+pub(super) fn render_select_columns(
+    items: &[SelectItem],
+    distinct: bool,
+    cfg: &RenderConfig,
+) -> String {
+    let keyword = if distinct {
+        "SELECT DISTINCT"
+    } else {
+        "SELECT"
+    };
     if items.is_empty() {
-        "SELECT *".to_string()
+        format!("{} *", keyword)
     } else {
         let quoted: Vec<String> = items.iter().map(|c| render_select_item(c, cfg)).collect();
-        format!("SELECT {}", quoted.join(", "))
+        format!("{} {}", keyword, quoted.join(", "))
     }
 }
 
@@ -234,7 +243,7 @@ pub(super) fn render_select_clause(
     use crate::tree::SelectClause;
 
     match select {
-        SelectClause::Columns(cols) => render_select_columns(cols, cfg),
+        SelectClause::Columns { items, distinct } => render_select_columns(items, *distinct, cfg),
     }
 }
 

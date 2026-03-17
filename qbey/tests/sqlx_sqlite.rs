@@ -759,6 +759,26 @@ async fn test_insert_from_select() {
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
 }
 
+// --- DISTINCT ---
+
+#[tokio::test]
+async fn test_distinct() {
+    let pool = setup_db().await;
+
+    let mut q = qbey_with::<SqliteValue>("orders");
+    q.distinct();
+    q.select(&["status"]);
+    q.order_by(col("status").asc());
+    let (sql, _) = q.to_sql();
+
+    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+
+    // orders has: shipped, pending, shipped → distinct gives: pending, shipped
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("status"), "pending");
+    assert_eq!(rows[1].get::<String, _>("status"), "shipped");
+}
+
 // --- HAVING ---
 
 #[tokio::test]

@@ -32,8 +32,11 @@ impl<V: Clone> FromClause<V> {
 /// What the SELECT clause looks like.
 #[derive(Debug, Clone)]
 pub enum SelectClause {
-    /// SELECT * or SELECT col1, col2, ...
-    Columns(Vec<SelectItem>),
+    /// SELECT [DISTINCT] * or SELECT [DISTINCT] col1, col2, ...
+    Columns {
+        items: Vec<SelectItem>,
+        distinct: bool,
+    },
 }
 
 // ── Token enums ──
@@ -225,7 +228,10 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 
         let mut tokens = Vec::new();
 
-        tokens.push(SelectToken::Select(SelectClause::Columns(query.selects)));
+        tokens.push(SelectToken::Select(SelectClause::Columns {
+            items: query.selects,
+            distinct: query.distinct,
+        }));
 
         let source = match query.from_subquery {
             Some(sq) => FromSource::Subquery(sq),

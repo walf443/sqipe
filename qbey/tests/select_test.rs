@@ -793,3 +793,37 @@ fn test_multiple_aggregates() {
         r#"SELECT "product", COUNT("id") AS "cnt", SUM("price") AS "total", AVG("price") AS "avg_price", MIN("price") AS "min_price", MAX("price") AS "max_price" FROM "orders" GROUP BY "product""#
     );
 }
+
+#[test]
+fn test_select_distinct() {
+    let mut q = qbey("employee");
+    q.distinct();
+    q.select(&["department"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(sql, r#"SELECT DISTINCT "department" FROM "employee""#);
+}
+
+#[test]
+fn test_select_distinct_star() {
+    let mut q = qbey("employee");
+    q.distinct();
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(sql, r#"SELECT DISTINCT * FROM "employee""#);
+}
+
+#[test]
+fn test_select_distinct_with_where() {
+    let mut q = qbey("employee");
+    q.distinct();
+    q.select(&["department", "role"]);
+    q.and_where(col("active").eq(true));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "active" = ?"#
+    );
+    assert_eq!(binds, vec![Value::Bool(true)]);
+}

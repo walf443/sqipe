@@ -137,6 +137,21 @@ fn test_col_max_numbered_placeholder() {
 }
 
 #[test]
+fn test_distinct_numbered_placeholder() {
+    let mut q = qbey("employee");
+    q.distinct();
+    q.select(&["dept"]);
+    q.and_where(col("age").gt(20));
+    let (sql, binds) = q.to_sql_with(&PgDialect);
+
+    assert_eq!(
+        sql,
+        "SELECT DISTINCT \"dept\" FROM \"employee\" WHERE \"age\" > $1"
+    );
+    assert_eq!(binds, vec![Value::Int(20)]);
+}
+
+#[test]
 fn test_in_subquery_numbered_placeholder() {
     let mut sub = qbey("employee");
     sub.and_where(("dept", "eng"));

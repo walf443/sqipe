@@ -707,6 +707,23 @@ pg_test!(test_insert_from_select, |client| {
     assert_eq!(rows[0].get::<_, String>("name"), "Charlie");
 });
 
+// --- DISTINCT ---
+
+pg_test!(test_distinct, |client| {
+    let mut q = qbey_with::<PgValue>("orders");
+    q.distinct();
+    q.select(&["status"]);
+    q.order_by(col("status").asc());
+    let (sql, _) = q.to_sql_with(&PostgresDialect);
+
+    let rows = client.query(&sql, &[]).unwrap();
+
+    // orders has: shipped, pending, shipped → distinct gives: pending, shipped
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("status"), "pending");
+    assert_eq!(rows[1].get::<_, String>("status"), "shipped");
+});
+
 // --- HAVING ---
 
 pg_test!(test_having, |client| {

@@ -70,6 +70,8 @@ impl<T: IntoFromTable> IntoJoinTable for T {
 pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Set a table alias.
     fn as_(&mut self, alias: &str) -> &mut Self;
+    /// Enable SELECT DISTINCT.
+    fn distinct(&mut self) -> &mut Self;
     /// Add an AND WHERE condition.
     fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
     /// Add an OR WHERE condition.
@@ -211,6 +213,7 @@ pub struct SelectQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table_alias: Option<String>,
     /// When set, the query selects from this subquery instead of `table`.
     pub(crate) from_subquery: Option<Box<crate::tree::SelectTree<V>>>,
+    pub(crate) distinct: bool,
     pub(crate) selects: Vec<SelectItem>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
@@ -310,6 +313,15 @@ fn resolve_join_condition(cond: &mut JoinCondition, join_table: &str) {
 impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
     fn as_(&mut self, alias: &str) -> &mut Self {
         self.table_alias = Some(alias.to_string());
+        self
+    }
+
+    fn distinct(&mut self) -> &mut Self {
+        debug_assert!(
+            self.set_operations.is_empty(),
+            "distinct() has no effect on compound queries (UNION/INTERSECT/EXCEPT); call it on individual sub-queries instead"
+        );
+        self.distinct = true;
         self
     }
 
@@ -482,6 +494,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             table: name,
             table_alias: alias,
             from_subquery: None,
+            distinct: false,
             selects: Vec::new(),
             wheres: Vec::new(),
             havings: Vec::new(),
@@ -519,6 +532,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             table: String::new(),
             table_alias: Some(alias.to_string()),
             from_subquery: Some(Box::new(sub.into_select_tree())),
+            distinct: false,
             selects: Vec::new(),
             wheres: Vec::new(),
             havings: Vec::new(),
