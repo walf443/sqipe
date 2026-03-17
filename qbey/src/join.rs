@@ -42,6 +42,27 @@ pub enum JoinCondition<V: Clone = Value> {
 }
 
 impl<V: Clone> JoinCondition<V> {
+    /// Convert a `JoinCondition<Value>` into `JoinCondition<V>` for any `V`.
+    pub fn from_default(cond: JoinCondition) -> Self {
+        match cond {
+            JoinCondition::ColEq { left, right } => JoinCondition::ColEq { left, right },
+            JoinCondition::And(conditions) => JoinCondition::And(
+                conditions
+                    .into_iter()
+                    .map(JoinCondition::from_default)
+                    .collect(),
+            ),
+            JoinCondition::Using(cols) => JoinCondition::Using(cols),
+            JoinCondition::Expr(raw) => {
+                assert!(
+                    raw.binds.is_empty(),
+                    "Cannot convert JoinCondition::Expr with binds to a different value type"
+                );
+                JoinCondition::Expr(RawSql::new(raw.as_str()))
+            }
+        }
+    }
+
     /// Transform all bind values in this condition.
     pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> JoinCondition<U> {
         match self {

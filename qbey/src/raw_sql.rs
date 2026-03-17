@@ -64,6 +64,18 @@ impl<V: Clone> RawSql<V> {
         self
     }
 
+    /// Convert a `RawSql<Value>` into `RawSql<V>` for any `V`.
+    ///
+    /// Panics if the source has bind values, since `Value` cannot be
+    /// automatically converted to an arbitrary `V`.
+    pub fn from_default(raw: RawSql) -> Self {
+        assert!(
+            raw.binds.is_empty(),
+            "Cannot convert RawSql with binds to a different value type"
+        );
+        RawSql::new(raw.as_str())
+    }
+
     /// Return the raw SQL string (template, with `{}` placeholders if any).
     pub fn as_str(&self) -> &str {
         &self.sql

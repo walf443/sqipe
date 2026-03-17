@@ -88,11 +88,11 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     ///
     /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
     /// Can be called multiple times — each call appends to the existing list.
-    fn select(&mut self, cols: &[impl Into<SelectItem<V>> + Clone]) -> &mut Self;
+    fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self;
     /// Append a single item to the select list.
     ///
     /// Accepts a `Col`, `SelectItem`, or any type that implements `Into<SelectItem>`.
-    fn add_select(&mut self, item: impl Into<SelectItem<V>>) -> &mut Self;
+    fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self;
     /// Append a raw SQL expression to the select list.
     ///
     /// # Security
@@ -105,30 +105,30 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Set the GROUP BY columns.
     fn group_by(&mut self, cols: &[&str]) -> &mut Self;
     /// Add an INNER JOIN clause.
-    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition<V>) -> &mut Self;
+    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
     /// Add a LEFT JOIN clause.
-    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition<V>) -> &mut Self;
+    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self;
     /// Add a JOIN clause with a custom join type. Used by dialect crates for
     /// dialect-specific join types (e.g., STRAIGHT_JOIN in MySQL).
     fn add_join(
         &mut self,
         join_type: JoinType,
         table: impl IntoJoinTable,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self;
     /// Add an INNER JOIN with a subquery as the join target.
     fn join_subquery(
         &mut self,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self;
     /// Add a LEFT JOIN with a subquery as the join target.
     fn left_join_subquery(
         &mut self,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self;
     /// Add a JOIN with a subquery and a custom join type.
     fn add_join_subquery(
@@ -136,10 +136,10 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
         join_type: JoinType,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self;
     /// Add an ORDER BY clause.
-    fn order_by(&mut self, clause: OrderByClause<V>) -> &mut Self;
+    fn order_by(&mut self, clause: OrderByClause) -> &mut Self;
     /// Append a raw SQL expression to the ORDER BY clause.
     ///
     /// The expression is rendered as-is without quoting. Use this for
@@ -345,13 +345,16 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn select(&mut self, cols: &[impl Into<SelectItem<V>> + Clone]) -> &mut Self {
-        self.selects.extend(cols.iter().map(|c| c.clone().into()));
+    fn select(&mut self, cols: &[impl Into<SelectItem> + Clone]) -> &mut Self {
+        self.selects.extend(
+            cols.iter()
+                .map(|c| SelectItem::from_default(c.clone().into())),
+        );
         self
     }
 
-    fn add_select(&mut self, item: impl Into<SelectItem<V>>) -> &mut Self {
-        self.selects.push(item.into());
+    fn add_select(&mut self, item: impl Into<SelectItem>) -> &mut Self {
+        self.selects.push(SelectItem::from_default(item.into()));
         self
     }
 
@@ -368,10 +371,10 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition<V>) -> &mut Self {
+    fn join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
         let (name, alias) = table.into_join_table();
         let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
+        let mut condition = JoinCondition::from_default(condition);
         resolve_join_condition(&mut condition, resolve_name);
 
         self.joins.push(JoinClause {
@@ -384,10 +387,10 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition<V>) -> &mut Self {
+    fn left_join(&mut self, table: impl IntoJoinTable, condition: JoinCondition) -> &mut Self {
         let (name, alias) = table.into_join_table();
         let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
+        let mut condition = JoinCondition::from_default(condition);
         resolve_join_condition(&mut condition, resolve_name);
 
         self.joins.push(JoinClause {
@@ -404,11 +407,11 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         &mut self,
         join_type: JoinType,
         table: impl IntoJoinTable,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self {
         let (name, alias) = table.into_join_table();
         let resolve_name = alias.as_deref().unwrap_or(&name);
-        let mut condition = condition;
+        let mut condition = JoinCondition::from_default(condition);
         resolve_join_condition(&mut condition, resolve_name);
 
         self.joins.push(JoinClause {
@@ -425,7 +428,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         &mut self,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self {
         self.add_join_subquery(JoinType::Inner, sub, alias, condition)
     }
@@ -434,7 +437,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         &mut self,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self {
         self.add_join_subquery(JoinType::Left, sub, alias, condition)
     }
@@ -444,10 +447,10 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         join_type: JoinType,
         sub: impl IntoSelectTree<V>,
         alias: &str,
-        condition: JoinCondition<V>,
+        condition: JoinCondition,
     ) -> &mut Self {
         let tree = sub.into_select_tree();
-        let mut condition = condition;
+        let mut condition = JoinCondition::from_default(condition);
         resolve_join_condition(&mut condition, alias);
 
         self.joins.push(JoinClause {
@@ -460,8 +463,8 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn order_by(&mut self, clause: OrderByClause<V>) -> &mut Self {
-        self.order_bys.push(clause);
+    fn order_by(&mut self, clause: OrderByClause) -> &mut Self {
+        self.order_bys.push(OrderByClause::from_default(clause));
         self
     }
 

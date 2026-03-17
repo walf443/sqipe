@@ -78,12 +78,12 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         self
     }
 
-    fn select(&mut self, cols: &[impl Into<qbey::SelectItem<V>> + Clone]) -> &mut Self {
+    fn select(&mut self, cols: &[impl Into<qbey::SelectItem> + Clone]) -> &mut Self {
         self.inner.select(cols);
         self
     }
 
-    fn add_select(&mut self, item: impl Into<qbey::SelectItem<V>>) -> &mut Self {
+    fn add_select(&mut self, item: impl Into<qbey::SelectItem>) -> &mut Self {
         self.inner.add_select(item);
         self
     }
@@ -101,7 +101,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
     fn join(
         &mut self,
         table: impl qbey::IntoJoinTable,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.join(table, condition);
         self
@@ -110,7 +110,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
     fn left_join(
         &mut self,
         table: impl qbey::IntoJoinTable,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.left_join(table, condition);
         self
@@ -120,7 +120,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         &mut self,
         join_type: qbey::JoinType,
         table: impl qbey::IntoJoinTable,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.add_join(join_type, table, condition);
         self
@@ -130,7 +130,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         &mut self,
         sub: impl qbey::IntoSelectTree<V>,
         alias: &str,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.join_subquery(sub, alias, condition);
         self
@@ -140,7 +140,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         &mut self,
         sub: impl qbey::IntoSelectTree<V>,
         alias: &str,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.left_join_subquery(sub, alias, condition);
         self
@@ -151,14 +151,14 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         join_type: qbey::JoinType,
         sub: impl qbey::IntoSelectTree<V>,
         alias: &str,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner
             .add_join_subquery(join_type, sub, alias, condition);
         self
     }
 
-    fn order_by(&mut self, clause: qbey::OrderByClause<V>) -> &mut Self {
+    fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.inner.order_by(clause);
         self
     }
@@ -256,7 +256,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     pub fn straight_join(
         &mut self,
         table: impl qbey::IntoJoinTable,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.add_join(
             qbey::JoinType::Custom("STRAIGHT_JOIN".to_string()),
@@ -271,7 +271,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         &mut self,
         sub: impl qbey::IntoSelectTree<V>,
         alias: &str,
-        condition: qbey::JoinCondition<V>,
+        condition: qbey::JoinCondition,
     ) -> &mut Self {
         self.inner.add_join_subquery(
             qbey::JoinType::Custom("STRAIGHT_JOIN".to_string()),

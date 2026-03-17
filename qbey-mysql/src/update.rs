@@ -9,7 +9,7 @@ use qbey::{MySqlDialect, UpdateQueryBuilder};
 #[derive(Debug, Clone)]
 pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
     inner: qbey::UpdateQuery<V>,
-    order_bys: Vec<qbey::OrderByClause<V>>,
+    order_bys: Vec<qbey::OrderByClause<qbey::Value>>,
     limit_val: Option<u64>,
 }
 
@@ -52,13 +52,13 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
 
 impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     /// Add an ORDER BY clause (MySQL extension).
-    pub fn order_by(&mut self, clause: qbey::OrderByClause<V>) -> &mut Self {
+    pub fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
         self
     }
 
     /// Add a raw SQL expression to the ORDER BY clause (MySQL extension).
-    pub fn order_by_expr(&mut self, raw: qbey::RawSql<V>) -> &mut Self {
+    pub fn order_by_expr(&mut self, raw: qbey::RawSql) -> &mut Self {
         self.order_bys.push(qbey::OrderByClause::Expr(raw));
         self
     }
@@ -82,18 +82,20 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
         // and appended after render_update. This is correct for MySQL's `?`
         // placeholders (position-independent) but would need a different approach
         // for PostgreSQL's `$N` indexed placeholders.
-        let mut order_by_binds: Vec<V> = Vec::new();
+        let mut order_by_binds: Vec<Value> = Vec::new();
         if let Some(order_by) =
             qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut order_by_binds)
         {
+            debug_assert!(
+                order_by_binds.is_empty(),
+                "RawSql binds in MySQL UPDATE ORDER BY are not supported with custom value types"
+            );
             tree.tokens.push(qbey::tree::UpdateToken::Raw(order_by));
         }
         if let Some(n) = self.limit_val {
             tree.tokens
                 .push(qbey::tree::UpdateToken::Raw(format!("LIMIT {}", n)));
         }
-        let (sql, mut binds) = qbey::renderer::update::render_update(&tree, &cfg);
-        binds.extend(order_by_binds);
-        (sql, binds)
+        qbey::renderer::update::render_update(&tree, &cfg)
     }
 }

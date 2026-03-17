@@ -19,6 +19,20 @@ pub enum OrderByClause<V: Clone = Value> {
 }
 
 impl<V: Clone> OrderByClause<V> {
+    /// Convert an `OrderByClause<Value>` into `OrderByClause<V>` for any `V`.
+    pub fn from_default(clause: OrderByClause) -> Self {
+        match clause {
+            OrderByClause::Col { col, dir } => OrderByClause::Col { col, dir },
+            OrderByClause::Expr(raw) => {
+                assert!(
+                    raw.binds.is_empty(),
+                    "Cannot convert OrderByClause::Expr with binds to a different value type"
+                );
+                OrderByClause::Expr(RawSql::new(raw.as_str()))
+            }
+        }
+    }
+
     /// Transform all bind values in this clause.
     pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> OrderByClause<U> {
         match self {
@@ -493,6 +507,29 @@ impl<V: Clone> SelectItem<V> {
             }
         }
         self
+    }
+}
+
+impl<V: Clone> SelectItem<V> {
+    /// Convert a `SelectItem<Value>` into `SelectItem<V>` for any `V`.
+    ///
+    /// This is safe for `Col` and `Function` variants (which carry no bind values).
+    /// For `Expr` variants, the RawSql must have no binds (panics otherwise).
+    pub fn from_default(item: SelectItem) -> Self {
+        match item {
+            SelectItem::Col(col) => SelectItem::Col(col),
+            SelectItem::Function { func, col, alias } => SelectItem::Function { func, col, alias },
+            SelectItem::Expr { raw, alias } => {
+                assert!(
+                    raw.binds.is_empty(),
+                    "Cannot convert SelectItem::Expr with binds to a different value type"
+                );
+                SelectItem::Expr {
+                    raw: RawSql::new(raw.as_str()),
+                    alias,
+                }
+            }
+        }
     }
 }
 
