@@ -30,6 +30,21 @@ pub struct CteDefinition<V: Clone + std::fmt::Debug = Value> {
 }
 
 impl<V: Clone + std::fmt::Debug> CteDefinition<V> {
+    /// Create a new CTE definition.
+    pub(crate) fn new(
+        name: &str,
+        columns: &[&str],
+        query: impl IntoSelectTree<V>,
+        recursive: bool,
+    ) -> Self {
+        CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query: query.into_select_tree(),
+            recursive,
+        }
+    }
+
     /// Convert into an AST entry by moving fields.
     pub(crate) fn into_entry(self) -> crate::tree::CteEntry<V> {
         crate::tree::CteEntry {
@@ -591,12 +606,8 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: false,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, false));
         self
     }
 
@@ -611,12 +622,8 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: true,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, true));
         self
     }
 

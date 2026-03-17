@@ -927,10 +927,13 @@ async fn test_cte_update() {
     cte_q.and_where(col("age").gt(28));
 
     // UPDATE users SET name = 'Senior' WHERE id IN (SELECT id FROM older_users)
+    let mut cte_ref = qbey_with::<SqliteValue>("older_users");
+    cte_ref.select(&["id"]);
+
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.with_cte("older_users", &[], cte_q);
     u.set(col("name"), "Senior");
-    u.and_where(col("id").eq(1)); // Alice (age 30, > 28)
+    u.and_where(col("id").included(cte_ref));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -938,8 +941,13 @@ async fn test_cte_update() {
         .await
         .unwrap();
 
-    // Verify the update
+    // Verify the update: Alice(30) and Charlie(35) are > 28
     let rows = sqlx::query(r#"SELECT "name" FROM "users" WHERE "id" = 1"#)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<String, _>("name"), "Senior");
+    let rows = sqlx::query(r#"SELECT "name" FROM "users" WHERE "id" = 3"#)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -955,10 +963,13 @@ async fn test_cte_delete() {
     cte_q.select(&["id"]);
     cte_q.and_where(col("age").gt(30));
 
-    // DELETE FROM users WHERE id = 3 (Charlie, age 35)
+    // DELETE FROM users WHERE id IN (SELECT id FROM old_users)
+    let mut cte_ref = qbey_with::<SqliteValue>("old_users");
+    cte_ref.select(&["id"]);
+
     let mut d = qbey_with::<SqliteValue>("users").into_delete();
     d.with_cte("old_users", &[], cte_q);
-    d.and_where(col("id").eq(3));
+    d.and_where(col("id").included(cte_ref));
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -966,7 +977,7 @@ async fn test_cte_delete() {
         .await
         .unwrap();
 
-    // Verify Charlie was deleted
+    // Verify Charlie (age 35, > 30) was deleted via CTE
     let rows = sqlx::query(r#"SELECT "id" FROM "users" ORDER BY "id""#)
         .fetch_all(&pool)
         .await

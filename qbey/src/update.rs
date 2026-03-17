@@ -169,12 +169,8 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: false,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, false));
         self
     }
 
@@ -189,12 +185,8 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: true,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, true));
         self
     }
 }

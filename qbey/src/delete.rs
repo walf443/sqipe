@@ -22,6 +22,20 @@ pub trait DeleteQueryBuilder<V: Clone> {
     fn allow_without_where(&mut self) -> &mut Self;
 
     /// Add a CTE to the `WITH` clause.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder, SelectQueryBuilder};
+    ///
+    /// let mut cte_q = qbey("users");
+    /// cte_q.select(&["id"]);
+    /// cte_q.and_where(col("age").gt(30));
+    ///
+    /// let mut d = qbey("users").into_delete();
+    /// d.with_cte("old_users", &[], cte_q);
+    /// d.and_where(col("id").eq(1));
+    /// let (sql, _) = d.to_sql();
+    /// assert!(sql.starts_with(r#"WITH "old_users" AS"#));
+    /// ```
     fn with_cte(
         &mut self,
         name: &str,
@@ -74,12 +88,8 @@ impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for DeleteQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: false,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, false));
         self
     }
 
@@ -94,12 +104,8 @@ impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for DeleteQuery<V> {
             "duplicate CTE name {:?}: each CTE must have a unique name",
             name,
         );
-        self.ctes.push(CteDefinition {
-            name: name.to_string(),
-            columns: columns.iter().map(|s| s.to_string()).collect(),
-            query: query.into_select_tree(),
-            recursive: true,
-        });
+        self.ctes
+            .push(CteDefinition::new(name, columns, query, true));
         self
     }
 }

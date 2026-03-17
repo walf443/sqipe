@@ -1002,16 +1002,20 @@ async fn test_cte_update() {
     cte_q.select(&["id"]);
     cte_q.and_where(col("age").gt(28));
 
+    let mut cte_ref = qbey_with::<PgValue>("older_users");
+    cte_ref.select(&["id"]);
+
     let mut u = qbey_with::<PgValue>("users").into_update();
     u.with_cte("older_users", &[], cte_q);
     u.set(col("name"), "Senior");
-    u.and_where(col("id").eq(1));
+    u.and_where(col("id").included(cte_ref));
     let (sql, binds) = u.to_sql_with(&PostgresDialect);
 
     let params = to_pg_params(&binds);
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
     client.execute(&sql, &param_refs).await.unwrap();
 
+    // Alice(30) and Charlie(35) are > 28
     let rows = client
         .query(r#"SELECT "name" FROM "users" WHERE "id" = 1"#, &[])
         .await
@@ -1028,9 +1032,12 @@ async fn test_cte_delete() {
     cte_q.select(&["id"]);
     cte_q.and_where(col("age").gt(30));
 
+    let mut cte_ref = qbey_with::<PgValue>("old_users");
+    cte_ref.select(&["id"]);
+
     let mut d = qbey_with::<PgValue>("users").into_delete();
     d.with_cte("old_users", &[], cte_q);
-    d.and_where(col("id").eq(3));
+    d.and_where(col("id").included(cte_ref));
     let (sql, binds) = d.to_sql_with(&PostgresDialect);
 
     let params = to_pg_params(&binds);
