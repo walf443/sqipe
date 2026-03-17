@@ -826,6 +826,28 @@ pg_test!(test_count_over_partition, |client| {
     assert_eq!(cnt2, 1);
 });
 
+pg_test!(test_cte, |client| {
+    let mut cte_q = qbey_with::<PgValue>("users");
+    cte_q.select(&["id", "name", "age"]);
+    cte_q.and_where(col("age").gt(28));
+
+    let mut q = qbey_with::<PgValue>("older_users");
+    q.with_cte("older_users", &[], cte_q);
+    q.select(&["id", "name"]);
+    q.order_by(col("age").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = client.query(&sql, &param_refs).unwrap();
+
+    assert_eq!(rows.len(), 2);
+    let name0: String = rows[0].get("name");
+    let name1: String = rows[1].get("name");
+    assert_eq!(name0, "Alice"); // age 30
+    assert_eq!(name1, "Charlie"); // age 35
+});
+
 pg_test!(test_named_window, |client| {
     let w = window().order_by(col("age").desc()).as_("w");
 

@@ -680,3 +680,27 @@ async fn test_count_over_partition() {
     assert_eq!(rows[0].get::<i64, _>("user_order_count"), 2);
     assert_eq!(rows[2].get::<i64, _>("user_order_count"), 1);
 }
+
+#[tokio::test]
+async fn test_cte() {
+    let pool = setup_pool().await;
+
+    let mut cte_q = qbey_with::<MysqlValue>("users");
+    cte_q.select(&["id", "name", "age"]);
+    cte_q.and_where(col("age").gt(28));
+
+    let mut q = qbey_with::<MysqlValue>("older_users");
+    q.with_cte("older_users", &[], cte_q);
+    q.select(&["id", "name"]);
+    q.order_by(col("age").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice"); // age 30
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie"); // age 35
+}

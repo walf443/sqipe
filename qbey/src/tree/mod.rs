@@ -1,5 +1,18 @@
 use crate::{JoinClause, OrderByClause, SelectItem, WhereEntry, WindowSpec};
 
+/// A single CTE definition within a `WITH` clause in the AST.
+#[derive(Debug, Clone)]
+pub struct CteEntry<V: Clone = crate::Value> {
+    /// CTE name.
+    pub name: String,
+    /// Optional column aliases.
+    pub columns: Vec<String>,
+    /// The subquery that defines this CTE.
+    pub subquery: Box<SelectTree<V>>,
+    /// Whether this CTE is `RECURSIVE`.
+    pub recursive: bool,
+}
+
 /// The source of a FROM clause — either a table name or a subquery.
 #[derive(Debug, Clone)]
 pub enum FromSource<V: Clone = crate::Value> {
@@ -70,6 +83,8 @@ pub enum SelectToken<V: Clone = crate::Value> {
     SetOperator(crate::SetOp),
     /// Named WINDOW definitions (e.g., `WINDOW "w" AS (...)`).
     Window(Vec<(String, WindowSpec<V>)>),
+    /// CTE definitions (e.g., `WITH "cte" AS (SELECT ...)`).
+    With(Vec<CteEntry<V>>),
 }
 
 /// Token for INSERT query construction.
@@ -195,6 +210,16 @@ impl<V: Clone> SelectTree<V> {
                             .map(|(name, spec)| (name, spec.map_values(f)))
                             .collect(),
                     ),
+                    SelectToken::With(ctes) => SelectToken::With(
+                        ctes.into_iter()
+                            .map(|cte| CteEntry {
+                                name: cte.name,
+                                columns: cte.columns,
+                                subquery: Box::new(cte.subquery.map_values(f)),
+                                recursive: cte.recursive,
+                            })
+                            .collect(),
+                    ),
                 })
                 .collect(),
         }
@@ -212,6 +237,13 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
     pub fn from_query_owned(query: crate::SelectQuery<V>) -> Self {
         if !query.set_operations.is_empty() {
             let mut tokens = Vec::new();
+
+            // Emit WITH clause for compound queries
+            if !query.ctes.is_empty() {
+                tokens.push(SelectToken::With(
+                    query.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
+                ));
+            }
 
             for (i, (op, part)) in query.set_operations.into_iter().enumerate() {
                 if i > 0 {
@@ -244,6 +276,13 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
         }
 
         let mut tokens = Vec::new();
+
+        // Emit WITH clause for simple queries
+        if !query.ctes.is_empty() {
+            tokens.push(SelectToken::With(
+                query.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
+            ));
+        }
 
         tokens.push(SelectToken::Select(SelectClause::Columns {
             items: query.selects,

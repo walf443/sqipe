@@ -79,8 +79,8 @@ pub use insert::{InsertQuery, InsertQueryBuilder, ToInsertRow};
 pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
-    IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SelectQueryBuilder, SetOp, qbey,
-    qbey_from_subquery, qbey_from_subquery_with, qbey_with,
+    CteDefinition, IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SelectQueryBuilder,
+    SetOp, qbey, qbey_from_subquery, qbey_from_subquery_with, qbey_with,
 };
 pub use raw_sql::RawSql;
 pub use update::{SetClause, UpdateQuery, UpdateQueryBuilder};

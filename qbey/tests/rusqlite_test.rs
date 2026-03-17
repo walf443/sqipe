@@ -990,6 +990,90 @@ fn test_count_over_partition() {
 }
 
 #[test]
+fn test_cte() {
+    let conn = setup_db();
+
+    let mut cte_q = qbey_with::<SqliteValue>("users");
+    cte_q.select(&["id", "name", "age"]);
+    cte_q.and_where(col("age").gt(28));
+
+    let mut q = qbey_with::<SqliteValue>("older_users");
+    q.with_cte("older_users", &[], cte_q);
+    q.select(&["id", "name"]);
+    q.order_by(col("age").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0], (1, "Alice".to_string())); // age 30
+    assert_eq!(rows[1], (3, "Charlie".to_string())); // age 35
+}
+
+#[test]
+fn test_recursive_cte() {
+    let conn = setup_db();
+
+    // Create a simple hierarchy table
+    conn.execute_batch(
+        "CREATE TABLE categories (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id INTEGER
+        );
+        INSERT INTO categories (id, name, parent_id) VALUES
+            (1, 'Root', NULL),
+            (2, 'Child1', 1),
+            (3, 'Child2', 1),
+            (4, 'Grandchild1', 2);",
+    )
+    .unwrap();
+
+    // Base case: root categories
+    let mut base = qbey_with::<SqliteValue>("categories");
+    base.select(&["id", "name", "parent_id"]);
+    base.and_where(col("parent_id").eq(1));
+
+    // Recursive case
+    let c = table("c");
+    let mut recursive = qbey_with::<SqliteValue>(table("categories").as_("c"));
+    recursive.select(&[c.col("id"), c.col("name"), c.col("parent_id")]);
+    recursive.join("tree", c.col("parent_id").eq_col(table("tree").col("id")));
+
+    let cte_query = base.union_all(&recursive);
+
+    let mut q = qbey_with::<SqliteValue>("tree");
+    q.with_recursive_cte("tree", &["id", "name", "parent_id"], cte_query);
+    q.select(&["id", "name"]);
+    q.order_by(col("id").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let rows: Vec<(i64, String)> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // Children of Root (id=1): Child1(2), Child2(3), Grandchild1(4)
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0], (2, "Child1".to_string()));
+    assert_eq!(rows[1], (3, "Child2".to_string()));
+    assert_eq!(rows[2], (4, "Grandchild1".to_string()));
+}
+
+#[test]
 fn test_named_window() {
     let conn = setup_db();
 
