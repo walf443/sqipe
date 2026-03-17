@@ -246,7 +246,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                     .map(|cte| CteEntry {
                         name: cte.name,
                         columns: cte.columns,
-                        subquery: Box::new(SelectTree::from_query_owned(cte.query)),
+                        subquery: Box::new(cte.query),
                         recursive: cte.recursive,
                     })
                     .collect();
@@ -293,7 +293,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
                 .map(|cte| CteEntry {
                     name: cte.name,
                     columns: cte.columns,
-                    subquery: Box::new(SelectTree::from_query_owned(cte.query)),
+                    subquery: Box::new(cte.query),
                     recursive: cte.recursive,
                 })
                 .collect();

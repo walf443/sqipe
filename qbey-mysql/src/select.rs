@@ -178,7 +178,12 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         self
     }
 
-    fn with_cte(&mut self, name: &str, columns: &[&str], query: qbey::SelectQuery<V>) -> &mut Self {
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl qbey::IntoSelectTree<V>,
+    ) -> &mut Self {
         self.inner.with_cte(name, columns, query);
         self
     }
@@ -187,7 +192,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         &mut self,
         name: &str,
         columns: &[&str],
-        query: qbey::SelectQuery<V>,
+        query: impl qbey::IntoSelectTree<V>,
     ) -> &mut Self {
         self.inner.with_recursive_cte(name, columns, query);
         self
@@ -300,7 +305,9 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Returns the parts of this query for use in set operations.
     fn as_set_operation_parts(&self) -> Vec<(qbey::SetOp, MysqlQuery<V>)> {
         if self.set_operations.is_empty() {
-            vec![(qbey::SetOp::Union, self.clone())] // SetOp is placeholder for the first part
+            let mut clone = self.clone();
+            clone.inner.ctes_mut().clear(); // CTEs belong to the outer query, not individual parts
+            vec![(qbey::SetOp::Union, clone)] // SetOp is placeholder for the first part
         } else {
             self.set_operations.clone()
         }
@@ -316,10 +323,12 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
                 parts.push((other_op, query));
             }
         }
+        let mut inner: qbey::SelectQuery<V> = qbey::qbey_with("");
+        *inner.ctes_mut() = self.inner.ctes().to_vec();
         MysqlQuery {
             // inner is a dummy SelectQuery; for compound queries it only serves as a
             // container for union-level order_bys / limit / offset via Deref.
-            inner: qbey::qbey_with(""),
+            inner,
             index_hints: Vec::new(),
             set_operations: parts,
         }
@@ -329,8 +338,11 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         if self.set_operations.is_empty() {
             // Convert self into a compound query: move current state into
             // set_operations and reset self to an empty shell.
-            let first = self.clone();
+            let ctes: Vec<_> = self.inner.ctes_mut().drain(..).collect();
+            let mut first = self.clone();
+            first.inner.ctes_mut().clear();
             *self = MysqlQuery::wrap(qbey::qbey_with(""));
+            *self.inner.ctes_mut() = ctes;
             self.set_operations = vec![(qbey::SetOp::Union, first)];
         }
         let other_parts = other.as_set_operation_parts();
@@ -426,8 +438,24 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     /// Each part's tree is built with MySQL index hints applied.
     /// The outer order_bys/limit/offset come from inner (set via Deref).
     fn to_compound_tree(&self) -> SelectTree<V> {
-        use qbey::tree::SelectToken;
+        use qbey::tree::{CteEntry, SelectToken};
         let mut tokens = Vec::new();
+
+        // Emit WITH clause for compound queries
+        if !self.inner.ctes().is_empty() {
+            let cte_entries: Vec<CteEntry<V>> = self
+                .inner
+                .ctes()
+                .iter()
+                .map(|cte| CteEntry {
+                    name: cte.name.clone(),
+                    columns: cte.columns.clone(),
+                    subquery: Box::new(cte.query.clone()),
+                    recursive: cte.recursive,
+                })
+                .collect();
+            tokens.push(SelectToken::With(cte_entries));
+        }
 
         for (i, (op, mq)) in self.set_operations.iter().enumerate() {
             if i > 0 {

@@ -23,8 +23,8 @@ pub struct CteDefinition<V: Clone + std::fmt::Debug = Value> {
     pub name: String,
     /// Optional column aliases (e.g., `(col1, col2)`).
     pub columns: Vec<String>,
-    /// The subquery that defines this CTE.
-    pub query: SelectQuery<V>,
+    /// The subquery that defines this CTE (already converted to AST).
+    pub query: SelectTree<V>,
     /// Whether this CTE is `RECURSIVE`.
     pub recursive: bool,
 }
@@ -193,7 +193,12 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     ///     r#"WITH "dept_cte" AS (SELECT "id", "name" FROM "departments" WHERE "active" = ?) SELECT "id", "name" FROM "dept_cte""#
     /// );
     /// ```
-    fn with_cte(&mut self, name: &str, columns: &[&str], query: SelectQuery<V>) -> &mut Self;
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl IntoSelectTree<V>,
+    ) -> &mut Self;
 
     /// Add a recursive CTE to the `WITH RECURSIVE` clause.
     ///
@@ -220,7 +225,7 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
         &mut self,
         name: &str,
         columns: &[&str],
-        query: SelectQuery<V>,
+        query: impl IntoSelectTree<V>,
     ) -> &mut Self;
 
     /// Append `FOR UPDATE` to the generated SQL.
@@ -549,11 +554,16 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn with_cte(&mut self, name: &str, columns: &[&str], query: SelectQuery<V>) -> &mut Self {
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl IntoSelectTree<V>,
+    ) -> &mut Self {
         self.ctes.push(CteDefinition {
             name: name.to_string(),
             columns: columns.iter().map(|s| s.to_string()).collect(),
-            query,
+            query: query.into_select_tree(),
             recursive: false,
         });
         self
@@ -563,12 +573,12 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         &mut self,
         name: &str,
         columns: &[&str],
-        query: SelectQuery<V>,
+        query: impl IntoSelectTree<V>,
     ) -> &mut Self {
         self.ctes.push(CteDefinition {
             name: name.to_string(),
             columns: columns.iter().map(|s| s.to_string()).collect(),
-            query,
+            query: query.into_select_tree(),
             recursive: true,
         });
         self
@@ -657,6 +667,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             }
         }
         let mut q = SelectQuery::new("");
+        q.ctes = self.ctes.clone();
         q.set_operations = parts;
         q
     }
@@ -668,8 +679,11 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
         if self.set_operations.is_empty() {
             // Convert self into a compound query: move current state into
             // set_operations and reset self to an empty shell.
-            let first = self.clone();
+            let ctes = std::mem::take(&mut self.ctes);
+            let mut first = self.clone();
+            first.ctes.clear();
             *self = SelectQuery::new("");
+            self.ctes = ctes;
             self.set_operations = vec![(SetOp::Union, first)]; // first part's SetOp is placeholder
         }
         let other_parts = other.as_set_operation_parts();
@@ -686,7 +700,9 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// If this is a compound query, returns its parts; otherwise returns self as a single part.
     fn as_set_operation_parts(&self) -> Vec<(SetOp, SelectQuery<V>)> {
         if self.set_operations.is_empty() {
-            vec![(SetOp::Union, self.clone())] // SetOp is placeholder for the first part
+            let mut clone = self.clone();
+            clone.ctes.clear(); // CTEs belong to the outer query, not individual parts
+            vec![(SetOp::Union, clone)] // SetOp is placeholder for the first part
         } else {
             self.set_operations.clone()
         }
@@ -752,6 +768,16 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
         self
     }
 
+    /// Returns the CTE definitions.
+    pub fn ctes(&self) -> &[CteDefinition<V>] {
+        &self.ctes
+    }
+
+    /// Returns a mutable reference to the CTE definitions.
+    pub fn ctes_mut(&mut self) -> &mut Vec<CteDefinition<V>> {
+        &mut self.ctes
+    }
+
     /// Returns true if this query is a compound query (has set operations).
     pub fn has_set_operations(&self) -> bool {
         !self.set_operations.is_empty()
@@ -813,6 +839,10 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// ```
     pub fn into_update(self) -> UpdateQuery<V> {
         assert!(
+            self.ctes.is_empty(),
+            "SelectQuery has CTEs which are not supported in UPDATE"
+        );
+        assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to UPDATE"
         );
@@ -846,6 +876,10 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?)"#);
     /// ```
     pub fn into_insert(self) -> InsertQuery<V> {
+        assert!(
+            self.ctes.is_empty(),
+            "SelectQuery has CTEs which are not supported in INSERT"
+        );
         assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to INSERT"
@@ -883,6 +917,10 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
     /// ```
     pub fn into_delete(self) -> DeleteQuery<V> {
+        assert!(
+            self.ctes.is_empty(),
+            "SelectQuery has CTEs which are not supported in DELETE"
+        );
         assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to DELETE"
