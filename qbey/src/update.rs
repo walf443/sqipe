@@ -97,6 +97,30 @@ pub trait UpdateQueryBuilder<V: Clone> {
     ) -> &mut Self;
 
     /// Add a recursive CTE to the `WITH RECURSIVE` clause.
+    ///
+    /// Note: per the SQL standard, the `RECURSIVE` keyword applies to the
+    /// entire `WITH` block. If any CTE added via this method is recursive,
+    /// the rendered SQL will use `WITH RECURSIVE` for all CTEs in the clause.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder, SelectQueryBuilder};
+    ///
+    /// let mut base = qbey("employees");
+    /// base.select(&["id", "name", "manager_id"]);
+    /// base.and_where(col("manager_id").eq(0));
+    ///
+    /// let mut recursive = qbey("employees");
+    /// recursive.select(&["id", "name", "manager_id"]);
+    ///
+    /// let cte_query = base.union_all(&recursive);
+    ///
+    /// let mut u = qbey("employees").into_update();
+    /// u.with_recursive_cte("org_tree", &["id", "name", "manager_id"], cte_query);
+    /// u.set(col("active"), true);
+    /// u.and_where(col("id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert!(sql.starts_with(r#"WITH RECURSIVE "org_tree""#));
+    /// ```
     fn with_recursive_cte(
         &mut self,
         name: &str,
