@@ -288,12 +288,12 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
             let mut window_defs: Vec<(String, WindowSpec<V>)> = Vec::new();
             if let Some(SelectToken::Select(SelectClause::Columns { items, .. })) = tokens.first() {
                 for item in items {
-                    if let SelectItem::WindowFunction { window, .. } = item {
-                        if let Some(ref name) = window.name {
-                            // Deduplicate by name.
-                            if !window_defs.iter().any(|(n, _)| n == name) {
-                                window_defs.push((name.clone(), window.clone()));
-                            }
+                    if let SelectItem::WindowFunction { window, .. } = item
+                        && let Some(ref name) = window.name
+                    {
+                        // Deduplicate by name.
+                        if !window_defs.iter().any(|(n, _)| n == name) {
+                            window_defs.push((name.clone(), window.clone()));
                         }
                     }
                 }
