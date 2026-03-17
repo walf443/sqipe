@@ -240,17 +240,9 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 
             // Emit WITH clause for compound queries
             if !query.ctes.is_empty() {
-                let cte_entries: Vec<CteEntry<V>> = query
-                    .ctes
-                    .into_iter()
-                    .map(|cte| CteEntry {
-                        name: cte.name,
-                        columns: cte.columns,
-                        subquery: Box::new(cte.query),
-                        recursive: cte.recursive,
-                    })
-                    .collect();
-                tokens.push(SelectToken::With(cte_entries));
+                tokens.push(SelectToken::With(
+                    query.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
+                ));
             }
 
             for (i, (op, part)) in query.set_operations.into_iter().enumerate() {
@@ -287,17 +279,9 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 
         // Emit WITH clause for simple queries
         if !query.ctes.is_empty() {
-            let cte_entries: Vec<CteEntry<V>> = query
-                .ctes
-                .into_iter()
-                .map(|cte| CteEntry {
-                    name: cte.name,
-                    columns: cte.columns,
-                    subquery: Box::new(cte.query),
-                    recursive: cte.recursive,
-                })
-                .collect();
-            tokens.push(SelectToken::With(cte_entries));
+            tokens.push(SelectToken::With(
+                query.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
+            ));
         }
 
         tokens.push(SelectToken::Select(SelectClause::Columns {

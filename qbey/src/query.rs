@@ -29,6 +29,28 @@ pub struct CteDefinition<V: Clone + std::fmt::Debug = Value> {
     pub(crate) recursive: bool,
 }
 
+impl<V: Clone + std::fmt::Debug> CteDefinition<V> {
+    /// Convert into an AST entry by moving fields.
+    pub(crate) fn into_entry(self) -> crate::tree::CteEntry<V> {
+        crate::tree::CteEntry {
+            name: self.name,
+            columns: self.columns,
+            subquery: Box::new(self.query),
+            recursive: self.recursive,
+        }
+    }
+
+    /// Convert to an AST entry by cloning.
+    pub(crate) fn to_entry(&self) -> crate::tree::CteEntry<V> {
+        crate::tree::CteEntry {
+            name: self.name.clone(),
+            columns: self.columns.clone(),
+            subquery: Box::new(self.query.clone()),
+            recursive: self.recursive,
+        }
+    }
+}
+
 /// SQL set operation type (UNION, INTERSECT, EXCEPT and their ALL variants).
 #[derive(Debug, Clone)]
 pub enum SetOp {
@@ -795,17 +817,9 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
         !self.ctes.is_empty()
     }
 
-    /// Convert CTEs to AST entries for rendering.
+    /// Convert CTEs to AST entries by cloning.
     pub fn ctes_to_entries(&self) -> Vec<crate::tree::CteEntry<V>> {
-        self.ctes
-            .iter()
-            .map(|cte| crate::tree::CteEntry {
-                name: cte.name.clone(),
-                columns: cte.columns.clone(),
-                subquery: Box::new(cte.query.clone()),
-                recursive: cte.recursive,
-            })
-            .collect()
+        self.ctes.iter().map(|cte| cte.to_entry()).collect()
     }
 
     /// Take all CTE definitions out of this query, leaving it with none.
