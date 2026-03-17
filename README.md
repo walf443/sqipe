@@ -588,6 +588,19 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
 ```
 
+`RawSql` supports bind parameters via `{}` placeholders. Use `.binds()` to attach values — they are replaced with dialect-specific placeholders (`?` or `$N`) and collected in the correct order:
+
+```rust
+# use qbey::{qbey, col, Value, ConditionExpr, RawSql, UpdateQueryBuilder};
+let mut u = qbey("employee").into_update();
+u.set_expr(RawSql::new(r#""score" = "score" + {}"#).binds(&[10]));
+u.and_where(col("id").eq(1));
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, r#"UPDATE "employee" SET "score" = "score" + ? WHERE "id" = ?"#);
+assert_eq!(binds, vec![Value::Int(10), Value::Int(1)]);
+```
+
 ### DELETE
 
 `Query::into_delete()` converts a SELECT query builder into a DELETE statement builder.
