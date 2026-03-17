@@ -1,6 +1,8 @@
 use crate::Dialect;
 use crate::column::Col;
+use crate::query::CteDefinition;
 use crate::raw_sql::RawSql;
+use crate::tree::SelectTree;
 use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 
@@ -71,6 +73,37 @@ pub trait UpdateQueryBuilder<V: Clone> {
     /// By default, `to_sql()` panics if no WHERE conditions are set,
     /// to prevent accidental full-table updates.
     fn allow_without_where(&mut self) -> &mut Self;
+
+    /// Add a CTE to the `WITH` clause.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder, SelectQueryBuilder};
+    ///
+    /// let mut cte_q = qbey("departments");
+    /// cte_q.select(&["id"]);
+    /// cte_q.and_where(col("active").eq(true));
+    ///
+    /// let mut u = qbey("employee").into_update();
+    /// u.with_cte("active_depts", &[], cte_q);
+    /// u.set(col("status"), "active");
+    /// u.and_where(col("dept_id").eq(1));
+    /// let (sql, _) = u.to_sql();
+    /// assert!(sql.starts_with(r#"WITH "active_depts" AS"#));
+    /// ```
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self;
+
+    /// Add a recursive CTE to the `WITH RECURSIVE` clause.
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self;
 }
 
 /// An UPDATE query builder, generic over the bind value type `V`.
@@ -97,6 +130,7 @@ pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) sets: Vec<SetClause<V>>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) allow_without_where: bool,
+    pub(crate) ctes: Vec<CteDefinition<V>>,
 }
 
 impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
@@ -124,6 +158,46 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
         self.allow_without_where = true;
         self
     }
+
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self {
+        debug_assert!(
+            !self.ctes.iter().any(|c| c.name == name),
+            "duplicate CTE name {:?}: each CTE must have a unique name",
+            name,
+        );
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query: query.into_select_tree(),
+            recursive: false,
+        });
+        self
+    }
+
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self {
+        debug_assert!(
+            !self.ctes.iter().any(|c| c.name == name),
+            "duplicate CTE name {:?}: each CTE must have a unique name",
+            name,
+        );
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query: query.into_select_tree(),
+            recursive: true,
+        });
+        self
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
@@ -131,6 +205,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
         table: String,
         table_alias: Option<String>,
         wheres: Vec<WhereEntry<V>>,
+        ctes: Vec<CteDefinition<V>>,
     ) -> Self {
         UpdateQuery {
             table,
@@ -138,6 +213,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
             sets: Vec::new(),
             wheres,
             allow_without_where: false,
+            ctes,
         }
     }
 
@@ -150,6 +226,11 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     pub fn to_tree(&self) -> crate::tree::UpdateTree<V> {
         self.assert_where_present();
         let mut tokens = Vec::new();
+        if !self.ctes.is_empty() {
+            tokens.push(crate::tree::UpdateToken::With(
+                self.ctes.iter().map(|cte| cte.to_entry()).collect(),
+            ));
+        }
         tokens.push(crate::tree::UpdateToken::Update {
             table: self.table.clone(),
             alias: self.table_alias.clone(),

@@ -287,6 +287,74 @@ fn test_update_with_set_expr_dialect() {
     );
 }
 
+// ── CTE support ──
+
+#[test]
+fn test_update_with_cte() {
+    let mut cte_q = qbey("departments");
+    cte_q.select(&["id"]);
+    cte_q.and_where(col("active").eq(true));
+
+    let mut u = qbey("employee").into_update();
+    u.with_cte("active_depts", &[], cte_q);
+    u.set(col("status"), "active");
+    u.and_where(col("dept_id").eq(1));
+    let (sql, binds) = u.to_sql();
+    assert_eq!(
+        sql,
+        r#"WITH "active_depts" AS (SELECT "id" FROM "departments" WHERE "active" = ?) UPDATE "employee" SET "status" = ? WHERE "dept_id" = ?"#
+    );
+    assert_eq!(
+        binds,
+        vec![
+            Value::Bool(true),
+            Value::String("active".to_string()),
+            Value::Int(1),
+        ]
+    );
+}
+
+#[test]
+fn test_update_with_cte_pg_dialect() {
+    let mut cte_q = qbey("departments");
+    cte_q.select(&["id"]);
+    cte_q.and_where(col("active").eq(true));
+
+    let mut u = qbey("employee").into_update();
+    u.with_cte("active_depts", &[], cte_q);
+    u.set(col("status"), "active");
+    u.and_where(col("dept_id").eq(1));
+    let (sql, binds) = u.to_sql_with(&PgDialect);
+    assert_eq!(
+        sql,
+        r#"WITH "active_depts" AS (SELECT "id" FROM "departments" WHERE "active" = $1) UPDATE "employee" SET "status" = $2 WHERE "dept_id" = $3"#
+    );
+    assert_eq!(
+        binds,
+        vec![
+            Value::Bool(true),
+            Value::String("active".to_string()),
+            Value::Int(1),
+        ]
+    );
+}
+
+#[test]
+fn test_update_with_cte_from_select_query() {
+    let mut cte_q = qbey("departments");
+    cte_q.select(&["id"]);
+    cte_q.and_where(col("active").eq(true));
+
+    let mut q = qbey("employee");
+    q.with_cte("active_depts", &[], cte_q);
+    q.and_where(col("dept_id").eq(1));
+    let mut u = q.into_update();
+    u.set(col("status"), "active");
+    let (sql, _) = u.to_sql();
+    assert!(sql.starts_with(r#"WITH "active_depts" AS"#));
+    assert!(sql.contains(r#"UPDATE "employee""#));
+}
+
 // ── SetClause::Expr with binds ──
 
 #[test]

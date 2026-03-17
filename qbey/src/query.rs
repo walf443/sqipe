@@ -900,10 +900,6 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// ```
     pub fn into_update(self) -> UpdateQuery<V> {
         assert!(
-            self.ctes.is_empty(),
-            "SelectQuery has CTEs which are not supported in UPDATE"
-        );
-        assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to UPDATE"
         );
@@ -919,7 +915,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             self.limit_val.is_none(),
             "SelectQuery has LIMIT which is not supported in UPDATE and will be discarded"
         );
-        UpdateQuery::new(self.table, self.table_alias, self.wheres)
+        UpdateQuery::new(self.table, self.table_alias, self.wheres, self.ctes)
     }
 
     /// Convert this SELECT query builder into an INSERT query builder.
@@ -979,10 +975,6 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// ```
     pub fn into_delete(self) -> DeleteQuery<V> {
         assert!(
-            self.ctes.is_empty(),
-            "SelectQuery has CTEs which are not supported in DELETE"
-        );
-        assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to DELETE"
         );
@@ -998,6 +990,6 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             self.limit_val.is_none(),
             "SelectQuery has LIMIT which is not supported in DELETE and will be discarded"
         );
-        DeleteQuery::new(self.table, self.table_alias, self.wheres)
+        DeleteQuery::new(self.table, self.table_alias, self.wheres, self.ctes)
     }
 }

@@ -1,4 +1,6 @@
 use crate::Dialect;
+use crate::query::CteDefinition;
+use crate::tree::SelectTree;
 use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 
@@ -19,6 +21,22 @@ pub trait DeleteQueryBuilder<V: Clone> {
     /// By default, `to_sql()` panics if no WHERE conditions are set,
     /// to prevent accidental full-table deletes.
     fn allow_without_where(&mut self) -> &mut Self;
+
+    /// Add a CTE to the `WITH` clause.
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self;
+
+    /// Add a recursive CTE to the `WITH RECURSIVE` clause.
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self;
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +45,7 @@ pub struct DeleteQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) table_alias: Option<String>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) allow_without_where: bool,
+    pub(crate) ctes: Vec<CteDefinition<V>>,
 }
 
 impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for DeleteQuery<V> {
@@ -44,6 +63,46 @@ impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for DeleteQuery<V> {
         self.allow_without_where = true;
         self
     }
+
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self {
+        debug_assert!(
+            !self.ctes.iter().any(|c| c.name == name),
+            "duplicate CTE name {:?}: each CTE must have a unique name",
+            name,
+        );
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query: query.into_select_tree(),
+            recursive: false,
+        });
+        self
+    }
+
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl crate::query::IntoSelectTree<V>,
+    ) -> &mut Self {
+        debug_assert!(
+            !self.ctes.iter().any(|c| c.name == name),
+            "duplicate CTE name {:?}: each CTE must have a unique name",
+            name,
+        );
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query: query.into_select_tree(),
+            recursive: true,
+        });
+        self
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
@@ -51,12 +110,14 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
         table: String,
         table_alias: Option<String>,
         wheres: Vec<WhereEntry<V>>,
+        ctes: Vec<CteDefinition<V>>,
     ) -> Self {
         DeleteQuery {
             table,
             table_alias,
             wheres,
             allow_without_where: false,
+            ctes,
         }
     }
 
@@ -69,6 +130,11 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
     pub fn to_tree(&self) -> crate::tree::DeleteTree<V> {
         self.assert_where_present();
         let mut tokens = Vec::new();
+        if !self.ctes.is_empty() {
+            tokens.push(crate::tree::DeleteToken::With(
+                self.ctes.iter().map(|cte| cte.to_entry()).collect(),
+            ));
+        }
         tokens.push(crate::tree::DeleteToken::DeleteFrom {
             table: self.table.clone(),
             alias: self.table_alias.clone(),

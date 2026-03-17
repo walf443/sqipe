@@ -81,6 +81,37 @@ pub(super) fn render_wheres<V: Clone>(
     Some(sql)
 }
 
+/// Render a WITH clause from CTE entries. Shared by SELECT, UPDATE, and DELETE renderers.
+pub(crate) fn render_cte_clause<V: Clone>(
+    ctes: &[crate::tree::CteEntry<V>],
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> Option<String> {
+    if ctes.is_empty() {
+        return None;
+    }
+    let has_recursive = ctes.iter().any(|cte| cte.recursive);
+    let keyword = if has_recursive {
+        "WITH RECURSIVE"
+    } else {
+        "WITH"
+    };
+    let defs: Vec<String> = ctes
+        .iter()
+        .map(|cte| {
+            let col_list = if cte.columns.is_empty() {
+                String::new()
+            } else {
+                let quoted: Vec<String> = cte.columns.iter().map(|c| (cfg.qi)(c)).collect();
+                format!(" ({})", quoted.join(", "))
+            };
+            let sub_sql = render_subquery_sql(&cte.subquery, cfg, binds);
+            format!("{}{} AS ({})", (cfg.qi)(&cte.name), col_list, sub_sql)
+        })
+        .collect();
+    Some(format!("{} {}", keyword, defs.join(", ")))
+}
+
 pub(super) fn render_from<V: Clone>(
     from: &FromClause<V>,
     cfg: &RenderConfig,
@@ -408,33 +439,7 @@ pub(super) fn render_select_tokens<V: Clone>(
                     Some(format!("WINDOW {}", parts.join(", ")))
                 }
             }
-            SelectToken::With(ctes) => {
-                if ctes.is_empty() {
-                    None
-                } else {
-                    let has_recursive = ctes.iter().any(|cte| cte.recursive);
-                    let keyword = if has_recursive {
-                        "WITH RECURSIVE"
-                    } else {
-                        "WITH"
-                    };
-                    let defs: Vec<String> = ctes
-                        .iter()
-                        .map(|cte| {
-                            let col_list = if cte.columns.is_empty() {
-                                String::new()
-                            } else {
-                                let quoted: Vec<String> =
-                                    cte.columns.iter().map(|c| (cfg.qi)(c)).collect();
-                                format!(" ({})", quoted.join(", "))
-                            };
-                            let sub_sql = render_subquery_sql(&cte.subquery, cfg, binds);
-                            format!("{}{} AS ({})", (cfg.qi)(&cte.name), col_list, sub_sql)
-                        })
-                        .collect();
-                    Some(format!("{} {}", keyword, defs.join(", ")))
-                }
-            }
+            SelectToken::With(ctes) => render_cte_clause(ctes, cfg, binds),
             SelectToken::OpenParen | SelectToken::CloseParen => unreachable!(),
         };
 

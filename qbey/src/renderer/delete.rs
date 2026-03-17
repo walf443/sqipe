@@ -1,4 +1,4 @@
-use super::{RenderConfig, render_wheres};
+use super::{RenderConfig, render_cte_clause, render_wheres};
 use crate::tree::{DeleteToken, DeleteTree};
 
 /// Render a DELETE statement from a `DeleteTree`.
@@ -8,6 +8,11 @@ pub fn render_delete<V: Clone>(tree: &DeleteTree<V>, cfg: &RenderConfig) -> (Str
 
     for token in &tree.tokens {
         match token {
+            DeleteToken::With(ctes) => {
+                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut binds) {
+                    parts.push(with_sql);
+                }
+            }
             DeleteToken::DeleteFrom { table, alias } => {
                 let s = match alias {
                     Some(a) => format!("DELETE FROM {} {}", (cfg.qi)(table), (cfg.qi)(a)),

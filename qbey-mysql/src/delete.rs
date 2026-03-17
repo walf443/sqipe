@@ -38,6 +38,26 @@ impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for MysqlDeleteQuery<V> {
         self.inner.allow_without_where();
         self
     }
+
+    fn with_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl qbey::IntoSelectTree<V>,
+    ) -> &mut Self {
+        self.inner.with_cte(name, columns, query);
+        self
+    }
+
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: impl qbey::IntoSelectTree<V>,
+    ) -> &mut Self {
+        self.inner.with_recursive_cte(name, columns, query);
+        self
+    }
 }
 
 impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {

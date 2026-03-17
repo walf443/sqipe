@@ -1,4 +1,4 @@
-use super::{RenderConfig, render_wheres};
+use super::{RenderConfig, render_cte_clause, render_wheres};
 use crate::SetClause;
 use crate::tree::{UpdateToken, UpdateTree};
 
@@ -13,6 +13,11 @@ pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (Str
 
     for token in &tree.tokens {
         match token {
+            UpdateToken::With(ctes) => {
+                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut binds) {
+                    parts.push(with_sql);
+                }
+            }
             UpdateToken::Update { table, alias } => {
                 let s = match alias {
                     Some(a) => format!("UPDATE {} {}", (cfg.qi)(table), (cfg.qi)(a)),
