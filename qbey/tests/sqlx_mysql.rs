@@ -971,7 +971,7 @@ async fn test_row_number_over() {
 
     // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
     assert_eq!(rows.len(), 3);
-    assert_eq!(rows[0].get::<i64, _>("rn"), 1);
+    assert_eq!(rows[0].get::<u64, _>("rn"), 1);
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
 }
 
@@ -1035,6 +1035,6 @@ async fn test_named_window() {
 
     // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
     assert_eq!(rows.len(), 3);
-    assert_eq!(rows[0].get::<i64, _>("rn"), 1);
+    assert_eq!(rows[0].get::<u64, _>("rn"), 1);
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
 }
