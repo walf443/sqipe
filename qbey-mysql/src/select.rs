@@ -178,6 +178,21 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         self
     }
 
+    fn with_cte(&mut self, name: &str, columns: &[&str], query: qbey::SelectQuery<V>) -> &mut Self {
+        self.inner.with_cte(name, columns, query);
+        self
+    }
+
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: qbey::SelectQuery<V>,
+    ) -> &mut Self {
+        self.inner.with_recursive_cte(name, columns, query);
+        self
+    }
+
     fn for_with(&mut self, clause: &str) -> &mut Self {
         self.inner.for_with(clause);
         self

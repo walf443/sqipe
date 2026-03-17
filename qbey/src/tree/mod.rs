@@ -70,6 +70,9 @@ pub enum SelectToken<V: Clone = crate::Value> {
     SetOperator(crate::SetOp),
     /// Named WINDOW definitions (e.g., `WINDOW "w" AS (...)`).
     Window(Vec<(String, WindowSpec<V>)>),
+    /// CTE definitions (e.g., `WITH "cte" AS (SELECT ...)`).
+    /// Each entry is `(name, column_aliases, subquery, recursive)`.
+    With(Vec<(String, Vec<String>, Box<SelectTree<V>>, bool)>),
 }
 
 /// Token for INSERT query construction.
@@ -195,6 +198,13 @@ impl<V: Clone> SelectTree<V> {
                             .map(|(name, spec)| (name, spec.map_values(f)))
                             .collect(),
                     ),
+                    SelectToken::With(ctes) => SelectToken::With(
+                        ctes.into_iter()
+                            .map(|(name, cols, sub, recursive)| {
+                                (name, cols, Box::new(sub.map_values(f)), recursive)
+                            })
+                            .collect(),
+                    ),
                 })
                 .collect(),
         }
@@ -212,6 +222,19 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
     pub fn from_query_owned(query: crate::SelectQuery<V>) -> Self {
         if !query.set_operations.is_empty() {
             let mut tokens = Vec::new();
+
+            // Emit WITH clause for compound queries
+            if !query.ctes.is_empty() {
+                let cte_defs: Vec<(String, Vec<String>, Box<SelectTree<V>>, bool)> = query
+                    .ctes
+                    .into_iter()
+                    .map(|cte| {
+                        let sub = SelectTree::from_query_owned(cte.query);
+                        (cte.name, cte.columns, Box::new(sub), cte.recursive)
+                    })
+                    .collect();
+                tokens.push(SelectToken::With(cte_defs));
+            }
 
             for (i, (op, part)) in query.set_operations.into_iter().enumerate() {
                 if i > 0 {
@@ -244,6 +267,19 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
         }
 
         let mut tokens = Vec::new();
+
+        // Emit WITH clause for simple queries
+        if !query.ctes.is_empty() {
+            let cte_defs: Vec<(String, Vec<String>, Box<SelectTree<V>>, bool)> = query
+                .ctes
+                .into_iter()
+                .map(|cte| {
+                    let sub = SelectTree::from_query_owned(cte.query);
+                    (cte.name, cte.columns, Box::new(sub), cte.recursive)
+                })
+                .collect();
+            tokens.push(SelectToken::With(cte_defs));
+        }
 
         tokens.push(SelectToken::Select(SelectClause::Columns {
             items: query.selects,

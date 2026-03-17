@@ -408,6 +408,33 @@ pub(super) fn render_select_tokens<V: Clone>(
                     Some(format!("WINDOW {}", parts.join(", ")))
                 }
             }
+            SelectToken::With(ctes) => {
+                if ctes.is_empty() {
+                    None
+                } else {
+                    let has_recursive = ctes.iter().any(|(_, _, _, r)| *r);
+                    let keyword = if has_recursive {
+                        "WITH RECURSIVE"
+                    } else {
+                        "WITH"
+                    };
+                    let defs: Vec<String> = ctes
+                        .iter()
+                        .map(|(name, cols, sub, _)| {
+                            let col_list = if cols.is_empty() {
+                                String::new()
+                            } else {
+                                let quoted: Vec<String> =
+                                    cols.iter().map(|c| (cfg.qi)(c)).collect();
+                                format!(" ({})", quoted.join(", "))
+                            };
+                            let sub_sql = render_subquery_sql(sub, cfg, binds);
+                            format!("{}{} AS ({})", (cfg.qi)(name), col_list, sub_sql)
+                        })
+                        .collect();
+                    Some(format!("{} {}", keyword, defs.join(", ")))
+                }
+            }
             SelectToken::OpenParen | SelectToken::CloseParen => unreachable!(),
         };
 

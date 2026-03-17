@@ -14,6 +14,21 @@ use crate::tree::SelectTree;
 
 use crate::Dialect;
 
+/// A single CTE (Common Table Expression) definition.
+///
+/// Represents `name [(col1, col2, ...)] AS (SELECT ...)` within a `WITH` clause.
+#[derive(Debug, Clone)]
+pub struct CteDefinition<V: Clone + std::fmt::Debug = Value> {
+    /// CTE name (e.g., `"cte_name"`).
+    pub name: String,
+    /// Optional column aliases (e.g., `(col1, col2)`).
+    pub columns: Vec<String>,
+    /// The subquery that defines this CTE.
+    pub query: SelectQuery<V>,
+    /// Whether this CTE is `RECURSIVE`.
+    pub recursive: bool,
+}
+
 /// SQL set operation type (UNION, INTERSECT, EXCEPT and their ALL variants).
 #[derive(Debug, Clone)]
 pub enum SetOp {
@@ -159,6 +174,55 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// for the common case.
     fn for_with(&mut self, clause: &str) -> &mut Self;
 
+    /// Add a CTE (Common Table Expression) to the `WITH` clause.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+    ///
+    /// let mut cte_q = qbey("departments");
+    /// cte_q.select(&["id", "name"]);
+    /// cte_q.and_where(col("active").eq(true));
+    ///
+    /// let mut q = qbey("dept_cte");
+    /// q.with_cte("dept_cte", &[], cte_q);
+    /// q.select(&["id", "name"]);
+    ///
+    /// let (sql, _binds) = q.to_sql();
+    /// assert_eq!(
+    ///     sql,
+    ///     r#"WITH "dept_cte" AS (SELECT "id", "name" FROM "departments" WHERE "active" = ?) SELECT "id", "name" FROM "dept_cte""#
+    /// );
+    /// ```
+    fn with_cte(&mut self, name: &str, columns: &[&str], query: SelectQuery<V>) -> &mut Self;
+
+    /// Add a recursive CTE to the `WITH RECURSIVE` clause.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+    ///
+    /// let mut base = qbey("employees");
+    /// base.select(&["id", "name", "manager_id"]);
+    /// base.and_where(col("manager_id").eq(0));
+    ///
+    /// let mut recursive = qbey("employees");
+    /// recursive.select(&["id", "name", "manager_id"]);
+    ///
+    /// let cte_query = base.union_all(&recursive);
+    ///
+    /// let mut q = qbey("org_tree");
+    /// q.with_recursive_cte("org_tree", &["id", "name", "manager_id"], cte_query);
+    /// q.select(&["id", "name"]);
+    ///
+    /// let (sql, _binds) = q.to_sql();
+    /// assert!(sql.starts_with(r#"WITH RECURSIVE "org_tree""#));
+    /// ```
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: SelectQuery<V>,
+    ) -> &mut Self;
+
     /// Append `FOR UPDATE` to the generated SQL.
     ///
     /// ```
@@ -230,6 +294,8 @@ pub struct SelectQuery<V: Clone + std::fmt::Debug = Value> {
     /// All parts are stored here; the outer `order_bys`/`limit_val`/`offset_val`
     /// apply to the entire compound result.
     pub(crate) set_operations: Vec<(SetOp, SelectQuery<V>)>,
+    /// CTE definitions for a `WITH` clause.
+    pub(crate) ctes: Vec<CteDefinition<V>>,
 }
 
 /// Create a new query builder for the given table.
@@ -483,6 +549,31 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
+    fn with_cte(&mut self, name: &str, columns: &[&str], query: SelectQuery<V>) -> &mut Self {
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query,
+            recursive: false,
+        });
+        self
+    }
+
+    fn with_recursive_cte(
+        &mut self,
+        name: &str,
+        columns: &[&str],
+        query: SelectQuery<V>,
+    ) -> &mut Self {
+        self.ctes.push(CteDefinition {
+            name: name.to_string(),
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            query,
+            recursive: true,
+        });
+        self
+    }
+
     fn for_with(&mut self, clause: &str) -> &mut Self {
         debug_assert!(!clause.is_empty(), "lock clause must not be empty");
         self.lock_for = Some(clause.to_string());
@@ -509,6 +600,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             offset_val: None,
             lock_for: None,
             set_operations: Vec::new(),
+            ctes: Vec::new(),
         }
     }
 
@@ -547,6 +639,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
             offset_val: None,
             lock_for: None,
             set_operations: Vec::new(),
+            ctes: Vec::new(),
         }
     }
 
