@@ -180,6 +180,18 @@ pub(super) fn render_select_columns(items: &[SelectItem], cfg: &RenderConfig) ->
 // ── Private helpers ──
 
 fn render_col_ref(col: &Col, cfg: &RenderConfig) -> String {
+    if let Some((func, inner_col)) = &col.aggregate {
+        let arg = match (func, inner_col) {
+            (SelectFunc::CountOne, _) => "1".to_string(),
+            (_, Some(inner)) => render_col_ref(inner, cfg),
+            (_, None) => "*".to_string(),
+        };
+        return format!("{}({})", func.as_str(), arg);
+    }
+    debug_assert!(
+        !col.column.is_empty(),
+        "Col has no column name and no aggregate function"
+    );
     match &col.table {
         Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&col.column)),
         None => (cfg.qi)(&col.column),

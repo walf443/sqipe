@@ -20,6 +20,18 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ?");
 ```
 
+The `prelude` module re-exports commonly needed traits so you can import them all at once:
+
+```rust
+# use qbey::{qbey, col, count_all};
+use qbey::prelude::*;
+
+let mut q = qbey("employee");
+q.and_where(col("age").gt(20));
+q.select(&["id", "name"]);
+let (sql, binds) = q.to_sql();
+```
+
 ## Features
 
 - **Standard SQL** — Generate traditional `SELECT ... FROM ... WHERE` SQL from the query builder
@@ -34,7 +46,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ?");
 ### Comparison operators
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));               // tuple shorthand for Eq
 q.and_where(col("age").gt(20));               // age > ?
@@ -51,7 +63,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AN
 ### BETWEEN / NOT BETWEEN
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("age").between(20, 30));
 q.select(&["id", "name"]);
@@ -73,7 +85,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BET
 Rust range types are automatically converted to the appropriate SQL conditions.
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 // Inclusive range: BETWEEN
 let (sql, _) = qbey("t").and_where(col("age").in_range(20..=30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" BETWEEN ? AND ?");
@@ -98,7 +110,7 @@ assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" <= ?");
 ### Dynamic query building
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 
 let name: Option<&str> = Some("Alice");
@@ -118,7 +130,7 @@ let (sql, binds) = q.to_sql();
 ### or_where
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 // Simple OR
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
@@ -130,7 +142,7 @@ assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"name\" = ? OR \"role\" = ?")
 ### Grouping conditions with any / all
 
 ```rust
-# use qbey::{qbey, col, any, all, SelectQueryBuilder};
+# use qbey::{qbey, col, any, all, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
 q.and_where(any(col("role").eq("admin"), col("role").eq("manager")));
@@ -152,7 +164,7 @@ assert_eq!(sql, "SELECT * FROM \"employee\" WHERE (\"role\" = ? AND \"dept\" = ?
 ### Negating conditions with not
 
 ```rust
-# use qbey::{qbey, col, not, any, SelectQueryBuilder};
+# use qbey::{qbey, col, not, any, ConditionExpr, SelectQueryBuilder};
 // Function style
 let mut q = qbey("employee");
 q.and_where(("name", "Alice"));
@@ -202,32 +214,37 @@ assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"tota
 
 ### HAVING
 
+Aggregate expressions can be used directly in HAVING clauses, which is required for PostgreSQL compatibility (PostgreSQL does not allow SELECT aliases in HAVING):
+
 ```rust
-# use qbey::{qbey, col, count_all, SelectQueryBuilder};
+# use qbey::{qbey, col, count_all, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.select(&["dept"]);
-q.add_select(count_all().as_("cnt"));
+let cnt = count_all().as_("cnt");
+q.add_select(cnt.clone());
 q.group_by(&["dept"]);
-q.having(col("cnt").gt(5));
+q.having(cnt.gt(5));
 
 let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" GROUP BY \"dept\" HAVING \"cnt\" > ?");
+assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" GROUP BY \"dept\" HAVING COUNT(*) > ?");
 ```
 
 For multiple conditions, use `and_having` / `or_having`:
 
 ```rust
-# use qbey::{qbey, col, count_all, SelectQueryBuilder};
+# use qbey::{qbey, col, count_all, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.select(&["dept"]);
-q.add_select(count_all().as_("cnt"));
-q.add_select(col("salary").sum().as_("total"));
+let cnt = count_all().as_("cnt");
+let total = col("salary").sum().as_("total");
+q.add_select(cnt.clone());
+q.add_select(total.clone());
 q.group_by(&["dept"]);
-q.and_having(col("cnt").gt(5));
-q.and_having(col("total").gt(100000));
+q.and_having(cnt.gt(5));
+q.and_having(total.gt(100000));
 
 let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total\" FROM \"employee\" GROUP BY \"dept\" HAVING \"cnt\" > ? AND \"total\" > ?");
+assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total\" FROM \"employee\" GROUP BY \"dept\" HAVING COUNT(*) > ? AND SUM(\"salary\") > ?");
 ```
 
 ### Order By
@@ -288,7 +305,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
 ### Method chaining
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let (sql, binds) = qbey("employee")
     .and_where(("name", "Alice"))
     .and_where(col("age").gt(20))
@@ -322,7 +339,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UN
 ### IN clause
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("users");
 q.and_where(col("status").included(&["active", "pending"]));
 q.select(&["id", "name"]);
@@ -336,7 +353,7 @@ Empty lists are safely handled as `1 = 0`.
 ### NOT IN clause
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("users");
 q.and_where(col("status").not_included(&["inactive", "banned"]));
 q.select(&["id", "name"]);
@@ -350,7 +367,7 @@ Empty lists are safely handled as `1 = 1`.
 Subqueries are also supported:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut sub = qbey("orders");
 sub.select(&["user_id"]);
 sub.and_where(col("status").eq("cancelled"));
@@ -368,7 +385,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SEL
 `LikeExpression` provides safe pattern construction with automatic escaping of `%` and `_` in user input.
 
 ```rust
-# use qbey::{qbey, col, LikeExpression, SelectQueryBuilder};
+# use qbey::{qbey, col, LikeExpression, ConditionExpr, SelectQueryBuilder};
 // contains: %...%
 let (sql, _) = qbey("users")
     .and_where(col("name").like(LikeExpression::contains("Ali")))
@@ -482,7 +499,7 @@ assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nicknam
 `Query::into_update()` converts a SELECT query builder into an UPDATE statement builder.
 
 ```rust
-# use qbey::{qbey, col, UpdateQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 // Basic UPDATE
 let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
@@ -495,7 +512,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to UPDATE:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let mut u = q.into_update();
@@ -521,7 +538,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
 Dialect support works via `to_sql_with`:
 
 ```rust
-# use qbey::{qbey, col, Dialect, UpdateQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, Dialect, UpdateQueryBuilder};
 # struct PgDialect;
 # impl Dialect for PgDialect {
 #     fn placeholder(&self, index: usize) -> String { format!("${}", index) }
@@ -537,7 +554,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSql`:
 
 ```rust
-# use qbey::{qbey, col, RawSql, UpdateQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
 u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 u.and_where(col("id").eq(1));
@@ -551,7 +568,7 @@ assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE
 `Query::into_delete()` converts a SELECT query builder into a DELETE statement builder.
 
 ```rust
-# use qbey::{qbey, col, DeleteQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder};
 // Basic DELETE
 let mut d = qbey("employee").into_delete();
 d.and_where(col("id").eq(1));
@@ -563,7 +580,7 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 WHERE conditions can be built first, then converted to DELETE:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let d = q.into_delete();
@@ -605,7 +622,7 @@ assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (
 INSERT ... SELECT is also supported via `from_select()`:
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder, InsertQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, InsertQueryBuilder};
 let mut sub = qbey("old_employee");
 sub.select(&["name", "age"]);
 sub.and_where(col("active").eq(true));

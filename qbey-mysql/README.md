@@ -134,7 +134,7 @@ assert_eq!(
 
 ```rust
 use qbey_mysql::qbey;
-use qbey::UpdateQueryBuilder;
+use qbey::{ConditionExpr, UpdateQueryBuilder};
 use qbey::col;
 
 let mut u = qbey("users").into_update();
@@ -164,7 +164,7 @@ MySQL supports `ORDER BY` and `LIMIT` in UPDATE statements (not available in sta
 
 ```rust
 use qbey_mysql::qbey;
-use qbey::UpdateQueryBuilder;
+use qbey::{ConditionExpr, UpdateQueryBuilder};
 use qbey::col;
 
 let mut u = qbey("users").into_update();
@@ -181,7 +181,7 @@ assert_eq!(sql, "UPDATE `users` SET `status` = ? WHERE `dept` = ? ORDER BY `crea
 
 ```rust
 use qbey_mysql::qbey;
-use qbey::DeleteQueryBuilder;
+use qbey::{ConditionExpr, DeleteQueryBuilder};
 use qbey::col;
 
 let mut d = qbey("users").into_delete();
@@ -208,7 +208,7 @@ MySQL supports `ORDER BY` and `LIMIT` in DELETE statements (not available in sta
 
 ```rust
 use qbey_mysql::qbey;
-use qbey::DeleteQueryBuilder;
+use qbey::{ConditionExpr, DeleteQueryBuilder};
 use qbey::col;
 
 let mut d = qbey("users").into_delete();

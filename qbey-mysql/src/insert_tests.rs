@@ -1,5 +1,5 @@
 use crate::qbey;
-use qbey::{InsertQueryBuilder, SelectQueryBuilder, col};
+use qbey::{ConditionExpr, InsertQueryBuilder, SelectQueryBuilder, col};
 
 #[test]
 fn test_insert_single_row() {

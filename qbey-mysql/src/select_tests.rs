@@ -1,6 +1,6 @@
 use crate::IndexHintScope;
 use crate::qbey;
-use qbey::{SelectQueryBuilder, col, table};
+use qbey::{ConditionExpr, SelectQueryBuilder, col, table};
 
 #[test]
 fn test_basic_to_sql() {

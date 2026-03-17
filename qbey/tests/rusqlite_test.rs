@@ -1,8 +1,8 @@
 #![cfg(feature = "test-rusqlite")]
 
 use qbey::{
-    DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder, ToInsertRow,
-    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
+    ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
+    ToInsertRow, UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
 };
 use rusqlite::{Connection, params_from_iter};
 

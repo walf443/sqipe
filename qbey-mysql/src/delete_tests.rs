@@ -1,5 +1,5 @@
 use crate::qbey;
-use qbey::{DeleteQueryBuilder, SelectQueryBuilder, col};
+use qbey::{ConditionExpr, DeleteQueryBuilder, SelectQueryBuilder, col};
 
 #[test]
 fn test_delete_basic() {

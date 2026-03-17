@@ -205,6 +205,7 @@ impl<V: Clone, T: Into<V>> IntoWhereClause<V> for (&str, T) {
                 table: None,
                 column: self.0.to_string(),
                 alias: None,
+                aggregate: None,
             },
             op: Op::Eq,
             val: self.1.into(),

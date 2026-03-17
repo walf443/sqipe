@@ -1,5 +1,5 @@
 use crate::qbey;
-use qbey::{SelectQueryBuilder, UpdateQueryBuilder, col};
+use qbey::{ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder, col};
 
 #[test]
 fn test_update_basic() {

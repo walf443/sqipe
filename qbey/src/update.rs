@@ -28,7 +28,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
     /// so never pass external (user-supplied) input as a column name.
     ///
     /// ```
-    /// use qbey::{qbey, col, UpdateQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
     ///
     /// let mut u = qbey("employee").into_update();
     /// u.set(col("name"), "Alice");
@@ -50,7 +50,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
     /// doing so opens the door to SQL injection.
     ///
     /// ```
-    /// use qbey::{qbey, col, RawSql, UpdateQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, RawSql, UpdateQueryBuilder};
     ///
     /// let mut u = qbey("employee").into_update();
     /// u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
@@ -82,7 +82,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
 /// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
 ///
 /// ```
-/// use qbey::{qbey, col, UpdateQueryBuilder};
+/// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 ///
 /// let mut u = qbey("employee").into_update();
 /// u.set(col("name"), "Alice");

@@ -1,5 +1,5 @@
 use super::common::{MysqlValue, bind_params, setup_pool};
-use qbey::{DeleteQueryBuilder, SelectQueryBuilder, col};
+use qbey::{ConditionExpr, DeleteQueryBuilder, SelectQueryBuilder, col};
 use qbey_mysql::qbey_with;
 use sqlx::Row;
 

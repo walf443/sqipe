@@ -1,8 +1,8 @@
 #![cfg(feature = "test-sqlx")]
 
 use qbey::{
-    DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder, UpdateQueryBuilder,
-    col, count_all, not, qbey_from_subquery_with, qbey_with, table,
+    ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
+    UpdateQueryBuilder, col, count_all, not, qbey_from_subquery_with, qbey_with, table,
 };
 use sqlx::{Row, SqlitePool};
 

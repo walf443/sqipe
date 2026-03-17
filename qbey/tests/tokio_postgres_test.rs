@@ -1,8 +1,8 @@
 #![cfg(feature = "test-tokio-postgres")]
 
 use qbey::{
-    DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder, UpdateQueryBuilder,
-    col, count_all, qbey_from_subquery_with, qbey_with, table,
+    ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
+    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, table,
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
@@ -17,6 +17,7 @@ use qbey::PgDialect as PostgresDialect;
 enum PgValue {
     Text(String),
     Int(i32),
+    BigInt(i64),
     Float(f64),
     Bool(bool),
 }
@@ -30,6 +31,12 @@ impl From<&str> for PgValue {
 impl From<i32> for PgValue {
     fn from(n: i32) -> Self {
         PgValue::Int(n)
+    }
+}
+
+impl From<i64> for PgValue {
+    fn from(n: i64) -> Self {
+        PgValue::BigInt(n)
     }
 }
 
@@ -58,6 +65,7 @@ fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
             match v {
                 PgValue::Text(s) => Box::new(s.clone()),
                 PgValue::Int(n) => Box::new(*n),
+                PgValue::BigInt(n) => Box::new(*n),
                 PgValue::Float(f) => Box::new(*f),
                 PgValue::Bool(b) => Box::new(*b),
             }
@@ -826,11 +834,43 @@ async fn test_insert_from_select() {
 
 // --- HAVING ---
 
-// TODO: PostgreSQL does not allow SELECT aliases in HAVING.
-// Once ExprCondition (raw SQL in WHERE/HAVING) is supported,
-// these tests should use HAVING COUNT(*) > $1 directly.
 #[tokio::test]
-async fn test_having() {}
+async fn test_having() {
+    let client = setup_client().await;
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.select(&["age"]);
+    q.add_select(count_all().as_("cnt"));
+    q.group_by(&["age"]);
+    // Data: Alice(30), Bob(25), Charlie(35) — all ages are unique, each has count=1
+    q.having(count_all().gte(1_i64));
+
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    // All 3 age groups have count >= 1
+    assert_eq!(rows.len(), 3);
+}
 
 #[tokio::test]
-async fn test_having_with_where() {}
+async fn test_having_with_where() {
+    let client = setup_client().await;
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.select(&["age"]);
+    q.add_select(count_all().as_("cnt"));
+    // Data: Alice(30), Bob(25), Charlie(35)
+    q.and_where(col("age").gte(30_i32));
+    q.group_by(&["age"]);
+    q.and_having(count_all().gte(1_i64));
+
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    // age >= 30: Alice(30), Charlie(35) → 2 age groups, each with count=1
+    assert_eq!(rows.len(), 2);
+}

@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use qbey::{
-    InsertQueryBuilder, SelectQueryBuilder, col, count_all, qbey,
+    ConditionExpr, InsertQueryBuilder, SelectQueryBuilder, col, count_all, qbey,
     renderer::{RenderConfig, Renderer, standard::StandardSqlRenderer},
     table,
 };

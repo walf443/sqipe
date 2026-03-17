@@ -160,7 +160,7 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Append `FOR UPDATE` to the generated SQL.
     ///
     /// ```
-    /// use qbey::{qbey, col, SelectQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
     ///
     /// let mut q = qbey("users");
     /// q.select(&["id", "name"]);
@@ -180,7 +180,7 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// Append `FOR UPDATE` with an option (e.g., `NOWAIT`, `SKIP LOCKED`).
     ///
     /// ```
-    /// use qbey::{qbey, col, SelectQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
     ///
     /// let mut q = qbey("users");
     /// q.select(&["id", "name"]);
@@ -499,7 +499,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Create a query that selects from a subquery instead of a table.
     ///
     /// ```
-    /// use qbey::{qbey, qbey_from_subquery, col, SelectQueryBuilder};
+    /// use qbey::{qbey, qbey_from_subquery, col, ConditionExpr, SelectQueryBuilder};
     ///
     /// let mut sub = qbey("orders");
     /// sub.select(&["user_id", "amount"]);
@@ -692,7 +692,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     ///
     /// ```
-    /// use qbey::{qbey, col, SelectQueryBuilder, UpdateQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder};
     ///
     /// let mut q = qbey("employee");
     /// q.and_where(col("id").eq(1));
@@ -764,7 +764,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     ///
     /// ```
-    /// use qbey::{qbey, col, SelectQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
     ///
     /// let mut q = qbey("employee");
     /// q.and_where(col("id").eq(1));
