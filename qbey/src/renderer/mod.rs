@@ -1,6 +1,6 @@
 use crate::{
     Col, JoinClause, JoinCondition, JoinType, OrderByClause, SelectFunc, SelectItem, SortDir,
-    WhereClause, WhereEntry,
+    WhereClause, WhereEntry, WindowSpec,
 };
 
 pub mod delete;
@@ -246,7 +246,62 @@ fn render_select_item<V: Clone>(
                 None => base,
             }
         }
+        SelectItem::WindowFunction {
+            func,
+            col,
+            window,
+            alias,
+        } => {
+            let arg = match col {
+                Some(col) => render_col_ref(col, cfg),
+                None => String::new(),
+            };
+            let func_call = format!("{}({})", func.as_str(), arg);
+            let over_clause = render_window_spec(window, cfg, binds);
+            let base = format!("{} OVER ({})", func_call, over_clause);
+            match alias {
+                Some(alias) => format!("{} AS {}", base, (cfg.qi)(alias)),
+                None => base,
+            }
+        }
     }
+}
+
+fn render_window_spec<V: Clone>(
+    spec: &WindowSpec<V>,
+    cfg: &RenderConfig,
+    binds: &mut Vec<V>,
+) -> String {
+    let mut parts = Vec::new();
+
+    if !spec.partition_by.is_empty() {
+        let cols: Vec<String> = spec
+            .partition_by
+            .iter()
+            .map(|c| render_col_ref(c, cfg))
+            .collect();
+        parts.push(format!("PARTITION BY {}", cols.join(", ")));
+    }
+
+    if !spec.order_by.is_empty() {
+        let clauses: Vec<String> = spec
+            .order_by
+            .iter()
+            .map(|o| match o {
+                OrderByClause::Col { col, dir } => {
+                    let dir_str = match dir {
+                        SortDir::Asc => "ASC",
+                        SortDir::Desc => "DESC",
+                    };
+                    format!("{} {}", render_col_ref(col, cfg), dir_str)
+                }
+                OrderByClause::Expr(raw) => raw.render(cfg, binds),
+            })
+            .collect();
+        parts.push(format!("ORDER BY {}", clauses.join(", ")));
+    }
+
+    parts.join(" ")
 }
 
 /// Render the SELECT clause as a string.

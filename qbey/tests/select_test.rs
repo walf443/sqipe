@@ -979,3 +979,4 @@ fn test_order_by_expr_with_binds_and_where() {
         vec![Value::Bool(true), Value::String("x".to_string())]
     );
 }
+
