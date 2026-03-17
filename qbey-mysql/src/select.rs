@@ -50,6 +50,10 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
     }
 
     fn distinct(&mut self) -> &mut Self {
+        debug_assert!(
+            self.set_operations.is_empty(),
+            "distinct() has no effect on compound queries (UNION/INTERSECT/EXCEPT); call it on individual sub-queries instead"
+        );
         self.inner.distinct();
         self
     }
