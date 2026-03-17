@@ -69,11 +69,6 @@ impl<V: Clone> RawSql<V> {
         &self.sql
     }
 
-    /// Returns true if this expression has bind values.
-    pub fn has_binds(&self) -> bool {
-        !self.binds.is_empty()
-    }
-
     /// Render the SQL expression, replacing `{}` placeholders with
     /// dialect-specific bind markers and pushing values into `binds`.
     ///
