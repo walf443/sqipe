@@ -836,7 +836,7 @@ async fn test_having() {
     q.group_by(&["age"]);
     q.having(count_all().gt(1_i32));
 
-    let (sql, binds) = q.to_sql();
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
     let params = to_pg_params(&binds);
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
 
@@ -858,7 +858,7 @@ async fn test_having_with_where() {
     q.group_by(&["age"]);
     q.and_having(count_all().gte(1_i32));
 
-    let (sql, binds) = q.to_sql();
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
     let params = to_pg_params(&binds);
     let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
 
