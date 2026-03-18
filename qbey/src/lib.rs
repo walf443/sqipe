@@ -86,5 +86,6 @@ pub use raw_sql::RawSql;
 pub use update::{SetClause, UpdateQuery, UpdateQueryBuilder};
 pub use value::{Op, Value};
 pub use where_clause::{
-    IntoIncluded, IntoRangeClause, IntoWhereClause, WhereClause, WhereEntry, all, any, not,
+    IntoIncluded, IntoRangeClause, IntoWhereClause, WhereClause, WhereEntry, all, any, exists, not,
+    not_exists,
 };

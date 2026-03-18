@@ -539,6 +539,14 @@ fn render_where_clause<V: Clone>(
             let sub_sql = render_subquery_sql(sub, cfg, binds);
             format!("{} NOT IN ({})", render_col_ref(col, cfg), sub_sql)
         }
+        WhereClause::Exists { sub } => {
+            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            format!("EXISTS ({})", sub_sql)
+        }
+        WhereClause::NotExists { sub } => {
+            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            format!("NOT EXISTS ({})", sub_sql)
+        }
         WhereClause::Like { col, expr, val } | WhereClause::NotLike { col, expr, val } => {
             binds.push(val.clone());
             let placeholder = (cfg.ph)(binds.len());

@@ -42,6 +42,12 @@ pub enum WhereClause<V: Clone = Value> {
         col: Col,
         sub: Box<crate::tree::SelectTree<V>>,
     },
+    Exists {
+        sub: Box<crate::tree::SelectTree<V>>,
+    },
+    NotExists {
+        sub: Box<crate::tree::SelectTree<V>>,
+    },
     Like {
         col: Col,
         /// Preserved for ESCAPE clause rendering.
@@ -102,6 +108,10 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .field("col", col)
                 .field("sub", sub)
                 .finish(),
+            WhereClause::Exists { sub } => f.debug_struct("Exists").field("sub", sub).finish(),
+            WhereClause::NotExists { sub } => {
+                f.debug_struct("NotExists").field("sub", sub).finish()
+            }
             WhereClause::Like { col, expr, val } => f
                 .debug_struct("Like")
                 .field("col", col)
@@ -162,6 +172,12 @@ impl<V: Clone> WhereClause<V> {
             },
             WhereClause::NotInSubQuery { col, sub } => WhereClause::NotInSubQuery {
                 col,
+                sub: Box::new(sub.map_values(f)),
+            },
+            WhereClause::Exists { sub } => WhereClause::Exists {
+                sub: Box::new(sub.map_values(f)),
+            },
+            WhereClause::NotExists { sub } => WhereClause::NotExists {
                 sub: Box::new(sub.map_values(f)),
             },
             WhereClause::Like { col, expr, val } => WhereClause::Like {
@@ -330,6 +346,52 @@ pub fn all<V: Clone>(a: WhereClause<V>, b: WhereClause<V>) -> WhereClause<V> {
 /// Negate a condition: `not(a)` => `NOT (a)`.
 pub fn not<V: Clone>(clause: WhereClause<V>) -> WhereClause<V> {
     WhereClause::Not(Box::new(clause))
+}
+
+/// Create an `EXISTS (SELECT ...)` condition.
+///
+/// ```
+/// # use qbey::{qbey, exists, SelectQueryBuilder};
+/// let mut sub = qbey("orders");
+/// sub.select(&["id"]);
+/// sub.and_where(("user_id", 1));
+///
+/// let mut q = qbey("users");
+/// q.select(&["name"]);
+/// q.and_where(exists(sub));
+///
+/// let (sql, binds) = q.to_sql();
+/// assert_eq!(sql, r#"SELECT "name" FROM "users" WHERE EXISTS (SELECT "id" FROM "orders" WHERE "user_id" = ?)"#);
+/// ```
+pub fn exists<V: Clone + std::fmt::Debug>(
+    sub: impl crate::query::IntoSelectTree<V>,
+) -> WhereClause<V> {
+    WhereClause::Exists {
+        sub: Box::new(sub.into_select_tree()),
+    }
+}
+
+/// Create a `NOT EXISTS (SELECT ...)` condition.
+///
+/// ```
+/// # use qbey::{qbey, not_exists, SelectQueryBuilder};
+/// let mut sub = qbey("orders");
+/// sub.select(&["id"]);
+/// sub.and_where(("user_id", 1));
+///
+/// let mut q = qbey("users");
+/// q.select(&["name"]);
+/// q.and_where(not_exists(sub));
+///
+/// let (sql, binds) = q.to_sql();
+/// assert_eq!(sql, r#"SELECT "name" FROM "users" WHERE NOT EXISTS (SELECT "id" FROM "orders" WHERE "user_id" = ?)"#);
+/// ```
+pub fn not_exists<V: Clone + std::fmt::Debug>(
+    sub: impl crate::query::IntoSelectTree<V>,
+) -> WhereClause<V> {
+    WhereClause::NotExists {
+        sub: Box::new(sub.into_select_tree()),
+    }
 }
 
 #[derive(Debug, Clone)]

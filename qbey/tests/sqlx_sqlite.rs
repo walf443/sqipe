@@ -2,8 +2,8 @@
 
 use qbey::{
     ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    UpdateQueryBuilder, col, count_all, not, qbey_from_subquery_with, qbey_with, row_number, table,
-    window,
+    UpdateQueryBuilder, col, count_all, exists, not, not_exists, qbey_from_subquery_with,
+    qbey_with, row_number, table, window,
 };
 use sqlx::{Row, SqlitePool};
 
@@ -327,6 +327,77 @@ async fn test_not_in_subquery() {
     // Charlie (id=3) is not in shipped orders (user_id 1,2)
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_exists_subquery() {
+    let pool = setup_db().await;
+
+    // All users when shipped orders exist (non-correlated EXISTS)
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // EXISTS is true (shipped orders exist), so all users are returned
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_not_exists_subquery() {
+    let pool = setup_db().await;
+
+    // No users when shipped orders exist (non-correlated NOT EXISTS)
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(not_exists(sub));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // NOT EXISTS is false (shipped orders exist), so no users
+    assert_eq!(rows.len(), 0);
+}
+
+#[tokio::test]
+async fn test_exists_with_outer_binds() {
+    let pool = setup_db().await;
+
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(col("age").gt(26));
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    // EXISTS is true, age > 26 filters to Alice (30) and Charlie (35)
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
 }
 
 #[tokio::test]

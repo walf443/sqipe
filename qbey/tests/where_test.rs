@@ -199,6 +199,78 @@ fn test_not_in_subquery() {
 }
 
 #[test]
+fn test_exists_subquery() {
+    let mut sub = qbey("orders");
+    sub.select(&["id"]);
+    sub.and_where(("user_id", 1));
+
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(exists(sub));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "name" FROM "users" WHERE EXISTS (SELECT "id" FROM "orders" WHERE "user_id" = ?)"#
+    );
+    assert_eq!(binds, vec![Value::Int(1)]);
+}
+
+#[test]
+fn test_not_exists_subquery() {
+    let mut sub = qbey("orders");
+    sub.select(&["id"]);
+    sub.and_where(("user_id", 1));
+
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(not_exists(sub));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "name" FROM "users" WHERE NOT EXISTS (SELECT "id" FROM "orders" WHERE "user_id" = ?)"#
+    );
+    assert_eq!(binds, vec![Value::Int(1)]);
+}
+
+#[test]
+fn test_exists_with_other_conditions() {
+    let mut sub = qbey("orders");
+    sub.select(&["id"]);
+    sub.and_where(("status", "shipped"));
+
+    let mut q = qbey("users");
+    q.select(&["id", "name"]);
+    q.and_where(col("age").gt(25));
+    q.and_where(exists(sub));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" WHERE "age" > ? AND EXISTS (SELECT "id" FROM "orders" WHERE "status" = ?)"#
+    );
+}
+
+#[test]
+fn test_exists_with_or_where() {
+    let mut sub = qbey("orders");
+    sub.select(&["id"]);
+    sub.and_where(("status", "shipped"));
+
+    let mut q = qbey("users");
+    q.select(&["id", "name"]);
+    q.and_where(("name", "Alice"));
+    q.or_where(exists(sub));
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "id", "name" FROM "users" WHERE "name" = ? OR EXISTS (SELECT "id" FROM "orders" WHERE "status" = ?)"#
+    );
+}
+
+#[test]
 fn test_between() {
     let mut q = qbey("employee");
     q.and_where(col("age").between(20, 30));
