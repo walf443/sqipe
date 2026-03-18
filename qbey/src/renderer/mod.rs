@@ -137,7 +137,11 @@ pub(super) fn render_join_condition<V: Clone>(
 ) -> String {
     match cond {
         JoinCondition::ColEq { left, right } => {
-            format!("{} = {}", render_col_ref(left, cfg), render_col_ref(right, cfg))
+            format!(
+                "{} = {}",
+                render_col_ref(left, cfg),
+                render_col_ref(right, cfg)
+            )
         }
         JoinCondition::And(conditions) => {
             let parts: Vec<String> = conditions
