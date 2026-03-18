@@ -42,6 +42,12 @@ pub enum WhereClause<V: Clone = Value> {
         col: Col,
         sub: Box<crate::tree::SelectTree<V>>,
     },
+    Exists {
+        sub: Box<crate::tree::SelectTree<V>>,
+    },
+    NotExists {
+        sub: Box<crate::tree::SelectTree<V>>,
+    },
     Like {
         col: Col,
         /// Preserved for ESCAPE clause rendering.
@@ -55,12 +61,6 @@ pub enum WhereClause<V: Clone = Value> {
         expr: LikeExpression,
         /// Bind parameter value (always `expr.to_pattern()` at construction).
         val: V,
-    },
-    Exists {
-        sub: Box<crate::tree::SelectTree<V>>,
-    },
-    NotExists {
-        sub: Box<crate::tree::SelectTree<V>>,
     },
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
@@ -108,6 +108,10 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .field("col", col)
                 .field("sub", sub)
                 .finish(),
+            WhereClause::Exists { sub } => f.debug_struct("Exists").field("sub", sub).finish(),
+            WhereClause::NotExists { sub } => {
+                f.debug_struct("NotExists").field("sub", sub).finish()
+            }
             WhereClause::Like { col, expr, val } => f
                 .debug_struct("Like")
                 .field("col", col)
@@ -120,10 +124,6 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
                 .field("expr", expr)
                 .field("val", val)
                 .finish(),
-            WhereClause::Exists { sub } => f.debug_struct("Exists").field("sub", sub).finish(),
-            WhereClause::NotExists { sub } => {
-                f.debug_struct("NotExists").field("sub", sub).finish()
-            }
             WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
             WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
             WhereClause::Not(clause) => f.debug_tuple("Not").field(clause).finish(),
@@ -174,6 +174,12 @@ impl<V: Clone> WhereClause<V> {
                 col,
                 sub: Box::new(sub.map_values(f)),
             },
+            WhereClause::Exists { sub } => WhereClause::Exists {
+                sub: Box::new(sub.map_values(f)),
+            },
+            WhereClause::NotExists { sub } => WhereClause::NotExists {
+                sub: Box::new(sub.map_values(f)),
+            },
             WhereClause::Like { col, expr, val } => WhereClause::Like {
                 col,
                 expr,
@@ -183,12 +189,6 @@ impl<V: Clone> WhereClause<V> {
                 col,
                 expr,
                 val: f(val),
-            },
-            WhereClause::Exists { sub } => WhereClause::Exists {
-                sub: Box::new(sub.map_values(f)),
-            },
-            WhereClause::NotExists { sub } => WhereClause::NotExists {
-                sub: Box::new(sub.map_values(f)),
             },
             WhereClause::Any(clauses) => {
                 WhereClause::Any(clauses.into_iter().map(|c| c.map_values(f)).collect())
