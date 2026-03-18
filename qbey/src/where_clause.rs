@@ -227,7 +227,7 @@ impl<V: Clone, T: Clone + Into<V>> IntoWhereClause<V> for WhereClause<T> {
     }
 }
 
-/// Convert a `ColCondition` into a `WhereClause::ColComparison`.
+/// Convert a column-to-column comparison into a WHERE condition.
 impl<V: Clone> IntoWhereClause<V> for crate::column::ColCondition {
     fn into_where_clause(self) -> WhereClause<V> {
         WhereClause::ColComparison {

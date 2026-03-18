@@ -456,6 +456,9 @@ impl Col {
 }
 
 /// A column-to-column comparison, usable in both JOIN ON and WHERE clauses.
+///
+/// Created by [`Col::eq_col`]. Can be passed directly to `and_where` / `or_where`
+/// (WHERE clause) or to `join` / `left_join` (JOIN ON clause).
 #[derive(Debug, Clone)]
 pub struct ColCondition {
     pub(crate) left: Col,
