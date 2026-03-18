@@ -77,7 +77,7 @@ pub use column::{
 };
 pub use delete::{DeleteQuery, DeleteQueryBuilder};
 pub use insert::{InsertQuery, InsertQueryBuilder, ToInsertRow};
-pub use join::{JoinClause, JoinCol, JoinCondition, JoinType};
+pub use join::{JoinClause, JoinCondition, JoinType};
 pub use like::LikeExpression;
 pub use query::{
     CteDefinition, IntoFromTable, IntoJoinTable, IntoSelectTree, SelectQuery, SelectQueryBuilder,

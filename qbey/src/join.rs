@@ -2,38 +2,12 @@ use crate::column::{Col, ColCondition};
 use crate::raw_sql::RawSql;
 use crate::value::Value;
 
-/// A column reference in a JOIN condition, optionally qualified with a table name.
-/// When `table` is `None`, the table name is inferred from the `join()` / `left_join()` call.
-#[derive(Debug, Clone)]
-pub struct JoinCol {
-    pub table: Option<String>,
-    pub col: String,
-}
-
-impl From<Col> for JoinCol {
-    fn from(c: Col) -> Self {
-        JoinCol {
-            table: c.table,
-            col: c.column,
-        }
-    }
-}
-
-impl From<&str> for JoinCol {
-    fn from(col: &str) -> Self {
-        JoinCol {
-            table: None,
-            col: col.to_string(),
-        }
-    }
-}
-
 /// A JOIN ON condition.
 #[derive(Debug, Clone)]
 pub enum JoinCondition<V: Clone = Value> {
     ColEq {
         left: Col,
-        right: JoinCol,
+        right: Col,
     },
     And(Vec<JoinCondition<V>>),
     Using(Vec<String>),
@@ -85,7 +59,7 @@ impl<V: Clone> From<ColCondition> for JoinCondition<V> {
         );
         JoinCondition::ColEq {
             left: cond.left,
-            right: JoinCol::from(cond.right),
+            right: cond.right,
         }
     }
 }

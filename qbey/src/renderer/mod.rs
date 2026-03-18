@@ -130,13 +130,6 @@ pub(super) fn render_from<V: Clone>(
     s
 }
 
-fn render_join_col(col: &crate::JoinCol, cfg: &RenderConfig) -> String {
-    match &col.table {
-        Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&col.col)),
-        None => (cfg.qi)(&col.col),
-    }
-}
-
 pub(super) fn render_join_condition<V: Clone>(
     cond: &JoinCondition<V>,
     cfg: &RenderConfig,
@@ -144,11 +137,11 @@ pub(super) fn render_join_condition<V: Clone>(
 ) -> String {
     match cond {
         JoinCondition::ColEq { left, right } => {
-            let left_str = match &left.table {
-                Some(table) => format!("{}.{}", (cfg.qi)(table), (cfg.qi)(&left.column)),
-                None => (cfg.qi)(&left.column),
-            };
-            format!("{} = {}", left_str, render_join_col(right, cfg))
+            format!(
+                "{} = {}",
+                render_col_ref(left, cfg),
+                render_col_ref(right, cfg)
+            )
         }
         JoinCondition::And(conditions) => {
             let parts: Vec<String> = conditions

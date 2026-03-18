@@ -72,7 +72,7 @@ pub enum SelectToken<V: Clone = crate::Value> {
     Select(SelectClause<V>),
     From(FromClause<V>),
     Join {
-        clause: JoinClause<V>,
+        clause: Box<JoinClause<V>>,
         subquery: Option<Box<SelectTree<V>>>,
     },
     Where(Vec<WhereEntry<V>>),
@@ -198,7 +198,7 @@ impl<V: Clone> SelectTree<V> {
                     }),
                     SelectToken::From(from) => SelectToken::From(from.map_values(f)),
                     SelectToken::Join { clause, subquery } => SelectToken::Join {
-                        clause: clause.map_values(f),
+                        clause: Box::new(clause.map_values(f)),
                         subquery: subquery.map(|sq| Box::new(sq.map_values(f))),
                     },
                     SelectToken::Where(wheres) => {
@@ -317,7 +317,7 @@ impl<V: Clone + std::fmt::Debug> SelectTree<V> {
 
         for (i, join) in query.joins.into_iter().enumerate() {
             tokens.push(SelectToken::Join {
-                clause: join,
+                clause: Box::new(join),
                 subquery: join_subqueries[i].take(),
             });
         }
