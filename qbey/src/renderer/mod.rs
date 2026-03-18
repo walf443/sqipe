@@ -597,6 +597,14 @@ fn render_where_clause<V: Clone>(
             let inner = render_where_clause(clause, false, cfg, binds);
             format!("NOT ({})", inner)
         }
+        WhereClause::ColCondition { left, op, right } => {
+            format!(
+                "{} {} {}",
+                render_col_ref(left, cfg),
+                op.as_str(),
+                render_col_ref(right, cfg)
+            )
+        }
     }
 }
 

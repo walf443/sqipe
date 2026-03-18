@@ -65,6 +65,11 @@ pub enum WhereClause<V: Clone = Value> {
     Any(Vec<WhereClause<V>>),
     All(Vec<WhereClause<V>>),
     Not(Box<WhereClause<V>>),
+    ColCondition {
+        left: Col,
+        op: Op,
+        right: Col,
+    },
 }
 
 impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
@@ -127,6 +132,12 @@ impl<V: Clone + std::fmt::Debug> std::fmt::Debug for WhereClause<V> {
             WhereClause::Any(clauses) => f.debug_tuple("Any").field(clauses).finish(),
             WhereClause::All(clauses) => f.debug_tuple("All").field(clauses).finish(),
             WhereClause::Not(clause) => f.debug_tuple("Not").field(clause).finish(),
+            WhereClause::ColCondition { left, op, right } => f
+                .debug_struct("ColCondition")
+                .field("left", left)
+                .field("op", op)
+                .field("right", right)
+                .finish(),
         }
     }
 }
@@ -197,6 +208,9 @@ impl<V: Clone> WhereClause<V> {
                 WhereClause::All(clauses.into_iter().map(|c| c.map_values(f)).collect())
             }
             WhereClause::Not(clause) => WhereClause::Not(Box::new(clause.map_values(f))),
+            WhereClause::ColCondition { left, op, right } => {
+                WhereClause::ColCondition { left, op, right }
+            }
         }
     }
 }
@@ -210,6 +224,29 @@ pub trait IntoWhereClause<V: Clone> {
 impl<V: Clone, T: Clone + Into<V>> IntoWhereClause<V> for WhereClause<T> {
     fn into_where_clause(self) -> WhereClause<V> {
         self.map_values(&|v| v.into())
+    }
+}
+
+/// Convert a `JoinCondition::ColEq` into a `WhereClause::ColEq`.
+///
+/// # Panics
+///
+/// Panics if the condition is not `ColEq` (e.g., `And`, `Using`, `Expr`).
+impl<V: Clone> IntoWhereClause<V> for crate::join::JoinCondition<V> {
+    fn into_where_clause(self) -> WhereClause<V> {
+        match self {
+            crate::join::JoinCondition::ColEq { left, right } => WhereClause::ColCondition {
+                left,
+                op: Op::Eq,
+                right: Col {
+                    table: right.table,
+                    column: right.col,
+                    alias: None,
+                    aggregate: None,
+                },
+            },
+            _ => panic!("only JoinCondition::ColEq can be converted to WhereClause"),
+        }
     }
 }
 
