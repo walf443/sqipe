@@ -2,8 +2,8 @@
 
 use qbey::{
     ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with, row_number, table,
-    window,
+    UpdateQueryBuilder, col, count_all, exists, not_exists, qbey_from_subquery_with, qbey_with,
+    row_number, table, window,
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use testcontainers::runners::AsyncRunner;
@@ -1077,4 +1077,70 @@ async fn test_named_window() {
     let first_rn: i64 = rows[0].get("rn");
     assert_eq!(first_name, "Charlie");
     assert_eq!(first_rn, 1);
+}
+
+#[tokio::test]
+async fn test_exists_subquery() {
+    let client = setup_client().await;
+
+    let mut sub = qbey_with::<PgValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = client.query(&sql, &param_refs[..]).await.unwrap();
+
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_not_exists_subquery() {
+    let client = setup_client().await;
+
+    let mut sub = qbey_with::<PgValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.and_where(not_exists(sub));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = client.query(&sql, &param_refs[..]).await.unwrap();
+
+    assert_eq!(rows.len(), 0);
+}
+
+#[tokio::test]
+async fn test_exists_with_outer_binds() {
+    let client = setup_client().await;
+
+    let mut sub = qbey_with::<PgValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<PgValue>("users");
+    q.and_where(col("age").gt(26));
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = client.query(&sql, &param_refs[..]).await.unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
 }

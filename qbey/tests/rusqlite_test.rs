@@ -2,8 +2,8 @@
 
 use qbey::{
     ConditionExpr, DeleteQueryBuilder, InsertQueryBuilder, LikeExpression, SelectQueryBuilder,
-    ToInsertRow, UpdateQueryBuilder, col, count_all, qbey_from_subquery_with, qbey_with,
-    row_number, table, window,
+    ToInsertRow, UpdateQueryBuilder, col, count_all, exists, not_exists, qbey_from_subquery_with,
+    qbey_with, row_number, table, window,
 };
 use rusqlite::{Connection, params_from_iter};
 
@@ -353,6 +353,122 @@ fn test_not_in_subquery() {
 
     // Charlie (id=3) is not in shipped orders (user_id 1,2)
     assert_eq!(names, vec!["Charlie"]);
+}
+
+#[test]
+fn test_exists_subquery() {
+    let conn = setup_db();
+
+    // All users when shipped orders exist (non-correlated EXISTS)
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // EXISTS is true (shipped orders exist), so all users are returned
+    assert_eq!(names, vec!["Alice", "Bob", "Charlie"]);
+}
+
+#[test]
+fn test_not_exists_subquery() {
+    let conn = setup_db();
+
+    // No users when shipped orders exist (non-correlated NOT EXISTS)
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(not_exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // NOT EXISTS is false (shipped orders exist), so no users are returned
+    assert_eq!(names, Vec::<String>::new());
+}
+
+#[test]
+fn test_exists_with_no_matching_rows() {
+    let conn = setup_db();
+
+    // No users when cancelled orders exist (there are none)
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("cancelled"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // EXISTS is false (no cancelled orders), so no users returned
+    assert_eq!(names, Vec::<String>::new());
+}
+
+#[test]
+fn test_exists_with_outer_binds() {
+    let conn = setup_db();
+
+    // Users older than 26 when shipped orders exist
+    let mut sub = qbey_with::<SqliteValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<SqliteValue>("users");
+    q.and_where(col("age").gt(26));
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let names: Vec<String> = stmt
+        .query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            row.get::<_, String>(1)
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    // EXISTS is true, age > 26 filters to Alice (30) and Charlie (35)
+    assert_eq!(names, vec!["Alice", "Charlie"]);
 }
 
 #[test]

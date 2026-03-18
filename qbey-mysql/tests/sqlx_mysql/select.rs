@@ -1,5 +1,8 @@
 use super::common::{MysqlValue, bind_params, setup_pool};
-use qbey::{ConditionExpr, LikeExpression, SelectQueryBuilder, col, row_number, table, window};
+use qbey::{
+    ConditionExpr, LikeExpression, SelectQueryBuilder, col, exists, not_exists, row_number, table,
+    window,
+};
 use qbey_mysql::qbey_with;
 use sqlx::Row;
 
@@ -703,4 +706,70 @@ async fn test_cte() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].get::<String, _>("name"), "Alice"); // age 30
     assert_eq!(rows[1].get::<String, _>("name"), "Charlie"); // age 35
+}
+
+#[tokio::test]
+async fn test_exists_subquery() {
+    let pool = setup_pool().await;
+
+    let mut sub = qbey_with::<MysqlValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+}
+
+#[tokio::test]
+async fn test_not_exists_subquery() {
+    let pool = setup_pool().await;
+
+    let mut sub = qbey_with::<MysqlValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.and_where(not_exists(sub));
+    q.select(&["id", "name"]);
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 0);
+}
+
+#[tokio::test]
+async fn test_exists_with_outer_binds() {
+    let pool = setup_pool().await;
+
+    let mut sub = qbey_with::<MysqlValue>("orders");
+    sub.select(&["id"]);
+    sub.and_where(col("status").eq("shipped"));
+
+    let mut q = qbey_with::<MysqlValue>("users");
+    q.and_where(col("age").gt(26));
+    q.and_where(exists(sub));
+    q.select(&["id", "name"]);
+    q.order_by(col("name").asc());
+    let (sql, binds) = q.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice");
+    assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
 }
