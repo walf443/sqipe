@@ -66,7 +66,7 @@ impl ConditionValue for f32 {}
 impl ConditionValue for f64 {}
 impl ConditionValue for bool {}
 impl ConditionValue for String {}
-impl<'a> ConditionValue for &'a str {}
+impl ConditionValue for &str {}
 impl ConditionValue for Value {}
 
 /// Comparison operator.
