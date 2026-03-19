@@ -249,7 +249,7 @@ fn test_query_union_with_compound_query() {
 #[test]
 fn test_straight_join() {
     let mut q = qbey("users");
-    q.straight_join("orders", table("users").col("id").eq_col("user_id"));
+    q.straight_join("orders", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -302,7 +302,7 @@ fn test_straight_join_with_alias() {
     q.as_("u");
     q.straight_join(
         table("orders").as_("o"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.select(&["id", "name"]);
 
@@ -365,7 +365,7 @@ fn test_join_subquery() {
     sub.and_where(col("status").eq("shipped"));
 
     let mut q = qbey("users");
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, binds) = q.to_sql();
@@ -406,7 +406,7 @@ fn test_straight_join_subquery() {
     sub.select(&["user_id", "total"]);
 
     let mut q = qbey("users");
-    q.straight_join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.straight_join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -728,11 +728,7 @@ fn test_having_in_subquery() {
 fn test_eq_col_in_where() {
     let mut q = qbey("users");
     q.select(&["name"]);
-    q.and_where(
-        table("users")
-            .col("dept_id")
-            .eq_col(table("depts").col("id")),
-    );
+    q.and_where(table("users").col("dept_id").eq(table("depts").col("id")));
 
     let (sql, binds) = q.to_sql();
     assert_eq!(
@@ -748,11 +744,7 @@ fn test_eq_col_correlated_subquery_with_exists() {
 
     let mut sub = qbey("orders");
     sub.select(&["id"]);
-    sub.and_where(
-        table("orders")
-            .col("user_id")
-            .eq_col(table("users").col("id")),
-    );
+    sub.and_where(table("orders").col("user_id").eq(table("users").col("id")));
 
     let mut q = qbey("users");
     q.select(&["name"]);

@@ -3,7 +3,7 @@ use qbey::*;
 #[test]
 fn test_join_standard() {
     let mut q = qbey("users");
-    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.join("orders", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -16,7 +16,7 @@ fn test_join_standard() {
 #[test]
 fn test_left_join() {
     let mut q = qbey("users");
-    q.left_join("orders", table("users").col("id").eq_col("user_id"));
+    q.left_join("orders", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -31,7 +31,7 @@ fn test_join_with_table_alias() {
     let mut q = qbey("users");
     q.join(
         table("orders").as_("o"),
-        table("users").col("id").eq_col("user_id"),
+        table("users").col("id").eq(col("user_id")),
     );
     q.select(&["id", "name"]);
 
@@ -46,7 +46,7 @@ fn test_join_with_table_alias() {
 fn test_table_qualified_cols_select() {
     let u = table("users");
     let mut q = qbey("users");
-    q.join("orders", u.col("id").eq_col("user_id"));
+    q.join("orders", u.col("id").eq(col("user_id")));
     q.add_select(u.col("id"));
     q.add_select(u.col("name"));
 
@@ -61,7 +61,7 @@ fn test_table_qualified_cols_select() {
 fn test_select_cols_from_table() {
     let u = table("users");
     let mut q = qbey("users");
-    q.join("orders", u.col("id").eq_col("user_id"));
+    q.join("orders", u.col("id").eq(col("user_id")));
     q.select(&u.cols(&["id", "name"]));
 
     let (sql, _) = q.to_sql();
@@ -103,8 +103,8 @@ fn test_join_with_multiple_conditions() {
     q.join(
         "orders",
         JoinCondition::And(vec![
-            table("users").col("id").eq_col("user_id").into(),
-            table("users").col("region").eq_col("region").into(),
+            table("users").col("id").eq(col("user_id")).into(),
+            table("users").col("region").eq(col("region")).into(),
         ]),
     );
     q.select(&["id", "name"]);
@@ -121,9 +121,7 @@ fn test_join_with_qualified_col_on_right() {
     let mut q = qbey("users");
     q.join(
         "orders",
-        table("users")
-            .col("id")
-            .eq_col(table("orders").col("user_id")),
+        table("users").col("id").eq(table("orders").col("user_id")),
     );
     q.select(&["id", "name"]);
 
@@ -141,7 +139,7 @@ fn test_join_subquery_standard() {
     sub.and_where(col("status").eq("shipped"));
 
     let mut q = qbey("users");
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, binds) = q.to_sql();
@@ -158,7 +156,7 @@ fn test_left_join_subquery_standard() {
     sub.select(&["user_id", "total"]);
 
     let mut q = qbey("users");
-    q.left_join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.left_join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -175,7 +173,7 @@ fn test_join_subquery_with_outer_where() {
     sub.and_where(col("status").eq("shipped"));
 
     let mut q = qbey("users");
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.and_where(col("age").gt(25));
     q.select(&["id", "name"]);
 
@@ -198,7 +196,7 @@ fn test_join_subquery_numbered_placeholders() {
 
     let mut q = qbey("users");
     q.and_where(col("age").gt(25));
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, binds) = q.to_sql_with(&PgDialect);
@@ -219,8 +217,8 @@ fn test_join_subquery_mixed_with_table_join() {
     sub.and_where(col("status").eq("shipped"));
 
     let mut q = qbey("users");
-    q.join("profiles", table("users").col("id").eq_col("user_id"));
-    q.join_subquery(sub, "o", table("users").col("id").eq_col("user_id"));
+    q.join("profiles", table("users").col("id").eq(col("user_id")));
+    q.join_subquery(sub, "o", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, binds) = q.to_sql();
@@ -234,7 +232,7 @@ fn test_join_subquery_mixed_with_table_join() {
 #[test]
 fn test_join_with_unqualified_col_eq_col() {
     let mut q = qbey("users");
-    q.join("orders", col("id").eq_col("user_id"));
+    q.join("orders", col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
 
     let (sql, _) = q.to_sql();
@@ -265,7 +263,7 @@ fn test_qbey_table_ref_with_join() {
     let mut q = qbey(table("users").as_("u"));
     q.join(
         table("orders").as_("o"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.select(&["id", "name"]);
 
@@ -282,7 +280,7 @@ fn test_join_condition_expr_inside_and() {
     q.join(
         "patterns",
         JoinCondition::And(vec![
-            table("texts").col("category").eq_col("category").into(),
+            table("texts").col("category").eq(col("category")).into(),
             join::on_expr(RawSql::new(r#""texts"."text" LIKE "patterns"."pattern""#)),
         ]),
     );

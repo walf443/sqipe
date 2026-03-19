@@ -192,7 +192,7 @@ fn test_for_update_with_order_by_and_limit() {
 fn test_qualified_col_order_by() {
     let mut q = qbey("users");
     q.select(&["id", "name"]);
-    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.join("orders", table("users").col("id").eq(col("user_id")));
     q.order_by(table("users").col("name").asc());
     q.order_by(table("orders").col("created_at").desc());
 

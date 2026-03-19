@@ -188,7 +188,7 @@ fn test_delete_with_recursive_cte() {
 #[should_panic(expected = "JOINs which are not supported in DELETE")]
 fn test_delete_from_query_with_joins_panics() {
     let mut q = qbey("employee");
-    q.join("department", table("employee").col("dept_id").eq_col("id"));
+    q.join("department", table("employee").col("dept_id").eq(col("id")));
     let _ = q.into_delete();
 }
 

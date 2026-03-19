@@ -15,30 +15,30 @@ fn make_complex_select_query() -> qbey::SelectQuery<qbey::Value> {
 
     q.join(
         table("orders").as_("o"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.left_join(
         table("profiles").as_("p"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.join(
         table("order_items").as_("oi"),
-        table("o").col("id").eq_col("order_id"),
+        table("o").col("id").eq(col("order_id")),
     );
     q.left_join(
         table("products").as_("pr"),
-        table("oi").col("product_id").eq_col("id"),
+        table("oi").col("product_id").eq(col("id")),
     );
     q.left_join(
         table("categories").as_("c"),
-        table("pr").col("category_id").eq_col("id"),
+        table("pr").col("category_id").eq(col("id")),
     );
 
     let mut sub = qbey("payments");
     sub.select(&["order_id"]);
     sub.add_select_expr(qbey::RawSql::new("SUM(amount)"), Some("total_paid"));
     sub.group_by(&["order_id"]);
-    q.left_join_subquery(sub, "pay", table("o").col("id").eq_col("order_id"));
+    q.left_join_subquery(sub, "pay", table("o").col("id").eq(col("order_id")));
 
     q.and_where(col("status").eq("active"));
     q.and_where(col("created_at").gt("2024-01-01"));

@@ -66,7 +66,7 @@ fn test_from_subquery_with_join() {
     sub.and_where(col("status").eq("completed"));
 
     let mut q = qbey_from_subquery(sub, "t");
-    q.join("users", table("t").col("user_id").eq_col("id"));
+    q.join("users", table("t").col("user_id").eq(col("id")));
     q.select(&["user_id"]);
 
     let (sql, _) = q.to_sql();

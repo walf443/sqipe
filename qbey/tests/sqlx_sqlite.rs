@@ -145,7 +145,7 @@ async fn test_join() {
     let pool = setup_db().await;
 
     let mut q = qbey_with::<SqliteValue>("users");
-    q.join("orders", table("users").col("id").eq_col("user_id"));
+    q.join("orders", table("users").col("id").eq(col("user_id")));
     q.and_where(table("orders").col("status").eq("shipped"));
     q.select(&table("users").cols(&["id", "name"]));
     q.add_select(table("orders").col("total"));
@@ -166,7 +166,7 @@ async fn test_join_with_alias() {
     q.as_("u");
     q.join(
         table("orders").as_("o"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.and_where(table("o").col("status").eq("shipped"));
     let mut cols = table("u").cols(&["id", "name"]);
@@ -190,7 +190,7 @@ async fn test_left_join() {
     q.as_("u");
     q.left_join(
         table("orders").as_("o"),
-        table("u").col("id").eq_col("user_id"),
+        table("u").col("id").eq(col("user_id")),
     );
     q.select(&table("u").cols(&["id", "name"]));
     q.add_select(table("o").col("total").as_("order_total"));

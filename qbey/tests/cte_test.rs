@@ -48,7 +48,7 @@ fn test_multiple_ctes() {
     q.select(&["id", "name"]);
     q.join(
         "all_emps",
-        col("active_depts.id").eq_col("all_emps.dept_id"),
+        col("active_depts.id").eq(col("all_emps.dept_id")),
     );
 
     let (sql, _binds) = q.to_sql();
@@ -188,7 +188,7 @@ fn test_cte_with_join_subquery() {
     let mut q = qbey("employees");
     q.with_cte("dept_cte", &[], cte_q);
     q.select(&["id", "name"]);
-    q.join_subquery(sub, "d", col("employees.dept_id").eq_col("d.id"));
+    q.join_subquery(sub, "d", col("employees.dept_id").eq(col("d.id")));
 
     let (sql, _binds) = q.to_sql();
     assert!(sql.starts_with(r#"WITH "dept_cte" AS (SELECT"#));

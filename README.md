@@ -441,10 +441,10 @@ Raw strings are not accepted — `LikeExpression` must be used to prevent wildca
 ### JOIN
 
 ```rust
-# use qbey::{qbey, col, table, join, SelectQueryBuilder};
+# use qbey::{qbey, col, table, join, ConditionExpr, SelectQueryBuilder};
 // INNER JOIN with ON
 let mut q = qbey("users");
-q.join("orders", table("users").col("id").eq_col("user_id"));
+q.join("orders", table("users").col("id").eq(col("user_id")));
 q.select(&["id", "name"]);
 
 let (sql, _) = q.to_sql();
@@ -452,7 +452,7 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON
 
 // LEFT JOIN
 let mut q = qbey("users");
-q.left_join("addresses", table("users").col("id").eq_col("user_id"));
+q.left_join("addresses", table("users").col("id").eq(col("user_id")));
 q.select(&["id", "name"]);
 
 let (sql, _) = q.to_sql();
@@ -478,12 +478,12 @@ assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" US
 ### Table aliases and qualified columns
 
 ```rust
-# use qbey::{qbey, col, table, SelectQueryBuilder};
+# use qbey::{qbey, col, table, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("users");
 q.as_("u");
 q.join(
     table("orders").as_("o"),
-    table("u").col("id").eq_col("user_id"),
+    table("u").col("id").eq(col("user_id")),
 );
 q.select(&["id"]);
 q.add_select(table("o").col("total").as_("order_total"));

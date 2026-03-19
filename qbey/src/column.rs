@@ -93,7 +93,7 @@ impl TableRef {
 /// - `table("users").col("name")` creates a table-qualified column.
 /// - `col("name").as_("n")` creates an aliased column.
 ///
-/// Both forms support the same set of methods (e.g., `eq`, `asc`, `eq_col`).
+/// Both forms support the same set of methods (e.g., `eq`, `asc`).
 #[derive(Debug, Clone)]
 pub struct Col {
     pub table: Option<String>,
@@ -489,7 +489,7 @@ impl Col {
 
 /// A column-to-column comparison, usable in both JOIN ON and WHERE clauses.
 ///
-/// Created by [`Col::eq_col`]. Can be passed directly to `and_where` / `or_where`
+/// Created by [`Col::eq`] with a `Col` argument. Can be passed directly to `and_where` / `or_where`
 /// (WHERE clause) or to `join` / `left_join` (JOIN ON clause).
 #[derive(Debug, Clone)]
 pub struct ColCondition {

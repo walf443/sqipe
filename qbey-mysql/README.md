@@ -70,10 +70,10 @@ assert_eq!(sql, "SELECT `id`, `name` FROM `employee` USE INDEX FOR JOIN (idx_a) 
 ```rust
 use qbey_mysql::qbey;
 use qbey::SelectQueryBuilder;
-use qbey::table;
+use qbey::{col, table, ConditionExpr};
 
 let mut q = qbey("users");
-q.straight_join("orders", table("users").col("id").eq_col("user_id"));
+q.straight_join("orders", table("users").col("id").eq(col("user_id")));
 q.select(&["id", "name"]);
 
 let (sql, _) = q.to_sql();
