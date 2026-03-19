@@ -177,26 +177,41 @@ pub trait ConditionExpr: Sized {
     }
 
     /// Generate an inequality (`!=`) condition.
+    ///
+    /// When used with a [`Col`] argument, the resulting [`ColCondition`] can be
+    /// used in WHERE clauses but **not** in JOIN ON (which only supports equality).
     fn ne<R: ConditionRhs>(self, rhs: R) -> R::Output {
         rhs.apply_condition(self.into_condition_col(), Op::Ne)
     }
 
     /// Generate a greater-than (`>`) condition.
+    ///
+    /// When used with a [`Col`] argument, the resulting [`ColCondition`] can be
+    /// used in WHERE clauses but **not** in JOIN ON (which only supports equality).
     fn gt<R: ConditionRhs>(self, rhs: R) -> R::Output {
         rhs.apply_condition(self.into_condition_col(), Op::Gt)
     }
 
     /// Generate a less-than (`<`) condition.
+    ///
+    /// When used with a [`Col`] argument, the resulting [`ColCondition`] can be
+    /// used in WHERE clauses but **not** in JOIN ON (which only supports equality).
     fn lt<R: ConditionRhs>(self, rhs: R) -> R::Output {
         rhs.apply_condition(self.into_condition_col(), Op::Lt)
     }
 
     /// Generate a greater-than-or-equal (`>=`) condition.
+    ///
+    /// When used with a [`Col`] argument, the resulting [`ColCondition`] can be
+    /// used in WHERE clauses but **not** in JOIN ON (which only supports equality).
     fn gte<R: ConditionRhs>(self, rhs: R) -> R::Output {
         rhs.apply_condition(self.into_condition_col(), Op::Gte)
     }
 
     /// Generate a less-than-or-equal (`<=`) condition.
+    ///
+    /// When used with a [`Col`] argument, the resulting [`ColCondition`] can be
+    /// used in WHERE clauses but **not** in JOIN ON (which only supports equality).
     fn lte<R: ConditionRhs>(self, rhs: R) -> R::Output {
         rhs.apply_condition(self.into_condition_col(), Op::Lte)
     }
@@ -461,7 +476,7 @@ impl Col {
     /// - WHERE: `q.and_where(table("a").col("x").eq_col(table("b").col("y")))`
     #[deprecated(
         since = "0.2.0",
-        note = "use `eq(col(...))` instead, e.g., `col(\"a\").eq(col(\"b\"))`"
+        note = "use `eq(col(...))` instead, e.g., `col(\"a\").eq(col(\"b\"))`. Note: `eq(\"b\")` compares against a string value, not a column — use `eq(col(\"b\"))` for column comparison."
     )]
     pub fn eq_col(self, other: impl Into<Col>) -> ColCondition {
         ColCondition {

@@ -415,3 +415,53 @@ fn test_eq_col_correlated_subquery_with_exists() {
     );
     assert!(binds.is_empty());
 }
+
+#[test]
+fn test_eq_col_via_eq() {
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(table("users").col("dept_id").eq(table("depts").col("id")));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "name" FROM "users" WHERE "users"."dept_id" = "depts"."id""#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_ne_col_via_ne() {
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(table("a").col("x").ne(table("b").col("y")));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "name" FROM "users" WHERE "a"."x" != "b"."y""#
+    );
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_gt_col_via_gt() {
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(table("a").col("x").gt(table("b").col("y")));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(sql, r#"SELECT "name" FROM "users" WHERE "a"."x" > "b"."y""#);
+    assert!(binds.is_empty());
+}
+
+#[test]
+fn test_lt_col_via_lt() {
+    let mut q = qbey("users");
+    q.select(&["name"]);
+    q.and_where(table("a").col("x").lt(table("b").col("y")));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(sql, r#"SELECT "name" FROM "users" WHERE "a"."x" < "b"."y""#);
+    assert!(binds.is_empty());
+}

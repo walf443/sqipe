@@ -54,8 +54,12 @@ impl From<bool> for Value {
 /// compiler can distinguish column references from scalar values.
 pub trait ConditionValue: Clone {}
 
+impl ConditionValue for i8 {}
+impl ConditionValue for i16 {}
 impl ConditionValue for i32 {}
 impl ConditionValue for i64 {}
+impl ConditionValue for u8 {}
+impl ConditionValue for u16 {}
 impl ConditionValue for u32 {}
 impl ConditionValue for u64 {}
 impl ConditionValue for f32 {}

@@ -294,3 +294,29 @@ fn test_join_condition_expr_inside_and() {
         r#"SELECT "id", "text" FROM "texts" INNER JOIN "patterns" ON "texts"."category" = "patterns"."category" AND "texts"."text" LIKE "patterns"."pattern""#
     );
 }
+
+#[test]
+fn test_join_with_eq_col_ref() {
+    let mut q = qbey("users");
+    q.join("orders", table("users").col("id").eq(col("user_id")));
+    q.select(&["id", "name"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\""
+    );
+}
+
+#[test]
+fn test_left_join_with_eq_col_ref() {
+    let mut q = qbey("users");
+    q.left_join("addresses", table("users").col("id").eq(col("user_id")));
+    q.select(&["id", "name"]);
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\""
+    );
+}
