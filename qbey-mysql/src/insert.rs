@@ -115,7 +115,9 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
         self
     }
 
-    /// Add columns to the RETURNING clause (MariaDB extension).
+    /// Add columns to the RETURNING clause (MariaDB 10.5+ extension).
+    ///
+    /// Not supported by MySQL. Requires MariaDB 10.5 or later.
     ///
     /// ```
     /// use qbey::{col, Value};
