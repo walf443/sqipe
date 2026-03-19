@@ -5,12 +5,16 @@ use qbey::{
     UpdateQueryBuilder, col, count_all, exists, not_exists, qbey_from_subquery_with, qbey_with,
     row_number, table, window,
 };
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::Ordering::Relaxed;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::{NoTls, types::ToSql};
 
 use qbey::PgDialect as PostgresDialect;
+
+#[macro_use]
+mod common;
+define_shared_container!(Postgres, 5432);
 
 /// Custom value type for PostgreSQL — stores i32 directly instead of i64,
 /// matching PostgreSQL's INT type without needing a cast.
@@ -72,28 +76,6 @@ fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
             }
         })
         .collect()
-}
-
-struct SharedContainer {
-    _container: testcontainers::ContainerAsync<Postgres>,
-    host_port: u16,
-}
-
-static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
-    tokio::sync::OnceCell::const_new();
-static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-async fn get_shared_container() -> &'static SharedContainer {
-    SHARED_CONTAINER
-        .get_or_init(|| async {
-            let container = Postgres::default().start().await.unwrap();
-            let host_port = container.get_host_port_ipv4(5432).await.unwrap();
-            SharedContainer {
-                _container: container,
-                host_port,
-            }
-        })
-        .await
 }
 
 async fn setup_client() -> tokio_postgres::Client {
