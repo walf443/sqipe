@@ -12,12 +12,17 @@ use testcontainers_modules::mysql::Mysql;
 
 static DIALECT: qbey::MySqlDialect = qbey::MySqlDialect;
 
+// Avoid unwrap() in dtor — panicking in a destructor causes process abort.
+// Errors are intentionally ignored since cleanup is best-effort.
 #[ctor::dtor]
 fn cleanup() {
     if let Some(shared) = SHARED_CONTAINER.get() {
-        if let Some(container) = shared.container.lock().unwrap().take() {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async { container.rm().await.unwrap() });
+        if let Some(container) = shared.container.lock().ok().and_then(|mut g| g.take()) {
+            if let Ok(rt) = tokio::runtime::Runtime::new() {
+                rt.block_on(async {
+                    let _ = container.rm().await;
+                });
+            }
         }
     }
 }
