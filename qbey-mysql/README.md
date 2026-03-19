@@ -219,3 +219,40 @@ d.limit(10);
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, "DELETE FROM `users` WHERE `dept` = ? ORDER BY `created_at` ASC LIMIT 10");
 ```
+
+## RETURNING clause (feature = "returning", MariaDB 10.5+)
+
+MariaDB 10.5+ supports RETURNING for INSERT and DELETE (not UPDATE).
+Not supported by MySQL. Enable via `features = ["returning"]` in `Cargo.toml`.
+
+```rust
+# #[cfg(feature = "returning")]
+# {
+use qbey_mysql::qbey;
+use qbey::{InsertQueryBuilder, col, Value};
+
+let mut ins = qbey("users").into_insert();
+ins.add_value(&[("id", 1.into()), ("name", "Alice".into())]);
+ins.returning(&[col("id"), col("name")]);
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, "INSERT INTO `users` (`id`, `name`) VALUES (?, ?) RETURNING `id`, `name`");
+# }
+```
+
+```rust
+# #[cfg(feature = "returning")]
+# {
+use qbey_mysql::qbey;
+use qbey::{ConditionExpr, DeleteQueryBuilder, col};
+
+let mut d = qbey("users").into_delete();
+d.and_where(col("id").eq(1));
+d.returning(&[col("id"), col("name")]);
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, "DELETE FROM `users` WHERE `id` = ? RETURNING `id`, `name`");
+# }
+```
+
+`MysqlUpdateQuery::returning()` will panic at runtime because MariaDB does not support `UPDATE ... RETURNING`.

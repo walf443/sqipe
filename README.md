@@ -675,6 +675,53 @@ assert_eq!(sql, r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employe
 Calling `to_sql()` without any `add_value()` or `from_select()` will panic.
 When building rows from a dynamic collection, the caller is responsible for ensuring the collection is non-empty.
 
+### RETURNING clause (feature = "returning")
+
+RETURNING is non-standard SQL supported by PostgreSQL, SQLite, and MariaDB.
+Enable via `features = ["returning"]` in `Cargo.toml`.
+
+INSERT, UPDATE, and DELETE all support `.returning()`:
+
+```rust
+# #[cfg(feature = "returning")]
+# {
+# use qbey::{qbey, col, Value, InsertQueryBuilder};
+let mut ins = qbey("employee").into_insert();
+ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+ins.returning(&[col("id"), col("name")]);
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?) RETURNING "id", "name""#);
+# }
+```
+
+```rust
+# #[cfg(feature = "returning")]
+# {
+# use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
+let mut u = qbey("employee").into_update();
+u.set(col("name"), "Alice");
+u.and_where(col("id").eq(1));
+u.returning(&[col("id"), col("name")]);
+
+let (sql, binds) = u.to_sql();
+assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ? RETURNING "id", "name""#);
+# }
+```
+
+```rust
+# #[cfg(feature = "returning")]
+# {
+# use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder};
+let mut d = qbey("employee").into_delete();
+d.and_where(col("id").eq(1));
+d.returning(&[col("id"), col("name")]);
+
+let (sql, binds) = d.to_sql();
+assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ? RETURNING "id", "name""#);
+# }
+```
+
 ### MySQL dialect
 
 See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
