@@ -71,6 +71,11 @@ macro_rules! qbey_schema {
                 }
             }
 
+            /// Create an aliased copy of this schema, useful for self-joins.
+            ///
+            /// Column accessors on the returned instance are qualified with the
+            /// alias, and `table()` returns `table("original").as_("alias")` so
+            /// it can be passed directly to `join` / `left_join`.
             pub fn as_(self, alias: &'static str) -> Self {
                 $struct_name {
                     col_table: $crate::table(alias),
