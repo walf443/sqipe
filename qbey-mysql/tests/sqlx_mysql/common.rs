@@ -3,6 +3,8 @@ use std::sync::atomic::Ordering::Relaxed;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
+// NOTE: The same macro is defined in `qbey/tests/common/mod.rs`.
+// Keep both in sync when making changes.
 macro_rules! define_shared_container {
     ($image:ty, $port:expr) => {
         struct SharedContainer {

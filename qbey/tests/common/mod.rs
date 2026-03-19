@@ -2,6 +2,9 @@
 /// function, and `get_shared_container()` for the given testcontainers image
 /// and port.
 ///
+/// NOTE: The same macro is defined in `qbey-mysql/tests/sqlx_mysql/common.rs`.
+/// Keep both in sync when making changes.
+///
 /// Usage:
 /// ```ignore
 /// define_shared_container!(Postgres, 5432);
