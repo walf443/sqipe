@@ -1153,29 +1153,6 @@ async fn test_insert_returning() {
 
 #[cfg(feature = "returning")]
 #[tokio::test]
-async fn test_insert_returning_star() {
-    let client = setup_client().await;
-
-    let mut ins = qbey_with::<PgValue>("users").into_insert();
-    ins.add_value(&[
-        ("id", PgValue::Int(4)),
-        ("name", PgValue::Text("Dave".to_string())),
-        ("age", PgValue::Int(40)),
-    ]);
-    ins.returning(&[col("*")]);
-    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
-
-    let params = to_pg_params(&binds);
-    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
-    let rows = client.query(&sql, &param_refs).await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].get::<_, i32>("id"), 4);
-    assert_eq!(rows[0].get::<_, String>("name"), "Dave");
-    assert_eq!(rows[0].get::<_, i32>("age"), 40);
-}
-
-#[cfg(feature = "returning")]
-#[tokio::test]
 async fn test_insert_multiple_rows_returning() {
     let client = setup_client().await;
 

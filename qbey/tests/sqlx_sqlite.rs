@@ -1109,30 +1109,6 @@ async fn test_insert_returning() {
 
 #[cfg(feature = "returning")]
 #[tokio::test]
-async fn test_insert_returning_star() {
-    let pool = setup_db().await;
-
-    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
-    ins.add_value(&[
-        ("id", SqliteValue::Integer(4)),
-        ("name", SqliteValue::Text("Dave".to_string())),
-        ("age", SqliteValue::Integer(40)),
-    ]);
-    ins.returning(&[col("*")]);
-    let (sql, binds) = ins.to_sql();
-
-    let rows = bind_params(sqlx::query(&sql), &binds)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].get::<i64, _>("id"), 4);
-    assert_eq!(rows[0].get::<String, _>("name"), "Dave");
-    assert_eq!(rows[0].get::<i64, _>("age"), 40);
-}
-
-#[cfg(feature = "returning")]
-#[tokio::test]
 async fn test_insert_multiple_rows_returning() {
     let pool = setup_db().await;
 

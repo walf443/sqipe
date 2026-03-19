@@ -1,3 +1,7 @@
+// TODO: sqlx's MySQL driver does not expose column names correctly for
+// RETURNING result sets, so tests use column index access (e.g., `get::<_, _>(0usize)`).
+// Revisit when sqlx adds proper RETURNING support for MariaDB.
+
 use super::common::{MysqlValue, bind_params, setup_pool};
 use qbey::{ConditionExpr, DeleteQueryBuilder, col};
 use qbey_mysql::qbey_with;

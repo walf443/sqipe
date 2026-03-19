@@ -156,7 +156,8 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V> {
 
     /// Add columns to the RETURNING clause (non-standard SQL; PostgreSQL, SQLite, MariaDB).
     ///
-    /// Accepts `&[Col]` for table-qualified columns or `&str` columns:
+    /// Columns are accumulated — calling this method multiple times appends
+    /// to the existing list rather than replacing it.
     ///
     /// ```
     /// use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder};

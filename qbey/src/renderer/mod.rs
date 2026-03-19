@@ -604,23 +604,13 @@ fn render_where_clause<V: Clone>(
 /// Render a RETURNING clause from a list of column references.
 ///
 /// Returns `None` if the list is empty; otherwise returns `Some("RETURNING ...")`.
-/// `col("*")` is rendered as bare `*`; all other columns go through `render_col_ref`
-/// which supports table-qualified columns (e.g., `table("t").col("id")` → `"t"."id"`).
+/// Supports table-qualified columns (e.g., `table("t").col("id")` → `"t"."id"`).
 #[cfg(feature = "returning")]
 pub(crate) fn render_returning(cols: &[Col], cfg: &RenderConfig) -> Option<String> {
     if cols.is_empty() {
         return None;
     }
-    let quoted: Vec<String> = cols
-        .iter()
-        .map(|c| {
-            if c.table.is_none() && c.column == "*" && c.aggregate.is_none() {
-                "*".to_string()
-            } else {
-                render_col_ref(c, cfg)
-            }
-        })
-        .collect();
+    let quoted: Vec<String> = cols.iter().map(|c| render_col_ref(c, cfg)).collect();
     Some(format!("RETURNING {}", quoted.join(", ")))
 }
 
