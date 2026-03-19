@@ -45,10 +45,7 @@ fn test_schema_single_column_select() {
     q.add_select(u.name());
 
     let (sql, _) = q.to_sql();
-    assert_eq!(
-        sql,
-        r#"SELECT "users"."id", "users"."name" FROM "users""#
-    );
+    assert_eq!(sql, r#"SELECT "users"."id", "users"."name" FROM "users""#);
 }
 
 #[test]
@@ -142,10 +139,7 @@ fn test_schema_update() {
         sql,
         r#"UPDATE "users" SET "name" = ? WHERE "users"."id" = ?"#
     );
-    assert_eq!(
-        binds,
-        vec![Value::String("Bob".to_string()), Value::Int(1)]
-    );
+    assert_eq!(binds, vec![Value::String("Bob".to_string()), Value::Int(1)]);
 }
 
 #[test]
@@ -155,10 +149,7 @@ fn test_schema_delete() {
     q.and_where(u.id().eq(1));
 
     let (sql, binds) = q.to_sql();
-    assert_eq!(
-        sql,
-        r#"DELETE FROM "users" WHERE "users"."id" = ?"#
-    );
+    assert_eq!(sql, r#"DELETE FROM "users" WHERE "users"."id" = ?"#);
     assert_eq!(binds, vec![Value::Int(1)]);
 }
 
