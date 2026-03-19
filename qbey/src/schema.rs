@@ -65,6 +65,7 @@
 #[macro_export]
 macro_rules! qbey_schema {
     ($struct_name:ident, $table_name:expr, [$($col:ident),* $(,)?]) => {
+        #[allow(dead_code)]
         pub struct $struct_name {
             /// Table reference using the effective name (alias or table name)
             /// for qualifying column references.
@@ -72,6 +73,7 @@ macro_rules! qbey_schema {
             alias: Option<&'static str>,
         }
 
+        #[allow(dead_code)]
         impl $struct_name {
             pub fn new() -> Self {
                 $struct_name {
