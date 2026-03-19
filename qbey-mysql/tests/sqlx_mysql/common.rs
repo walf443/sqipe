@@ -1,22 +1,50 @@
 use sqlx::MySqlPool;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::Ordering::Relaxed;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
-// Avoid unwrap() in dtor — panicking in a destructor causes process abort.
-// Errors are intentionally ignored since cleanup is best-effort.
-#[ctor::dtor]
-fn cleanup() {
-    if let Some(shared) = SHARED_CONTAINER.get() {
-        if let Some(container) = shared.container.lock().ok().and_then(|mut g| g.take()) {
-            if let Ok(rt) = tokio::runtime::Runtime::new() {
-                rt.block_on(async {
-                    let _ = container.rm().await;
-                });
+macro_rules! define_shared_container {
+    ($image:ty, $port:expr) => {
+        struct SharedContainer {
+            container: std::sync::Mutex<Option<testcontainers::ContainerAsync<$image>>>,
+            host_port: u16,
+        }
+
+        static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
+            tokio::sync::OnceCell::const_new();
+        static DB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        // Avoid unwrap() in dtor — panicking in a destructor causes process abort.
+        // Errors are intentionally ignored since cleanup is best-effort.
+        #[ctor::dtor]
+        fn cleanup() {
+            if let Some(shared) = SHARED_CONTAINER.get() {
+                if let Some(container) = shared.container.lock().ok().and_then(|mut g| g.take()) {
+                    if let Ok(rt) = tokio::runtime::Runtime::new() {
+                        rt.block_on(async {
+                            let _ = container.rm().await;
+                        });
+                    }
+                }
             }
         }
-    }
+
+        async fn get_shared_container() -> &'static SharedContainer {
+            SHARED_CONTAINER
+                .get_or_init(|| async {
+                    let container = <$image>::default().start().await.unwrap();
+                    let host_port = container.get_host_port_ipv4($port).await.unwrap();
+                    SharedContainer {
+                        container: std::sync::Mutex::new(Some(container)),
+                        host_port,
+                    }
+                })
+                .await
+        }
+    };
 }
+
+define_shared_container!(Mysql, 3306);
 
 /// Custom value type for MySQL — maps directly to sqlx bind types.
 #[derive(Debug, Clone)]
@@ -55,28 +83,6 @@ impl From<String> for MysqlValue {
     fn from(s: String) -> Self {
         MysqlValue::Text(s)
     }
-}
-
-struct SharedContainer {
-    container: std::sync::Mutex<Option<testcontainers::ContainerAsync<Mysql>>>,
-    host_port: u16,
-}
-
-static SHARED_CONTAINER: tokio::sync::OnceCell<SharedContainer> =
-    tokio::sync::OnceCell::const_new();
-static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-async fn get_shared_container() -> &'static SharedContainer {
-    SHARED_CONTAINER
-        .get_or_init(|| async {
-            let container = Mysql::default().start().await.unwrap();
-            let host_port = container.get_host_port_ipv4(3306).await.unwrap();
-            SharedContainer {
-                container: std::sync::Mutex::new(Some(container)),
-                host_port,
-            }
-        })
-        .await
 }
 
 pub async fn setup_pool() -> MySqlPool {
