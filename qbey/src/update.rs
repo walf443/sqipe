@@ -237,6 +237,8 @@ impl<V: Clone + std::fmt::Debug, W> UpdateQuery<V, W> {
     ///
     /// This is a low-level helper for dialect wrappers (e.g., `MysqlUpdateQuery`)
     /// that need to mirror state transitions on their inner `UpdateQuery`.
+    /// Not intended for direct use by application code.
+    #[doc(hidden)]
     pub fn change_state<W2>(self) -> UpdateQuery<V, W2> {
         UpdateQuery {
             table: self.table,

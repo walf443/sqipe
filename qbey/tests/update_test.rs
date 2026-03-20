@@ -140,6 +140,9 @@ fn test_update_with_like() {
     );
 }
 
+// Note: test_update_no_where_panics was removed because WHERE-less UPDATE
+// is now a compile error (see compile_fail doctest on UpdateQuery).
+
 #[test]
 #[should_panic(expected = "UPDATE requires at least one SET clause")]
 fn test_update_empty_sets_panics() {

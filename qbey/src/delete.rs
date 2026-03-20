@@ -171,6 +171,8 @@ impl<V: Clone + std::fmt::Debug, W> DeleteQuery<V, W> {
     ///
     /// This is a low-level helper for dialect wrappers (e.g., `MysqlDeleteQuery`)
     /// that need to mirror state transitions on their inner `DeleteQuery`.
+    /// Not intended for direct use by application code.
+    #[doc(hidden)]
     pub fn change_state<W2>(self) -> DeleteQuery<V, W2> {
         DeleteQuery {
             table: self.table,

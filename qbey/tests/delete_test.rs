@@ -91,6 +91,9 @@ fn test_delete_with_like() {
     assert_eq!(binds, vec![Value::String("test%".to_string())]);
 }
 
+// Note: test_delete_no_where_panics was removed because WHERE-less DELETE
+// is now a compile error (see compile_fail doctest on DeleteQuery).
+
 #[test]
 fn test_delete_with_table_ref_alias() {
     let d = qbey(table("employee").as_("e"))
