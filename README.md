@@ -34,6 +34,26 @@ assert_eq!(sql, r#"SELECT "employee"."id", "employee"."name" FROM "employee" WHE
   - [qbey-mysql](./qbey-mysql/README.md) — backtick quoting, index hints, STRAIGHT_JOIN
 - **Schema macro** — `qbey_schema!` generates typed column accessors for compile-time checked, qualified column references
 
+## Table of Contents
+
+- [Order By](#order-by)
+- [Limit / Offset](#limit--offset)
+- [WHERE conditions](#where-conditions) — Comparison, IN, LIKE, BETWEEN, Range, or_where, any/all, not, Dynamic
+- [Column aliases](#column-aliases)
+- [Raw SQL expressions in SELECT](#raw-sql-expressions-in-select)
+- [DISTINCT](#distinct)
+- [JOIN](#join)
+- [Aggregate / GROUP BY](#aggregate--group-by)
+- [HAVING](#having)
+- [UNION / UNION ALL](#union--union-all)
+- [INSERT](#insert)
+- [UPDATE](#update)
+- [DELETE](#delete)
+- [Dialect support](#dialect-support)
+- [RETURNING clause](#returning-clause-feature--returning)
+- [MySQL dialect](#mysql-dialect)
+- [Schema macro](#schema-macro)
+
 ## API
 
 ### Order By
@@ -618,6 +638,25 @@ let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee""#);
 ```
 
+### Dialect support
+
+Customize placeholder style and identifier quoting via the `Dialect` trait:
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, Dialect, SelectQueryBuilder};
+struct PgDialect;
+impl Dialect for PgDialect {
+    fn placeholder(&self, index: usize) -> String { format!("${}", index) }
+}
+
+let mut q = qbey("employee");
+q.and_where(col("name").eq("Alice"));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql_with(&PgDialect);
+assert_eq!(sql, r#"SELECT "id", "name" FROM "employee" WHERE "name" = $1"#);
+```
+
 ### RETURNING clause (feature = "returning")
 
 RETURNING is non-standard SQL supported by PostgreSQL, SQLite, and MariaDB.
@@ -665,6 +704,10 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ? RETURNING "id", "name""
 # }
 ```
 
+## MySQL dialect
+
+See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
+
 ## Schema macro
 
 `qbey_schema!` generates a typed struct for a table, providing column accessor methods that return qualified `Col` references. This avoids repeating string-based column names and enables compile-time checks.
@@ -700,10 +743,6 @@ q.select(&[u.name(), m.name().as_("manager_name")]);
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "users"."name", "managers"."name" AS "manager_name" FROM "users" LEFT JOIN "users" AS "managers" ON "users"."manager_id" = "managers"."id""#);
 ```
-
-### MySQL dialect
-
-See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
 
 # Example
 
