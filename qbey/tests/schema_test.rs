@@ -118,12 +118,12 @@ fn test_schema_with_aggregate() {
     let mut q = qbey("orders");
     q.add_select(o.user_id());
     q.add_select(o.total().sum().as_("total_amount"));
-    q.group_by(&["user_id"]);
+    q.group_by(&[o.user_id()]);
 
     let (sql, _) = q.to_sql();
     assert_eq!(
         sql,
-        r#"SELECT "orders"."user_id", SUM("orders"."total") AS "total_amount" FROM "orders" GROUP BY "user_id""#
+        r#"SELECT "orders"."user_id", SUM("orders"."total") AS "total_amount" FROM "orders" GROUP BY "orders"."user_id""#
     );
 }
 

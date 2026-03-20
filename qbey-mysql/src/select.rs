@@ -93,7 +93,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for MysqlQuery<V> {
         self
     }
 
-    fn group_by(&mut self, cols: &[&str]) -> &mut Self {
+    fn group_by(&mut self, cols: &[impl Into<qbey::Col> + Clone]) -> &mut Self {
         self.inner.group_by(cols);
         self
     }
