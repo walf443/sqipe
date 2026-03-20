@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate crates.io token
+        uses: actions-rust-lang/setup-crates-io@v1
+
+      - name: Publish qbey to crates.io
+        run: cargo publish -p qbey
+
+      - name: Publish qbey-mysql to crates.io
+        run: cargo publish -p qbey-mysql
