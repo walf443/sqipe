@@ -36,7 +36,9 @@ assert_eq!(sql, r#"SELECT "employee"."id", "employee"."name" FROM "employee" WHE
 
 ## API
 
-### Comparison operators
+### WHERE conditions
+
+#### Comparison operators
 
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
@@ -53,7 +55,80 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AND \"age\" > ? AND \"age\" <= ? AND \"salary\" < ? AND \"level\" >= ? AND \"role\" != ?");
 ```
 
-### BETWEEN / NOT BETWEEN
+#### IN / NOT IN
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("users");
+q.and_where(col("status").included(&["active", "pending"]));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" IN (?, ?)");
+```
+
+Empty lists are safely handled as `1 = 0` (IN) / `1 = 1` (NOT IN).
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("users");
+q.and_where(col("status").not_included(&["inactive", "banned"]));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" NOT IN (?, ?)");
+```
+
+Subqueries are also supported:
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut sub = qbey("orders");
+sub.and_where(col("status").eq("cancelled"));
+sub.select(&["user_id"]);
+
+let mut q = qbey("users");
+q.and_where(col("id").not_included(sub));
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?)");
+```
+
+#### LIKE / NOT LIKE
+
+`LikeExpression` provides safe pattern construction with automatic escaping of `%` and `_` in user input.
+
+```rust
+# use qbey::{qbey, col, LikeExpression, ConditionExpr, SelectQueryBuilder};
+// contains: %...%
+let (sql, _) = qbey("users")
+    .and_where(col("name").like(LikeExpression::contains("Ali")))
+    .to_sql();
+assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
+
+// starts_with: ...%
+let (sql, _) = qbey("users")
+    .and_where(col("name").like(LikeExpression::starts_with("Ali")))
+    .to_sql();
+assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
+
+// ends_with: %...
+let (sql, _) = qbey("users")
+    .and_where(col("name").like(LikeExpression::ends_with("ice")))
+    .to_sql();
+assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
+
+// NOT LIKE
+let (sql, _) = qbey("users")
+    .and_where(col("name").not_like(LikeExpression::contains("Bob")))
+    .to_sql();
+assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" NOT LIKE ? ESCAPE '\'"#);
+```
+
+Raw strings are not accepted — `LikeExpression` must be used to prevent wildcard injection.
+
+#### BETWEEN / NOT BETWEEN
 
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
@@ -73,7 +148,7 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"age\" NOT BETWEEN ? AND ?");
 ```
 
-### Range conditions
+#### Range conditions
 
 Rust range types are automatically converted to the appropriate SQL conditions.
 
@@ -100,27 +175,7 @@ let (sql, _) = qbey("t").and_where(col("age").in_range(..=30)).to_sql();
 assert_eq!(sql, "SELECT * FROM \"t\" WHERE \"age\" <= ?");
 ```
 
-### Dynamic query building
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("employee");
-
-let name: Option<&str> = Some("Alice");
-let min_age: Option<i32> = Some(20);
-
-if let Some(name) = name {
-    q.and_where(("name", name));
-}
-if let Some(min_age) = min_age {
-    q.and_where(col("age").gt(min_age));
-}
-
-q.select(&["id", "name"]);
-let (sql, binds) = q.to_sql();
-```
-
-### or_where
+#### or_where
 
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
@@ -132,7 +187,7 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE \"name\" = ? OR \"role\" = ?");
 ```
 
-### Grouping conditions with any / all
+#### Grouping conditions with any / all
 
 ```rust
 # use qbey::{qbey, col, any, all, ConditionExpr, SelectQueryBuilder};
@@ -154,7 +209,7 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE (\"role\" = ? AND \"dept\" = ?) OR (\"role\" = ? AND \"dept\" = ?)");
 ```
 
-### Negating conditions with not
+#### Negating conditions with not
 
 ```rust
 # use qbey::{qbey, col, not, any, ConditionExpr, SelectQueryBuilder};
@@ -176,6 +231,133 @@ let mut q = qbey("employee");
 q.and_where(not(any(col("role").eq("admin"), col("role").eq("manager"))));
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT * FROM \"employee\" WHERE NOT ((\"role\" = ? OR \"role\" = ?))");
+```
+
+#### Dynamic query building
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("employee");
+
+let name: Option<&str> = Some("Alice");
+let min_age: Option<i32> = Some(20);
+
+if let Some(name) = name {
+    q.and_where(("name", name));
+}
+if let Some(min_age) = min_age {
+    q.and_where(col("age").gt(min_age));
+}
+
+q.select(&["id", "name"]);
+let (sql, binds) = q.to_sql();
+```
+
+### Order By
+
+```rust
+# use qbey::{qbey, col, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.order_by(col("name").asc());
+q.order_by(col("age").desc());
+q.select(&["id", "name", "age"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
+```
+
+Use `order_by_expr` to sort by a raw SQL expression (e.g., `RAND()`, `FIELD(...)`, `id DESC NULLS FIRST`).
+The expression is rendered as-is, so the caller is responsible for including the sort direction if needed.
+[`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
+
+```rust
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
+let mut q = qbey("users");
+q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
+```
+
+Column-based and expression-based ORDER BY can be mixed:
+
+```rust
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
+let mut q = qbey("users");
+q.order_by(col("name").asc());
+q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
+```
+
+### Limit / Offset
+
+```rust
+# use qbey::{qbey, col, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.limit(10);
+q.offset(20);
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
+```
+
+### JOIN
+
+```rust
+# use qbey::{qbey, col, table, join, ConditionExpr, SelectQueryBuilder};
+// INNER JOIN with ON
+let mut q = qbey("users");
+q.join("orders", table("users").col("id").eq(col("user_id")));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\"");
+
+// LEFT JOIN
+let mut q = qbey("users");
+q.left_join("addresses", table("users").col("id").eq(col("user_id")));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\"");
+
+// JOIN with USING
+let mut q = qbey("users");
+q.join("orders", join::using_col("user_id"));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\")");
+
+// Multiple columns USING
+let mut q = qbey("users");
+q.join("orders", join::using_cols(&["user_id", "tenant_id"]));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\", \"tenant_id\")");
+```
+
+#### Table aliases and qualified columns
+
+```rust
+# use qbey::{qbey, col, table, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("users");
+q.as_("u");
+q.join(
+    table("orders").as_("o"),
+    table("u").col("id").eq(col("user_id")),
+);
+q.select(&["id"]);
+q.add_select(table("o").col("total").as_("order_total"));
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\"");
 ```
 
 ### DISTINCT
@@ -265,73 +447,6 @@ let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total\" FROM \"employee\" GROUP BY \"dept\" HAVING COUNT(*) > ? AND SUM(\"salary\") > ?");
 ```
 
-### Order By
-
-```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
-let mut q = qbey("employee");
-q.order_by(col("name").asc());
-q.order_by(col("age").desc());
-q.select(&["id", "name", "age"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
-```
-
-### Order By with raw SQL expression
-
-Use `order_by_expr` to sort by a raw SQL expression (e.g., `RAND()`, `FIELD(...)`, `id DESC NULLS FIRST`).
-The expression is rendered as-is, so the caller is responsible for including the sort direction if needed.
-[`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
-
-```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
-let mut q = qbey("users");
-q.order_by_expr(RawSql::new("RAND()"));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
-```
-
-Column-based and expression-based ORDER BY can be mixed:
-
-```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
-let mut q = qbey("users");
-q.order_by(col("name").asc());
-q.order_by_expr(RawSql::new("RAND()"));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
-```
-
-### Limit / Offset
-
-```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
-let mut q = qbey("employee");
-q.limit(10);
-q.offset(20);
-q.select(&["id", "name"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
-```
-
-### Method chaining
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let (sql, binds) = qbey("employee")
-    .and_where(("name", "Alice"))
-    .and_where(col("age").gt(20))
-    .select(&["id", "name"])
-    .to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ? AND \"age\" > ?");
-```
-
 ### UNION / UNION ALL
 
 `union()` / `union_all()` returns a new `Query`, so you can use the same `order_by()`, `limit()`, etc. on the result:
@@ -352,137 +467,6 @@ uq.limit(10);
 
 let (sql, binds) = uq.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 10");
-```
-
-### IN clause
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("users");
-q.and_where(col("status").included(&["active", "pending"]));
-q.select(&["id", "name"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" IN (?, ?)");
-```
-
-Empty lists are safely handled as `1 = 0`.
-
-### NOT IN clause
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("users");
-q.and_where(col("status").not_included(&["inactive", "banned"]));
-q.select(&["id", "name"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"status\" NOT IN (?, ?)");
-```
-
-Empty lists are safely handled as `1 = 1`.
-
-Subqueries are also supported:
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut sub = qbey("orders");
-sub.and_where(col("status").eq("cancelled"));
-sub.select(&["user_id"]);
-
-let mut q = qbey("users");
-q.and_where(col("id").not_included(sub));
-q.select(&["id", "name"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" WHERE \"id\" NOT IN (SELECT \"user_id\" FROM \"orders\" WHERE \"status\" = ?)");
-```
-
-### LIKE / NOT LIKE
-
-`LikeExpression` provides safe pattern construction with automatic escaping of `%` and `_` in user input.
-
-```rust
-# use qbey::{qbey, col, LikeExpression, ConditionExpr, SelectQueryBuilder};
-// contains: %...%
-let (sql, _) = qbey("users")
-    .and_where(col("name").like(LikeExpression::contains("Ali")))
-    .to_sql();
-assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
-
-// starts_with: ...%
-let (sql, _) = qbey("users")
-    .and_where(col("name").like(LikeExpression::starts_with("Ali")))
-    .to_sql();
-assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
-
-// ends_with: %...
-let (sql, _) = qbey("users")
-    .and_where(col("name").like(LikeExpression::ends_with("ice")))
-    .to_sql();
-assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" LIKE ? ESCAPE '\'"#);
-
-// NOT LIKE
-let (sql, _) = qbey("users")
-    .and_where(col("name").not_like(LikeExpression::contains("Bob")))
-    .to_sql();
-assert_eq!(sql, r#"SELECT * FROM "users" WHERE "name" NOT LIKE ? ESCAPE '\'"#);
-```
-
-Raw strings are not accepted — `LikeExpression` must be used to prevent wildcard injection.
-
-### JOIN
-
-```rust
-# use qbey::{qbey, col, table, join, ConditionExpr, SelectQueryBuilder};
-// INNER JOIN with ON
-let mut q = qbey("users");
-q.join("orders", table("users").col("id").eq(col("user_id")));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" ON \"users\".\"id\" = \"orders\".\"user_id\"");
-
-// LEFT JOIN
-let mut q = qbey("users");
-q.left_join("addresses", table("users").col("id").eq(col("user_id")));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" LEFT JOIN \"addresses\" ON \"users\".\"id\" = \"addresses\".\"user_id\"");
-
-// JOIN with USING
-let mut q = qbey("users");
-q.join("orders", join::using_col("user_id"));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\")");
-
-// Multiple columns USING
-let mut q = qbey("users");
-q.join("orders", join::using_cols(&["user_id", "tenant_id"]));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"users\" INNER JOIN \"orders\" USING (\"user_id\", \"tenant_id\")");
-```
-
-### Table aliases and qualified columns
-
-```rust
-# use qbey::{qbey, col, table, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("users");
-q.as_("u");
-q.join(
-    table("orders").as_("o"),
-    table("u").col("id").eq(col("user_id")),
-);
-q.select(&["id"]);
-q.add_select(table("o").col("total").as_("order_total"));
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\"");
 ```
 
 ### Column aliases
@@ -511,6 +495,43 @@ q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
 ```
+
+### INSERT
+
+`Query::into_insert()` converts a SELECT query builder into an INSERT statement builder.
+Values are set using `add_value()` with column-value pairs.
+Multiple rows can be inserted by calling `add_value()` multiple times.
+Column order may differ between calls — values are automatically reordered to match the first call.
+`add_col_value_expr()` appends a raw SQL expression (e.g., `NOW()`) to every row:
+
+```rust
+# use qbey::{qbey, col, Value, RawSql, InsertQueryBuilder};
+let mut ins = qbey("employee").into_insert();
+ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
+ins.add_value(&[("age", 25.into()), ("name", "Bob".into())]);
+ins.add_col_value_expr("created_at", RawSql::new("NOW()"));
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (?, ?, NOW()), (?, ?, NOW())"#);
+```
+
+INSERT ... SELECT is also supported via `from_select()`:
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, InsertQueryBuilder};
+let mut sub = qbey("old_employee");
+sub.and_where(col("active").eq(true));
+sub.select(&["name", "age"]);
+
+let mut ins = qbey("employee").into_insert();
+ins.from_select(sub);
+
+let (sql, binds) = ins.to_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employee" WHERE "active" = ?"#);
+```
+
+Calling `to_sql()` without any `add_value()` or `from_select()` will panic.
+When building rows from a dynamic collection, the caller is responsible for ensuring the collection is non-empty.
 
 ### UPDATE
 
@@ -615,43 +636,6 @@ let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee""#);
 ```
 
-### INSERT
-
-`Query::into_insert()` converts a SELECT query builder into an INSERT statement builder.
-Values are set using `add_value()` with column-value pairs.
-Multiple rows can be inserted by calling `add_value()` multiple times.
-Column order may differ between calls — values are automatically reordered to match the first call.
-`add_col_value_expr()` appends a raw SQL expression (e.g., `NOW()`) to every row:
-
-```rust
-# use qbey::{qbey, col, Value, RawSql, InsertQueryBuilder};
-let mut ins = qbey("employee").into_insert();
-ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
-ins.add_value(&[("age", 25.into()), ("name", "Bob".into())]);
-ins.add_col_value_expr("created_at", RawSql::new("NOW()"));
-
-let (sql, binds) = ins.to_sql();
-assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (?, ?, NOW()), (?, ?, NOW())"#);
-```
-
-INSERT ... SELECT is also supported via `from_select()`:
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, InsertQueryBuilder};
-let mut sub = qbey("old_employee");
-sub.and_where(col("active").eq(true));
-sub.select(&["name", "age"]);
-
-let mut ins = qbey("employee").into_insert();
-ins.from_select(sub);
-
-let (sql, binds) = ins.to_sql();
-assert_eq!(sql, r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employee" WHERE "active" = ?"#);
-```
-
-Calling `to_sql()` without any `add_value()` or `from_select()` will panic.
-When building rows from a dynamic collection, the caller is responsible for ensuring the collection is non-empty.
-
 ### RETURNING clause (feature = "returning")
 
 RETURNING is non-standard SQL supported by PostgreSQL, SQLite, and MariaDB.
@@ -699,10 +683,6 @@ assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ? RETURNING "id", "name""
 # }
 ```
 
-### MySQL dialect
-
-See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
-
 ## Schema macro
 
 `qbey_schema!` generates a typed struct for a table, providing column accessor methods that return qualified `Col` references. This avoids repeating string-based column names and enables compile-time checks.
@@ -738,6 +718,10 @@ q.select(&[u.name(), m.name().as_("manager_name")]);
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "users"."name", "managers"."name" AS "manager_name" FROM "users" LEFT JOIN "users" AS "managers" ON "users"."manager_id" = "managers"."id""#);
 ```
+
+### MySQL dialect
+
+See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick quoting, index hints, STRAIGHT_JOIN, etc.).
 
 # Example
 
