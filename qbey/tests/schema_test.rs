@@ -132,7 +132,7 @@ fn test_schema_update() {
     let u = Users::new();
     let mut q = qbey("users").into_update();
     q.set(u.name(), "Bob");
-    q.and_where(u.id().eq(1));
+    let q = q.and_where(u.id().eq(1));
 
     let (sql, binds) = q.to_sql();
     assert_eq!(
@@ -145,8 +145,7 @@ fn test_schema_update() {
 #[test]
 fn test_schema_delete() {
     let u = Users::new();
-    let mut q = qbey("users").into_delete();
-    q.and_where(u.id().eq(1));
+    let q = qbey("users").into_delete().and_where(u.id().eq(1));
 
     let (sql, binds) = q.to_sql();
     assert_eq!(sql, r#"DELETE FROM "users" WHERE "users"."id" = ?"#);

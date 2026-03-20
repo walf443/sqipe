@@ -1,9 +1,12 @@
+use std::marker::PhantomData;
+
 use crate::Dialect;
 use crate::column::Col;
 use crate::query::CteDefinition;
 use crate::raw_sql::RawSql;
 use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
+use crate::{WhereNotSet, WhereProvided};
 
 use crate::renderer::RenderConfig;
 
@@ -16,7 +19,7 @@ pub enum SetClause<V: Clone> {
     Expr(RawSql<V>),
 }
 
-/// Trait for UPDATE query builder methods.
+/// Trait for UPDATE query builder methods that do not change the WHERE state.
 ///
 /// Implement this trait on dialect-specific UPDATE wrappers to ensure they
 /// expose the same builder API as the core [`UpdateQuery`].
@@ -33,7 +36,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
     ///
     /// let mut u = qbey("employee").into_update();
     /// u.set(col("name"), "Alice");
-    /// u.and_where(col("id").eq(1));
+    /// let mut u = u.and_where(col("id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
@@ -55,23 +58,11 @@ pub trait UpdateQueryBuilder<V: Clone> {
     ///
     /// let mut u = qbey("employee").into_update();
     /// u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
-    /// u.and_where(col("id").eq(1));
+    /// let mut u = u.and_where(col("id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
     /// ```
     fn set_expr(&mut self, expr: RawSql<V>) -> &mut Self;
-
-    /// Add an AND WHERE condition.
-    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
-
-    /// Add an OR WHERE condition.
-    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self;
-
-    /// Explicitly allow this UPDATE to have no WHERE clause.
-    ///
-    /// By default, `to_sql()` panics if no WHERE conditions are set,
-    /// to prevent accidental full-table updates.
-    fn allow_without_where(&mut self) -> &mut Self;
 
     /// Add a CTE to the `WITH` clause.
     ///
@@ -85,7 +76,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
     /// let mut u = qbey("employee").into_update();
     /// u.with_cte("active_depts", &[], cte_q);
     /// u.set(col("status"), "active");
-    /// u.and_where(col("dept_id").eq(1));
+    /// let mut u = u.and_where(col("dept_id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert!(sql.starts_with(r#"WITH "active_depts" AS"#));
     /// ```
@@ -117,7 +108,7 @@ pub trait UpdateQueryBuilder<V: Clone> {
     /// let mut u = qbey("employees").into_update();
     /// u.with_recursive_cte("org_tree", &["id", "name", "manager_id"], cte_query);
     /// u.set(col("active"), true);
-    /// u.and_where(col("id").eq(1));
+    /// let mut u = u.and_where(col("id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert!(sql.starts_with(r#"WITH RECURSIVE "org_tree""#));
     /// ```
@@ -129,37 +120,50 @@ pub trait UpdateQueryBuilder<V: Clone> {
     ) -> &mut Self;
 }
 
-/// An UPDATE query builder, generic over the bind value type `V`.
+/// An UPDATE query builder, generic over the bind value type `V` and WHERE state `W`.
 ///
 /// Created via [`SelectQuery::into_update()`] to convert a SELECT query builder into an UPDATE statement.
 ///
-/// By default, WHERE clause is required. Calling `to_sql()` or `to_sql_with()` without
-/// any WHERE conditions will panic to prevent accidental full-table updates.
-/// Use [`allow_without_where()`](UpdateQuery::allow_without_where) to explicitly allow WHERE-less updates.
+/// By default, WHERE clause is required at compile time. The query starts in the
+/// [`WhereNotSet`] state where `to_sql()` is not available. Call [`and_where()`],
+/// [`or_where()`], or [`allow_without_where()`] to transition to [`WhereProvided`]
+/// state, which enables `to_sql()` and `to_sql_with()`.
 ///
 /// ```
 /// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 ///
 /// let mut u = qbey("employee").into_update();
 /// u.set(col("name"), "Alice");
-/// u.and_where(col("id").eq(1));
+/// let mut u = u.and_where(col("id").eq(1));
 /// let (sql, _) = u.to_sql();
 /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 /// ```
+///
+/// Attempting to call `to_sql()` without a WHERE clause is a compile error:
+///
+/// ```compile_fail
+/// use qbey::{qbey, col, UpdateQueryBuilder};
+///
+/// let mut u = qbey("employee").into_update();
+/// u.set(col("name"), "Alice");
+/// let _ = u.to_sql(); // Error: `to_sql` is not available on `WhereNotSet`
+/// ```
 #[derive(Debug, Clone)]
-pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value> {
+pub struct UpdateQuery<V: Clone + std::fmt::Debug = Value, W = WhereNotSet> {
     pub(crate) table: String,
     pub(crate) table_alias: Option<String>,
     pub(crate) sets: Vec<SetClause<V>>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
-    pub(crate) allow_without_where: bool,
     pub(crate) ctes: Vec<CteDefinition<V>>,
     /// Columns to return via RETURNING clause (non-standard SQL).
     #[cfg(feature = "returning")]
     pub(crate) returning_columns: Vec<crate::Col>,
+    pub(crate) _where_state: PhantomData<W>,
 }
 
-impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
+// ── Builder methods available in any WHERE state ──
+
+impl<V: Clone + std::fmt::Debug, W> UpdateQueryBuilder<V> for UpdateQuery<V, W> {
     fn set(&mut self, col: Col, val: impl Into<V>) -> &mut Self {
         self.sets.push(SetClause::Value(col.column, val.into()));
         self
@@ -167,21 +171,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
 
     fn set_expr(&mut self, expr: RawSql<V>) -> &mut Self {
         self.sets.push(SetClause::Expr(expr));
-        self
-    }
-
-    fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
-        self
-    }
-
-    fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
-        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
-        self
-    }
-
-    fn allow_without_where(&mut self) -> &mut Self {
-        self.allow_without_where = true;
         self
     }
 
@@ -218,25 +207,9 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for UpdateQuery<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
-    pub(crate) fn new(
-        table: String,
-        table_alias: Option<String>,
-        wheres: Vec<WhereEntry<V>>,
-        ctes: Vec<CteDefinition<V>>,
-    ) -> Self {
-        UpdateQuery {
-            table,
-            table_alias,
-            sets: Vec::new(),
-            wheres,
-            allow_without_where: false,
-            ctes,
-            #[cfg(feature = "returning")]
-            returning_columns: Vec::new(),
-        }
-    }
+// ── RETURNING (available in any WHERE state) ──
 
+impl<V: Clone + std::fmt::Debug, W> UpdateQuery<V, W> {
     /// Add columns to the RETURNING clause (non-standard SQL; PostgreSQL, SQLite, MariaDB).
     ///
     /// Columns are accumulated — calling this method multiple times appends
@@ -247,7 +220,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     ///
     /// let mut u = qbey("employee").into_update();
     /// u.set(col("name"), "Alice");
-    /// u.and_where(col("id").eq(1));
+    /// let mut u = u.and_where(col("id").eq(1));
     /// u.returning(&[col("id"), col("name")]);
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ? RETURNING "id", "name""#);
@@ -260,14 +233,123 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
         self
     }
 
-    /// Build an UpdateTree AST from this query.
+    /// Change the WHERE-state type parameter.
+    ///
+    /// This is a low-level helper for dialect wrappers (e.g., `MysqlUpdateQuery`)
+    /// that need to mirror state transitions on their inner `UpdateQuery`.
+    pub fn change_state<W2>(self) -> UpdateQuery<V, W2> {
+        UpdateQuery {
+            table: self.table,
+            table_alias: self.table_alias,
+            sets: self.sets,
+            wheres: self.wheres,
+            ctes: self.ctes,
+            #[cfg(feature = "returning")]
+            returning_columns: self.returning_columns,
+            _where_state: PhantomData,
+        }
+    }
+}
+
+// ── Constructor ──
+
+impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereNotSet> {
+    pub(crate) fn new(
+        table: String,
+        table_alias: Option<String>,
+        wheres: Vec<WhereEntry<V>>,
+        ctes: Vec<CteDefinition<V>>,
+    ) -> Self {
+        UpdateQuery {
+            table,
+            table_alias,
+            sets: Vec::new(),
+            wheres,
+            ctes,
+            #[cfg(feature = "returning")]
+            returning_columns: Vec::new(),
+            _where_state: PhantomData,
+        }
+    }
+}
+
+// ── State-transitioning methods (WhereNotSet → WhereProvided) ──
+
+impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereNotSet> {
+    /// Add an AND WHERE condition and transition to [`WhereProvided`] state.
+    ///
+    /// After this call, `to_sql()` becomes available.
+    pub fn and_where(mut self, cond: impl IntoWhereClause<V>) -> UpdateQuery<V, WhereProvided> {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self.change_state()
+    }
+
+    /// Add an OR WHERE condition and transition to [`WhereProvided`] state.
+    ///
+    /// After this call, `to_sql()` becomes available.
+    pub fn or_where(mut self, cond: impl IntoWhereClause<V>) -> UpdateQuery<V, WhereProvided> {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self.change_state()
+    }
+
+    /// Explicitly allow this UPDATE to have no WHERE clause.
+    ///
+    /// By default, `to_sql()` is a compile error if no WHERE conditions are set,
+    /// to prevent accidental full-table updates. Call this method to acknowledge
+    /// that a WHERE-less update is intentional.
+    pub fn allow_without_where(self) -> UpdateQuery<V, WhereProvided> {
+        self.change_state()
+    }
+
+    /// Assert that WHERE conditions have already been set (e.g., transferred
+    /// from a [`SelectQuery`](crate::SelectQuery)) and transition to
+    /// [`WhereProvided`] state.
+    ///
+    /// Unlike [`allow_without_where()`](Self::allow_without_where), this method
+    /// panics if no WHERE conditions are present, providing a runtime safety net.
+    ///
+    /// ```
+    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder};
+    ///
+    /// let mut q = qbey("employee");
+    /// q.and_where(col("id").eq(1));
+    /// let mut u = q.into_update();
+    /// u.set(col("name"), "Alice");
+    /// let u = u.where_set();
+    /// let (sql, _) = u.to_sql();
+    /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
+    /// ```
     ///
     /// # Panics
     ///
-    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
-    /// has not been called.
+    /// Panics if no WHERE conditions are set.
+    pub fn where_set(self) -> UpdateQuery<V, WhereProvided> {
+        assert!(
+            !self.wheres.is_empty(),
+            "where_set() called but no WHERE conditions are set. \
+             Use allow_without_where() for intentional full-table updates."
+        );
+        self.change_state()
+    }
+}
+
+// ── Methods on WhereProvided (can add more conditions + build SQL) ──
+
+impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereProvided> {
+    /// Add an additional AND WHERE condition.
+    pub fn and_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::And(cond.into_where_clause()));
+        self
+    }
+
+    /// Add an additional OR WHERE condition.
+    pub fn or_where(&mut self, cond: impl IntoWhereClause<V>) -> &mut Self {
+        self.wheres.push(WhereEntry::Or(cond.into_where_clause()));
+        self
+    }
+
+    /// Build an UpdateTree AST from this query.
     pub fn to_tree(&self) -> crate::tree::UpdateTree<V> {
-        self.assert_where_present();
         let mut tokens = Vec::new();
         if !self.ctes.is_empty() {
             tokens.push(crate::tree::UpdateToken::With(
@@ -291,22 +373,9 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
         crate::tree::UpdateTree { tokens }
     }
 
-    fn assert_where_present(&self) {
-        assert!(
-            self.allow_without_where || !self.wheres.is_empty(),
-            "UPDATE without WHERE is dangerous and not allowed by default. \
-             Use .allow_without_where() to explicitly allow full-table updates."
-        );
-    }
-
     /// Build standard SQL with `?` placeholders and double-quote identifiers.
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
-    /// has not been called.
     pub fn to_sql(&self) -> (String, Vec<V>) {
         self.to_sql_with(&crate::DefaultDialect)
     }
@@ -314,11 +383,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V> {
     /// Build standard SQL with dialect-specific placeholders and quoting.
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no WHERE conditions are set and [`allow_without_where()`](UpdateQuery::allow_without_where)
-    /// has not been called.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
         let tree = self.to_tree();
         let ph = |n: usize| dialect.placeholder(n);

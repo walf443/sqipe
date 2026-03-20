@@ -909,19 +909,20 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
 impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Convert this SELECT query builder into an UPDATE query builder.
     ///
-    /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
+    /// Consumes `self` and transfers the table name, alias, WHERE conditions, and CTEs.
+    /// The returned query is in [`WhereNotSet`](crate::WhereNotSet) state — you must call
+    /// [`and_where()`], [`or_where()`], or [`allow_without_where()`] before `to_sql()`.
     ///
     /// ```
-    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
     ///
-    /// let mut q = qbey("employee");
-    /// q.and_where(col("id").eq(1));
-    /// let mut u = q.into_update();
+    /// let mut u = qbey("employee").into_update();
     /// u.set(col("name"), "Alice");
+    /// let mut u = u.and_where(col("id").eq(1));
     /// let (sql, _) = u.to_sql();
     /// assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
     /// ```
-    pub fn into_update(self) -> UpdateQuery<V> {
+    pub fn into_update(self) -> UpdateQuery<V, crate::WhereNotSet> {
         assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to UPDATE"
@@ -985,18 +986,19 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
 
     /// Convert this SELECT query builder into a DELETE query builder.
     ///
-    /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
+    /// Consumes `self` and transfers the table name, alias, WHERE conditions, and CTEs.
+    /// The returned query is in [`WhereNotSet`](crate::WhereNotSet) state — you must call
+    /// [`and_where()`], [`or_where()`], or [`allow_without_where()`] before `to_sql()`.
     ///
     /// ```
-    /// use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+    /// use qbey::{qbey, col, ConditionExpr};
     ///
-    /// let mut q = qbey("employee");
-    /// q.and_where(col("id").eq(1));
-    /// let d = q.into_delete();
+    /// let d = qbey("employee").into_delete()
+    ///     .and_where(col("id").eq(1));
     /// let (sql, _) = d.to_sql();
     /// assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
     /// ```
-    pub fn into_delete(self) -> DeleteQuery<V> {
+    pub fn into_delete(self) -> DeleteQuery<V, crate::WhereNotSet> {
         assert!(
             self.set_operations.is_empty(),
             "Compound query (set operations) cannot be converted to DELETE"

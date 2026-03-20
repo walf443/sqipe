@@ -1,20 +1,20 @@
 use qbey::Dialect;
 use qbey::Value;
-use qbey::{DeleteQueryBuilder, MySqlDialect};
+use qbey::{DeleteQueryBuilder, MySqlDialect, WhereNotSet, WhereProvided};
 
 /// MySQL-specific DELETE query builder.
 ///
 /// Extends the core `DeleteQuery` with MySQL-specific features like
 /// `ORDER BY` and `LIMIT` in DELETE statements.
 #[derive(Debug, Clone)]
-pub struct MysqlDeleteQuery<V: Clone + std::fmt::Debug = Value> {
-    inner: qbey::DeleteQuery<V>,
+pub struct MysqlDeleteQuery<V: Clone + std::fmt::Debug = Value, W = WhereNotSet> {
+    inner: qbey::DeleteQuery<V, W>,
     order_bys: Vec<qbey::OrderByClause<qbey::Value>>,
     limit_val: Option<u64>,
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
-    pub(crate) fn new(inner: qbey::DeleteQuery<V>) -> Self {
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereNotSet> {
+    pub(crate) fn new(inner: qbey::DeleteQuery<V, WhereNotSet>) -> Self {
         MysqlDeleteQuery {
             inner,
             order_bys: Vec::new(),
@@ -23,22 +23,7 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for MysqlDeleteQuery<V> {
-    fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
-        self.inner.and_where(cond);
-        self
-    }
-
-    fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
-        self.inner.or_where(cond);
-        self
-    }
-
-    fn allow_without_where(&mut self) -> &mut Self {
-        self.inner.allow_without_where();
-        self
-    }
-
+impl<V: Clone + std::fmt::Debug, W> DeleteQueryBuilder<V> for MysqlDeleteQuery<V, W> {
     fn with_cte(
         &mut self,
         name: &str,
@@ -60,7 +45,9 @@ impl<V: Clone + std::fmt::Debug> DeleteQueryBuilder<V> for MysqlDeleteQuery<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
+// ── Methods available in any WHERE state ──
+
+impl<V: Clone + std::fmt::Debug, W> MysqlDeleteQuery<V, W> {
     /// Add an ORDER BY clause (MySQL extension).
     pub fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
@@ -89,7 +76,7 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     /// use qbey::DeleteQueryBuilder;
     ///
     /// let mut d = qbey("users").into_delete();
-    /// d.and_where(col("id").eq(1));
+    /// let mut d = d.and_where(col("id").eq(1));
     /// d.returning(&[col("id"), col("name")]);
     /// let (sql, _) = d.to_sql();
     /// assert_eq!(
@@ -100,6 +87,77 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V> {
     #[cfg(feature = "returning")]
     pub fn returning(&mut self, cols: &[qbey::Col]) -> &mut Self {
         self.inner.returning(cols);
+        self
+    }
+}
+
+// ── State-transitioning methods (WhereNotSet → WhereProvided) ──
+
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereNotSet> {
+    /// Add an AND WHERE condition and transition to [`WhereProvided`] state.
+    pub fn and_where(
+        self,
+        cond: impl qbey::IntoWhereClause<V>,
+    ) -> MysqlDeleteQuery<V, WhereProvided> {
+        let inner = self.inner.and_where(cond);
+        MysqlDeleteQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Add an OR WHERE condition and transition to [`WhereProvided`] state.
+    pub fn or_where(
+        self,
+        cond: impl qbey::IntoWhereClause<V>,
+    ) -> MysqlDeleteQuery<V, WhereProvided> {
+        let inner = self.inner.or_where(cond);
+        MysqlDeleteQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Explicitly allow this DELETE to have no WHERE clause.
+    pub fn allow_without_where(self) -> MysqlDeleteQuery<V, WhereProvided> {
+        let inner = self.inner.allow_without_where();
+        MysqlDeleteQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Assert that WHERE conditions have already been set (e.g., transferred
+    /// from a SelectQuery) and transition to [`WhereProvided`] state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no WHERE conditions are set.
+    pub fn where_set(self) -> MysqlDeleteQuery<V, WhereProvided> {
+        let inner = self.inner.where_set();
+        MysqlDeleteQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+}
+
+// ── Methods on WhereProvided ──
+
+impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
+    /// Add an additional AND WHERE condition.
+    pub fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.and_where(cond);
+        self
+    }
+
+    /// Add an additional OR WHERE condition.
+    pub fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.or_where(cond);
         self
     }
 

@@ -7,8 +7,9 @@ use sqlx::Row;
 async fn test_delete_basic() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.and_where(col("id").eq(1));
+    let d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .and_where(col("id").eq(1));
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -31,7 +32,7 @@ async fn test_delete_from_query_with_where() {
 
     let mut q = qbey_with::<MysqlValue>("users");
     q.and_where(col("age").lt(30));
-    let d = q.into_delete();
+    let d = q.into_delete().where_set();
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -53,8 +54,9 @@ async fn test_delete_from_query_with_where() {
 async fn test_delete_allow_without_where() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.allow_without_where();
+    let d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .allow_without_where();
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -74,8 +76,9 @@ async fn test_delete_with_order_by_and_limit() {
     let pool = setup_pool().await;
 
     // Delete the oldest user only
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.allow_without_where();
+    let mut d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .allow_without_where();
     d.order_by(col("age").desc());
     d.limit(1);
     let (sql, binds) = d.to_sql();

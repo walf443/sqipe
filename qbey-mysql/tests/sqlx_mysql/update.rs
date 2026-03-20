@@ -9,7 +9,7 @@ async fn test_update_basic() {
 
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -31,7 +31,7 @@ async fn test_update_multiple_sets() {
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("name"), "Alicia");
     u.set(col("age"), 31);
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -55,6 +55,7 @@ async fn test_update_from_query_with_where() {
     q.and_where(col("id").eq(2));
     let mut u = q.into_update();
     u.set(col("name"), "Bobby");
+    let u = u.where_set();
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -75,7 +76,7 @@ async fn test_update_allow_without_where() {
 
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("age"), 99);
-    u.allow_without_where();
+    let u = u.allow_without_where();
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)

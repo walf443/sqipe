@@ -581,7 +581,7 @@ async fn test_update_basic() {
 
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -604,7 +604,7 @@ async fn test_update_multiple_sets() {
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.set(col("name"), "Alicia");
     u.set(col("age"), 31);
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -628,6 +628,7 @@ async fn test_update_from_query_with_where() {
     q.and_where(col("id").eq(2));
     let mut u = q.into_update();
     u.set(col("name"), "Bobby");
+    let u = u.where_set();
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -648,7 +649,7 @@ async fn test_update_allow_without_where() {
 
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.set(col("age"), 99);
-    u.allow_without_where();
+    let u = u.allow_without_where();
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -667,8 +668,9 @@ async fn test_update_allow_without_where() {
 async fn test_delete_basic() {
     let pool = setup_db().await;
 
-    let mut d = qbey_with::<SqliteValue>("users").into_delete();
-    d.and_where(col("id").eq(1));
+    let d = qbey_with::<SqliteValue>("users")
+        .into_delete()
+        .and_where(col("id").eq(1));
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -691,7 +693,7 @@ async fn test_delete_from_query_with_where() {
 
     let mut q = qbey_with::<SqliteValue>("users");
     q.and_where(col("age").lt(30));
-    let d = q.into_delete();
+    let d = q.into_delete().where_set();
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -713,8 +715,9 @@ async fn test_delete_from_query_with_where() {
 async fn test_delete_allow_without_where() {
     let pool = setup_db().await;
 
-    let mut d = qbey_with::<SqliteValue>("users").into_delete();
-    d.allow_without_where();
+    let d = qbey_with::<SqliteValue>("users")
+        .into_delete()
+        .allow_without_where();
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -1006,7 +1009,7 @@ async fn test_cte_update() {
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.with_cte("older_users", &[], cte_q);
     u.set(col("name"), "Senior");
-    u.and_where(col("id").included(cte_ref));
+    let u = u.and_where(col("id").included(cte_ref));
     let (sql, binds) = u.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -1042,7 +1045,7 @@ async fn test_cte_delete() {
 
     let mut d = qbey_with::<SqliteValue>("users").into_delete();
     d.with_cte("old_users", &[], cte_q);
-    d.and_where(col("id").included(cte_ref));
+    let d = d.and_where(col("id").included(cte_ref));
     let (sql, binds) = d.to_sql();
 
     bind_params(sqlx::query(&sql), &binds)
@@ -1165,7 +1168,7 @@ async fn test_update_returning() {
 
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let mut u = u.and_where(col("id").eq(1));
     u.returning(&[col("id"), col("name")]);
     let (sql, binds) = u.to_sql();
 
@@ -1185,7 +1188,7 @@ async fn test_update_returning_multiple_rows() {
 
     let mut u = qbey_with::<SqliteValue>("users").into_update();
     u.set(col("age"), 99);
-    u.and_where(col("age").gte(30));
+    let mut u = u.and_where(col("age").gte(30));
     u.returning(&[col("id"), col("name"), col("age")]);
     let (sql, binds) = u.to_sql();
 
@@ -1203,8 +1206,9 @@ async fn test_update_returning_multiple_rows() {
 async fn test_delete_returning() {
     let pool = setup_db().await;
 
-    let mut d = qbey_with::<SqliteValue>("users").into_delete();
-    d.and_where(col("id").eq(1));
+    let mut d = qbey_with::<SqliteValue>("users")
+        .into_delete()
+        .and_where(col("id").eq(1));
     d.returning(&[col("id"), col("name")]);
     let (sql, binds) = d.to_sql();
 
@@ -1229,8 +1233,9 @@ async fn test_delete_returning() {
 async fn test_delete_returning_multiple_rows() {
     let pool = setup_db().await;
 
-    let mut d = qbey_with::<SqliteValue>("users").into_delete();
-    d.and_where(col("age").gte(30));
+    let mut d = qbey_with::<SqliteValue>("users")
+        .into_delete()
+        .and_where(col("age").gte(30));
     d.returning(&[col("name"), col("age")]);
     let (sql, binds) = d.to_sql();
 

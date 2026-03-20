@@ -543,14 +543,14 @@ When building rows from a dynamic collection, the caller is responsible for ensu
 # use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 // Basic UPDATE
 let mut u = qbey("employee").into_update();
-u.and_where(col("id").eq(1));
 u.set(col("name"), "Alice");
+let mut u = u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 ```
 
-WHERE conditions can be built first, then converted to UPDATE:
+WHERE conditions can be built first, then converted to UPDATE using `where_set()`:
 
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder};
@@ -560,17 +560,18 @@ let mut u = q.into_update();
 u.set(col("name"), "Alice");
 u.set(col("age"), 31);
 
+let u = u.where_set();
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#);
 ```
 
-By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table updates. Use `allow_without_where()` to explicitly opt in:
+By default, `to_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less updates:
 
 ```rust
 # use qbey::{qbey, col, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.allow_without_where();
 u.set(col("status"), "inactive");
+let u = u.allow_without_where();
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
@@ -581,8 +582,8 @@ For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSq
 ```rust
 # use qbey::{qbey, col, ConditionExpr, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.and_where(col("id").eq(1));
 u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
+let u = u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
@@ -593,8 +594,8 @@ assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE
 ```rust
 # use qbey::{qbey, col, Value, ConditionExpr, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.and_where(col("id").eq(1));
 u.set_expr(RawSql::new(r#""score" = "score" + {}"#).binds(&[10]));
+let u = u.and_where(col("id").eq(1));
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "score" = "score" + ? WHERE "id" = ?"#);
@@ -606,33 +607,33 @@ assert_eq!(binds, vec![Value::Int(10), Value::Int(1)]);
 `Query::into_delete()` converts a SELECT query builder into a DELETE statement builder.
 
 ```rust
-# use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr};
 // Basic DELETE
-let mut d = qbey("employee").into_delete();
-d.and_where(col("id").eq(1));
+let d = qbey("employee").into_delete()
+    .and_where(col("id").eq(1));
 
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 ```
 
-WHERE conditions can be built first, then converted to DELETE:
+WHERE conditions can be built first, then converted to DELETE using `where_set()`:
 
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
-let d = q.into_delete();
+let d = q.into_delete().where_set();
 
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 ```
 
-By default, calling `to_sql()` without any WHERE conditions will panic to prevent accidental full-table deletes. Use `allow_without_where()` to explicitly opt in:
+By default, `to_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less deletes:
 
 ```rust
-# use qbey::{qbey, DeleteQueryBuilder};
-let mut d = qbey("employee").into_delete();
-d.allow_without_where();
+# use qbey::{qbey};
+let d = qbey("employee").into_delete()
+    .allow_without_where();
 
 let (sql, binds) = d.to_sql();
 assert_eq!(sql, r#"DELETE FROM "employee""#);
@@ -683,7 +684,7 @@ assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?) RETURNIN
 # use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
-u.and_where(col("id").eq(1));
+let mut u = u.and_where(col("id").eq(1));
 u.returning(&[col("id"), col("name")]);
 
 let (sql, binds) = u.to_sql();
@@ -694,9 +695,9 @@ assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ? RETURNING "id
 ```rust
 # #[cfg(feature = "returning")]
 # {
-# use qbey::{qbey, col, ConditionExpr, DeleteQueryBuilder};
-let mut d = qbey("employee").into_delete();
-d.and_where(col("id").eq(1));
+# use qbey::{qbey, col, ConditionExpr};
+let mut d = qbey("employee").into_delete()
+    .and_where(col("id").eq(1));
 d.returning(&[col("id"), col("name")]);
 
 let (sql, binds) = d.to_sql();

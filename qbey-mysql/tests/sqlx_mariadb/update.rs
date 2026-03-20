@@ -11,6 +11,6 @@ use super::common::MysqlValue;
 fn test_update_returning_panics() {
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("name"), "Alice");
-    u.and_where(col("id").eq(1));
+    let mut u = u.and_where(col("id").eq(1));
     u.returning(&[col("id"), col("name")]);
 }

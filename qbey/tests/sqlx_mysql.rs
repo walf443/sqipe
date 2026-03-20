@@ -631,7 +631,7 @@ async fn test_update_basic() {
 
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -653,7 +653,7 @@ async fn test_update_multiple_sets() {
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("name"), "Alicia");
     u.set(col("age"), 31);
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -677,6 +677,7 @@ async fn test_update_from_query_with_where() {
     q.and_where(col("id").eq(2));
     let mut u = q.into_update();
     u.set(col("name"), "Bobby");
+    let u = u.where_set();
     let (sql, binds) = u.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -697,7 +698,7 @@ async fn test_update_allow_without_where() {
 
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.set(col("age"), 99);
-    u.allow_without_where();
+    let u = u.allow_without_where();
     let (sql, binds) = u.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -718,8 +719,9 @@ async fn test_update_allow_without_where() {
 async fn test_delete_basic() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.and_where(col("id").eq(1));
+    let d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .and_where(col("id").eq(1));
     let (sql, binds) = d.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -741,7 +743,7 @@ async fn test_delete_from_query_with_where() {
 
     let mut q = qbey_with::<MysqlValue>("users");
     q.and_where(col("age").lt(30));
-    let d = q.into_delete();
+    let d = q.into_delete().where_set();
     let (sql, binds) = d.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -763,8 +765,9 @@ async fn test_delete_from_query_with_where() {
 async fn test_delete_allow_without_where() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.allow_without_where();
+    let d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .allow_without_where();
     let (sql, binds) = d.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -1059,7 +1062,7 @@ async fn test_cte_update() {
     let mut u = qbey_with::<MysqlValue>("users").into_update();
     u.with_cte("older_users", &[], cte_q);
     u.set(col("name"), "Senior");
-    u.and_where(col("id").included(cte_ref));
+    let u = u.and_where(col("id").included(cte_ref));
     let (sql, binds) = u.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)
@@ -1093,7 +1096,7 @@ async fn test_cte_delete() {
 
     let mut d = qbey_with::<MysqlValue>("users").into_delete();
     d.with_cte("old_users", &[], cte_q);
-    d.and_where(col("id").included(cte_ref));
+    let d = d.and_where(col("id").included(cte_ref));
     let (sql, binds) = d.to_sql_with(&DIALECT);
 
     bind_params(sqlx::query(&sql), &binds)

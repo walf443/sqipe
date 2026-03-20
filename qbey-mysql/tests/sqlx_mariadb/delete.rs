@@ -11,8 +11,9 @@ use sqlx::Row;
 async fn test_delete_returning() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.and_where(col("id").eq(1));
+    let mut d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .and_where(col("id").eq(1));
     d.returning(&[col("id"), col("name")]);
     let (sql, binds) = d.to_sql();
 
@@ -38,8 +39,9 @@ async fn test_delete_returning() {
 async fn test_delete_returning_multiple_rows() {
     let pool = setup_pool().await;
 
-    let mut d = qbey_with::<MysqlValue>("users").into_delete();
-    d.and_where(col("age").gte(30));
+    let mut d = qbey_with::<MysqlValue>("users")
+        .into_delete()
+        .and_where(col("age").gte(30));
     d.returning(&[col("name"), col("age")]);
     let (sql, binds) = d.to_sql();
 

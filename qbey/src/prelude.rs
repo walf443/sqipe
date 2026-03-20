@@ -12,3 +12,4 @@ pub use crate::delete::DeleteQueryBuilder;
 pub use crate::insert::InsertQueryBuilder;
 pub use crate::query::SelectQueryBuilder;
 pub use crate::update::UpdateQueryBuilder;
+pub use crate::{WhereNotSet, WhereProvided};

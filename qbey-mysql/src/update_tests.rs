@@ -5,7 +5,7 @@ use qbey::{ConditionExpr, SelectQueryBuilder, UpdateQueryBuilder, col};
 fn test_update_basic() {
     let mut u = qbey("users").into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let mut u = u.and_where(col("id").eq(1));
 
     let (sql, binds) = u.to_sql();
     assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
@@ -23,7 +23,7 @@ fn test_update_multiple_sets() {
     let mut u = qbey("users").into_update();
     u.set(col("name"), "Alicia");
     u.set(col("age"), 31);
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
 
     let (sql, binds) = u.to_sql();
     assert_eq!(
@@ -46,6 +46,7 @@ fn test_update_from_query_with_where() {
     q.and_where(col("id").eq(1));
     let mut u = q.into_update();
     u.set(col("name"), "Alicia");
+    let u = u.where_set();
 
     let (sql, _) = u.to_sql();
     assert_eq!(sql, "UPDATE `users` SET `name` = ? WHERE `id` = ?");
@@ -55,7 +56,7 @@ fn test_update_from_query_with_where() {
 fn test_update_allow_without_where() {
     let mut u = qbey("users").into_update();
     u.set(col("age"), 99);
-    u.allow_without_where();
+    let u = u.allow_without_where();
 
     let (sql, _) = u.to_sql();
     assert_eq!(sql, "UPDATE `users` SET `age` = ?");
@@ -67,7 +68,7 @@ fn test_update_with_table_alias() {
     q.as_("u");
     let mut u = q.into_update();
     u.set(col("name"), "Alicia");
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
 
     let (sql, _) = u.to_sql();
     // MySQL does not support AS in UPDATE table alias
@@ -78,7 +79,7 @@ fn test_update_with_table_alias() {
 fn test_update_with_order_by_and_limit() {
     let mut u = qbey("users").into_update();
     u.set(col("status"), "inactive");
-    u.and_where(col("dept").eq("eng"));
+    let mut u = u.and_where(col("dept").eq("eng"));
     u.order_by(col("created_at").asc());
     u.limit(10);
 
@@ -100,7 +101,7 @@ fn test_update_with_order_by_and_limit() {
 fn test_update_with_limit_only() {
     let mut u = qbey("users").into_update();
     u.set(col("flagged"), true);
-    u.allow_without_where();
+    let mut u = u.allow_without_where();
     u.limit(100);
 
     let (sql, _) = u.to_sql();
@@ -111,7 +112,7 @@ fn test_update_with_limit_only() {
 fn test_update_with_like() {
     let mut u = qbey("users").into_update();
     u.set(col("flagged"), true);
-    u.and_where(col("name").like(qbey::LikeExpression::starts_with("test")));
+    let u = u.and_where(col("name").like(qbey::LikeExpression::starts_with("test")));
 
     let (sql, binds) = u.to_sql();
     // MySQL doubles backslash in ESCAPE clause due to backslash_escape
@@ -132,7 +133,7 @@ fn test_update_with_like() {
 fn test_update_with_set_expr() {
     let mut u = qbey("users").into_update();
     u.set_expr(qbey::RawSql::new("`visit_count` = `visit_count` + 1"));
-    u.and_where(col("id").eq(1));
+    let u = u.and_where(col("id").eq(1));
 
     let (sql, binds) = u.to_sql();
     assert_eq!(
@@ -146,7 +147,7 @@ fn test_update_with_set_expr() {
 fn test_update_order_by_expr() {
     let mut u = qbey("users").into_update();
     u.set(col("status"), "inactive");
-    u.and_where(col("dept").eq("eng"));
+    let mut u = u.and_where(col("dept").eq("eng"));
     u.order_by_expr(qbey::RawSql::new("RAND()"));
     u.limit(10);
 

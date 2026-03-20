@@ -499,7 +499,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     ///
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
-    pub fn into_update(self) -> MysqlUpdateQuery<V> {
+    pub fn into_update(self) -> MysqlUpdateQuery<V, qbey::WhereNotSet> {
         MysqlUpdateQuery::new(self.inner.into_update())
     }
 
@@ -507,7 +507,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
     ///
     /// Consumes `self` and transfers the table name, alias, and WHERE conditions.
     /// The generated SQL uses MySQL dialect (backtick quoting, `?` placeholders).
-    pub fn into_delete(self) -> MysqlDeleteQuery<V> {
+    pub fn into_delete(self) -> MysqlDeleteQuery<V, qbey::WhereNotSet> {
         MysqlDeleteQuery::new(self.inner.into_delete())
     }
 

@@ -1,20 +1,20 @@
 use qbey::Dialect;
 use qbey::Value;
-use qbey::{MySqlDialect, UpdateQueryBuilder};
+use qbey::{MySqlDialect, UpdateQueryBuilder, WhereNotSet, WhereProvided};
 
 /// MySQL-specific UPDATE query builder.
 ///
 /// Extends the core `UpdateQuery` with MySQL-specific features like
 /// `ORDER BY` and `LIMIT` in UPDATE statements.
 #[derive(Debug, Clone)]
-pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value> {
-    inner: qbey::UpdateQuery<V>,
+pub struct MysqlUpdateQuery<V: Clone + std::fmt::Debug = Value, W = WhereNotSet> {
+    inner: qbey::UpdateQuery<V, W>,
     order_bys: Vec<qbey::OrderByClause<qbey::Value>>,
     limit_val: Option<u64>,
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
-    pub(crate) fn new(inner: qbey::UpdateQuery<V>) -> Self {
+impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V, WhereNotSet> {
+    pub(crate) fn new(inner: qbey::UpdateQuery<V, WhereNotSet>) -> Self {
         MysqlUpdateQuery {
             inner,
             order_bys: Vec::new(),
@@ -23,7 +23,7 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
+impl<V: Clone + std::fmt::Debug, W> UpdateQueryBuilder<V> for MysqlUpdateQuery<V, W> {
     fn set(&mut self, col: qbey::Col, val: impl Into<V>) -> &mut Self {
         self.inner.set(col, val);
         self
@@ -31,21 +31,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
 
     fn set_expr(&mut self, expr: qbey::RawSql<V>) -> &mut Self {
         self.inner.set_expr(expr);
-        self
-    }
-
-    fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
-        self.inner.and_where(cond);
-        self
-    }
-
-    fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
-        self.inner.or_where(cond);
-        self
-    }
-
-    fn allow_without_where(&mut self) -> &mut Self {
-        self.inner.allow_without_where();
         self
     }
 
@@ -70,7 +55,9 @@ impl<V: Clone + std::fmt::Debug> UpdateQueryBuilder<V> for MysqlUpdateQuery<V> {
     }
 }
 
-impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
+// ── Methods available in any WHERE state ──
+
+impl<V: Clone + std::fmt::Debug, W> MysqlUpdateQuery<V, W> {
     /// Add an ORDER BY clause (MySQL extension).
     pub fn order_by(&mut self, clause: qbey::OrderByClause) -> &mut Self {
         self.order_bys.push(clause);
@@ -102,6 +89,77 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V> {
             "RETURNING is not supported for UPDATE in MySQL/MariaDB. \
              Use a separate SELECT query to retrieve updated rows."
         );
+    }
+}
+
+// ── State-transitioning methods (WhereNotSet → WhereProvided) ──
+
+impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V, WhereNotSet> {
+    /// Add an AND WHERE condition and transition to [`WhereProvided`] state.
+    pub fn and_where(
+        self,
+        cond: impl qbey::IntoWhereClause<V>,
+    ) -> MysqlUpdateQuery<V, WhereProvided> {
+        let inner = self.inner.and_where(cond);
+        MysqlUpdateQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Add an OR WHERE condition and transition to [`WhereProvided`] state.
+    pub fn or_where(
+        self,
+        cond: impl qbey::IntoWhereClause<V>,
+    ) -> MysqlUpdateQuery<V, WhereProvided> {
+        let inner = self.inner.or_where(cond);
+        MysqlUpdateQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Explicitly allow this UPDATE to have no WHERE clause.
+    pub fn allow_without_where(self) -> MysqlUpdateQuery<V, WhereProvided> {
+        let inner = self.inner.allow_without_where();
+        MysqlUpdateQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+
+    /// Assert that WHERE conditions have already been set (e.g., transferred
+    /// from a SelectQuery) and transition to [`WhereProvided`] state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no WHERE conditions are set.
+    pub fn where_set(self) -> MysqlUpdateQuery<V, WhereProvided> {
+        let inner = self.inner.where_set();
+        MysqlUpdateQuery {
+            inner,
+            order_bys: self.order_bys,
+            limit_val: self.limit_val,
+        }
+    }
+}
+
+// ── Methods on WhereProvided ──
+
+impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V, WhereProvided> {
+    /// Add an additional AND WHERE condition.
+    pub fn and_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.and_where(cond);
+        self
+    }
+
+    /// Add an additional OR WHERE condition.
+    pub fn or_where(&mut self, cond: impl qbey::IntoWhereClause<V>) -> &mut Self {
+        self.inner.or_where(cond);
+        self
     }
 
     /// Build standard SQL with MySQL dialect.

@@ -70,6 +70,22 @@ impl Dialect for MySqlDialect {
     }
 }
 
+/// Marker type: WHERE clause has not been provided yet.
+///
+/// This is the initial state for [`UpdateQuery`] and [`DeleteQuery`].
+/// In this state, `to_sql()` is not available — you must first call
+/// [`and_where()`], [`or_where()`], or [`allow_without_where()`] to
+/// transition to [`WhereProvided`].
+#[derive(Debug, Clone, Copy)]
+pub struct WhereNotSet;
+
+/// Marker type: WHERE clause has been provided (or explicitly allowed to be absent).
+///
+/// In this state, [`UpdateQuery`] and [`DeleteQuery`] expose `to_sql()`
+/// and `to_sql_with()`.
+#[derive(Debug, Clone, Copy)]
+pub struct WhereProvided;
+
 // Re-export all public types at the crate root.
 pub use column::{
     Col, ColCondition, ColRef, ConditionExpr, ConditionRhs, OrderByClause, SelectFunc, SelectItem,
