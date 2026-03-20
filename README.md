@@ -36,6 +36,59 @@ assert_eq!(sql, r#"SELECT "employee"."id", "employee"."name" FROM "employee" WHE
 
 ## API
 
+### Order By
+
+```rust
+# use qbey::{qbey, col, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.order_by(col("name").asc());
+q.order_by(col("age").desc());
+q.select(&["id", "name", "age"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
+```
+
+Use `order_by_expr` to sort by a raw SQL expression (e.g., `RAND()`, `FIELD(...)`, `id DESC NULLS FIRST`).
+The expression is rendered as-is, so the caller is responsible for including the sort direction if needed.
+[`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
+
+```rust
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
+let mut q = qbey("users");
+q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
+```
+
+Column-based and expression-based ORDER BY can be mixed:
+
+```rust
+# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
+let mut q = qbey("users");
+q.order_by(col("name").asc());
+q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
+```
+
+### Limit / Offset
+
+```rust
+# use qbey::{qbey, col, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.limit(10);
+q.offset(20);
+q.select(&["id", "name"]);
+
+let (sql, binds) = q.to_sql();
+assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
+```
+
 ### WHERE conditions
 
 #### Comparison operators
@@ -253,57 +306,56 @@ q.select(&["id", "name"]);
 let (sql, binds) = q.to_sql();
 ```
 
-### Order By
+### Column aliases
 
 ```rust
 # use qbey::{qbey, col, SelectQueryBuilder};
-let mut q = qbey("employee");
-q.order_by(col("name").asc());
-q.order_by(col("age").desc());
-q.select(&["id", "name", "age"]);
+let mut q = qbey("users");
+q.add_select(col("name").as_("user_name"));
 
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
+let (sql, _) = q.to_sql();
+assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
 ```
 
-Use `order_by_expr` to sort by a raw SQL expression (e.g., `RAND()`, `FIELD(...)`, `id DESC NULLS FIRST`).
-The expression is rendered as-is, so the caller is responsible for including the sort direction if needed.
-[`RawSql`] is required to make it explicit that raw SQL is being injected — **never pass user-supplied input**.
+### Raw SQL expressions in SELECT
+
+Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in the SELECT list.
+The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
 
 ```rust
 # use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
-q.order_by_expr(RawSql::new("RAND()"));
-q.select(&["id", "name"]);
+q.add_select(col("id"));
+q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
+q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display_name"));
 
 let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
+assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
 ```
 
-Column-based and expression-based ORDER BY can be mixed:
+### DISTINCT
 
 ```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
-let mut q = qbey("users");
-q.order_by(col("name").asc());
-q.order_by_expr(RawSql::new("RAND()"));
-q.select(&["id", "name"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
-```
-
-### Limit / Offset
-
-```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
-q.limit(10);
-q.offset(20);
-q.select(&["id", "name"]);
+q.distinct();
+q.select(&["department"]);
+
+let (sql, _) = q.to_sql();
+assert_eq!(sql, r#"SELECT DISTINCT "department" FROM "employee""#);
+```
+
+DISTINCT can be combined with WHERE and other clauses:
+
+```rust
+# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
+let mut q = qbey("employee");
+q.and_where(col("active").eq(true));
+q.distinct();
+q.select(&["department", "role"]);
 
 let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
+assert_eq!(sql, r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "active" = ?"#);
 ```
 
 ### JOIN
@@ -358,31 +410,6 @@ q.add_select(table("o").col("total").as_("order_total"));
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"o\".\"total\" AS \"order_total\" FROM \"users\" AS \"u\" INNER JOIN \"orders\" AS \"o\" ON \"u\".\"id\" = \"o\".\"user_id\"");
-```
-
-### DISTINCT
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("employee");
-q.distinct();
-q.select(&["department"]);
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT DISTINCT "department" FROM "employee""#);
-```
-
-DISTINCT can be combined with WHERE and other clauses:
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
-let mut q = qbey("employee");
-q.and_where(col("active").eq(true));
-q.distinct();
-q.select(&["department", "role"]);
-
-let (sql, binds) = q.to_sql();
-assert_eq!(sql, r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "active" = ?"#);
 ```
 
 ### Aggregate / GROUP BY
@@ -467,33 +494,6 @@ uq.limit(10);
 
 let (sql, binds) = uq.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? UNION ALL SELECT \"id\", \"name\" FROM \"employee\" WHERE \"dept\" = ? ORDER BY \"name\" ASC LIMIT 10");
-```
-
-### Column aliases
-
-```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
-let mut q = qbey("users");
-q.add_select(col("name").as_("user_name"));
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, "SELECT \"name\" AS \"user_name\" FROM \"users\"");
-```
-
-### Raw SQL expressions in SELECT
-
-Use `add_select_expr` to include raw SQL expressions (e.g., function calls) in the SELECT list.
-The expression is rendered as-is without quoting, so **never pass user-supplied input** to avoid SQL injection.
-
-```rust
-# use qbey::{qbey, col, RawSql, SelectQueryBuilder};
-let mut q = qbey("users");
-q.add_select(col("id"));
-q.add_select_expr(RawSql::new("UPPER(\"name\")"), Some("upper_name"));
-q.add_select_expr(RawSql::new("COALESCE(\"nickname\", \"name\")"), Some("display_name"));
-
-let (sql, _) = q.to_sql();
-assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nickname", "name") AS "display_name" FROM "users""#);
 ```
 
 ### INSERT
