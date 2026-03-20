@@ -8,26 +8,19 @@ sql query builder
 ### Basic usage
 
 ```rust
-# use qbey::{qbey, col, SelectQueryBuilder};
+# use qbey::{qbey_schema, qbey, col, ConditionExpr, SelectQueryBuilder};
+use qbey::prelude::*;
+
+qbey_schema!(Employee, "employee", [id, name, age]);
+const EMPLOYEE: Employee = Employee::new();
+
 let mut q = qbey("employee");
-q.and_where(("name", "Alice"));   // tuple shorthand for Eq
-q.select(&["id", "name"]);
+q.and_where(EMPLOYEE.name().eq("Alice"));
+q.select(&[EMPLOYEE.id(), EMPLOYEE.name()]);
 
 // Standard SQL (default placeholder: ?)
 let (sql, binds) = q.to_sql();
-assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" WHERE \"name\" = ?");
-```
-
-The `prelude` module re-exports commonly needed traits so you can import them all at once:
-
-```rust
-# use qbey::{qbey, col, count_all};
-use qbey::prelude::*;
-
-let mut q = qbey("employee");
-q.and_where(col("age").gt(20));
-q.select(&["id", "name"]);
-let (sql, binds) = q.to_sql();
+assert_eq!(sql, r#"SELECT "employee"."id", "employee"."name" FROM "employee" WHERE "employee"."name" = ?"#);
 ```
 
 ## Features
@@ -202,9 +195,9 @@ DISTINCT can be combined with WHERE and other clauses:
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
+q.and_where(col("active").eq(true));
 q.distinct();
 q.select(&["department", "role"]);
-q.and_where(col("active").eq(true));
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "active" = ?"#);
@@ -215,9 +208,9 @@ assert_eq!(sql, r#"SELECT DISTINCT "department", "role" FROM "employee" WHERE "a
 ```rust
 # use qbey::{qbey, col, count_all, SelectQueryBuilder};
 let mut q = qbey("employee");
+q.group_by(&["dept"]);
 q.select(&["dept"]);
 q.add_select(count_all().as_("cnt"));
-q.group_by(&["dept"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\" FROM \"employee\" GROUP BY \"dept\"");
@@ -228,10 +221,10 @@ Raw SQL expressions can also be used for aggregate functions not yet covered by 
 ```rust
 # use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("employee");
+q.group_by(&["dept"]);
 q.select(&["dept"]);
 q.add_select_expr(RawSql::new("COUNT(*)"), Some("cnt"));
 q.add_select_expr(RawSql::new("SUM(\"salary\")"), Some("total_salary"));
-q.group_by(&["dept"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"total_salary\" FROM \"employee\" GROUP BY \"dept\"");
@@ -244,10 +237,10 @@ Aggregate expressions can be used directly in HAVING clauses, which is required 
 ```rust
 # use qbey::{qbey, col, count_all, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
+q.group_by(&["dept"]);
 q.select(&["dept"]);
 let cnt = count_all().as_("cnt");
 q.add_select(cnt.clone());
-q.group_by(&["dept"]);
 q.having(cnt.gt(5));
 
 let (sql, binds) = q.to_sql();
@@ -259,12 +252,12 @@ For multiple conditions, use `and_having` / `or_having`:
 ```rust
 # use qbey::{qbey, col, count_all, ConditionExpr, SelectQueryBuilder};
 let mut q = qbey("employee");
+q.group_by(&["dept"]);
 q.select(&["dept"]);
 let cnt = count_all().as_("cnt");
 let total = col("salary").sum().as_("total");
 q.add_select(cnt.clone());
 q.add_select(total.clone());
-q.group_by(&["dept"]);
 q.and_having(cnt.gt(5));
 q.and_having(total.gt(100000));
 
@@ -277,9 +270,9 @@ assert_eq!(sql, "SELECT \"dept\", COUNT(*) AS \"cnt\", SUM(\"salary\") AS \"tota
 ```rust
 # use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
-q.select(&["id", "name", "age"]);
 q.order_by(col("name").asc());
 q.order_by(col("age").desc());
+q.select(&["id", "name", "age"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\", \"age\" FROM \"employee\" ORDER BY \"name\" ASC, \"age\" DESC");
@@ -294,8 +287,8 @@ The expression is rendered as-is, so the caller is responsible for including the
 ```rust
 # use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
-q.select(&["id", "name"]);
 q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY RAND()"#);
@@ -306,9 +299,9 @@ Column-based and expression-based ORDER BY can be mixed:
 ```rust
 # use qbey::{qbey, col, RawSql, SelectQueryBuilder};
 let mut q = qbey("users");
-q.select(&["id", "name"]);
 q.order_by(col("name").asc());
 q.order_by_expr(RawSql::new("RAND()"));
+q.select(&["id", "name"]);
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"#);
@@ -319,9 +312,9 @@ assert_eq!(sql, r#"SELECT "id", "name" FROM "users" ORDER BY "name" ASC, RAND()"
 ```rust
 # use qbey::{qbey, col, SelectQueryBuilder};
 let mut q = qbey("employee");
-q.select(&["id", "name"]);
 q.limit(10);
 q.offset(20);
+q.select(&["id", "name"]);
 
 let (sql, binds) = q.to_sql();
 assert_eq!(sql, "SELECT \"id\", \"name\" FROM \"employee\" LIMIT 10 OFFSET 20");
@@ -394,8 +387,8 @@ Subqueries are also supported:
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder};
 let mut sub = qbey("orders");
-sub.select(&["user_id"]);
 sub.and_where(col("status").eq("cancelled"));
+sub.select(&["user_id"]);
 
 let mut q = qbey("users");
 q.and_where(col("id").not_included(sub));
@@ -527,8 +520,8 @@ assert_eq!(sql, r#"SELECT "id", UPPER("name") AS "upper_name", COALESCE("nicknam
 # use qbey::{qbey, col, ConditionExpr, UpdateQueryBuilder};
 // Basic UPDATE
 let mut u = qbey("employee").into_update();
-u.set(col("name"), "Alice");
 u.and_where(col("id").eq(1));
+u.set(col("name"), "Alice");
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
@@ -553,27 +546,11 @@ By default, calling `to_sql()` without any WHERE conditions will panic to preven
 ```rust
 # use qbey::{qbey, col, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.set(col("status"), "inactive");
 u.allow_without_where();
+u.set(col("status"), "inactive");
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "status" = ?"#);
-```
-
-Dialect support works via `to_sql_with`:
-
-```rust
-# use qbey::{qbey, col, ConditionExpr, Dialect, UpdateQueryBuilder};
-# struct PgDialect;
-# impl Dialect for PgDialect {
-#     fn placeholder(&self, index: usize) -> String { format!("${}", index) }
-# }
-let mut u = qbey("employee").into_update();
-u.set(col("name"), "Alice");
-u.and_where(col("id").eq(1));
-
-let (sql, binds) = u.to_sql_with(&PgDialect);
-assert_eq!(sql, r#"UPDATE "employee" SET "name" = $1 WHERE "id" = $2"#);
 ```
 
 For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSql`:
@@ -581,8 +558,8 @@ For raw SQL expressions in SET clauses (e.g. incrementing a counter), use `RawSq
 ```rust
 # use qbey::{qbey, col, ConditionExpr, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 u.and_where(col("id").eq(1));
+u.set_expr(RawSql::new(r#""visit_count" = "visit_count" + 1"#));
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE "id" = ?"#);
@@ -593,8 +570,8 @@ assert_eq!(sql, r#"UPDATE "employee" SET "visit_count" = "visit_count" + 1 WHERE
 ```rust
 # use qbey::{qbey, col, Value, ConditionExpr, RawSql, UpdateQueryBuilder};
 let mut u = qbey("employee").into_update();
-u.set_expr(RawSql::new(r#""score" = "score" + {}"#).binds(&[10]));
 u.and_where(col("id").eq(1));
+u.set_expr(RawSql::new(r#""score" = "score" + {}"#).binds(&[10]));
 
 let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "score" = "score" + ? WHERE "id" = ?"#);
@@ -662,8 +639,8 @@ INSERT ... SELECT is also supported via `from_select()`:
 ```rust
 # use qbey::{qbey, col, ConditionExpr, SelectQueryBuilder, InsertQueryBuilder};
 let mut sub = qbey("old_employee");
-sub.select(&["name", "age"]);
 sub.and_where(col("active").eq(true));
+sub.select(&["name", "age"]);
 
 let mut ins = qbey("employee").into_insert();
 ins.from_select(sub);
@@ -736,8 +713,8 @@ qbey_schema!(Users, "users", [id, name, email]);
 
 let u = Users::new();
 let mut q = qbey("users");
-q.select(&u.all_columns());
 q.and_where(u.name().eq("Alice"));
+q.select(&u.all_columns());
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "users"."id", "users"."name", "users"."email" FROM "users" WHERE "users"."name" = ?"#);
@@ -752,11 +729,11 @@ qbey_schema!(Users, "users", [id, name, manager_id]);
 let u = Users::new();
 let m = Users::new().as_("managers");
 let mut q = qbey("users");
-q.select(&[u.name(), m.name().as_("manager_name")]);
 q.left_join(
     m.table(),
     u.manager_id().eq_col(m.id()),
 );
+q.select(&[u.name(), m.name().as_("manager_name")]);
 
 let (sql, _) = q.to_sql();
 assert_eq!(sql, r#"SELECT "users"."name", "managers"."name" AS "manager_name" FROM "users" LEFT JOIN "users" AS "managers" ON "users"."manager_id" = "managers"."id""#);
