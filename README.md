@@ -34,12 +34,14 @@ let (sql, binds) = q.to_sql();
 
 ## Features
 
-- **Standard SQL** — Generate traditional `SELECT ... FROM ... WHERE` SQL from the query builder
+- **Dynamic query building** — Conditionally add WHERE clauses, JOINs, and other clauses at runtime. No macro DSL — just plain Rust `if` / `match` for composing queries
+- **Safety by default** — UPDATE / DELETE without WHERE panics unless explicitly opted in with `allow_without_where()`. LIKE patterns require `LikeExpression` to prevent wildcard injection. Raw SQL must be wrapped in `RawSql` to make injection boundaries explicit
+- **SELECT / INSERT / UPDATE / DELETE** — Full CRUD support including JOIN, GROUP BY / HAVING, UNION, subqueries, and RETURNING (feature flag)
 - **Driver agnostic** — Works with any database driver. Tested with [sqlx](https://github.com/launchbadge/sqlx) (SQLite, MySQL), [rusqlite](https://github.com/rusqlite/rusqlite), [tokio-postgres](https://github.com/sfackler/rust-postgres), and [postgres](https://github.com/sfackler/rust-postgres)
 - **Extensible bind value types** — Use the built-in `Value` enum for quick prototyping, or define your own type with `qbey_with::<V>()` to match your driver's parameter types
 - **Dialect support** — Customize placeholder style (`?`, `$1`, ...) and identifier quoting via the `Dialect` trait. MySQL dialect is available as a separate crate:
   - [qbey-mysql](./qbey-mysql/README.md) — backtick quoting, index hints, STRAIGHT_JOIN
-- **Dynamic query building** — Conditionally add WHERE clauses, JOINs, and other clauses at runtime
+- **Schema macro** — `qbey_schema!` generates typed column accessors for compile-time checked, qualified column references
 
 ## API
 
