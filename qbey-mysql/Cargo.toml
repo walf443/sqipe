@@ -3,6 +3,11 @@ name = "qbey-mysql"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "MySQL dialect extension for the qbey SQL query builder"
+repository = "https://github.com/walf443/qbey"
+readme = "../README.md"
+keywords = ["sql", "query-builder", "database", "mysql"]
+categories = ["database"]
 
 [dependencies]
 qbey = { path = "../qbey" }
