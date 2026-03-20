@@ -10,7 +10,7 @@ keywords = ["sql", "query-builder", "database", "mysql"]
 categories = ["database"]
 
 [dependencies]
-qbey = { path = "../qbey" }
+qbey = { version = "0.1", path = "../qbey" }
 
 [dev-dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio", "mysql"] }
