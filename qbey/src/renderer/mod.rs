@@ -401,7 +401,7 @@ pub(super) fn render_select_tokens<V: Clone>(
                 if cols.is_empty() {
                     None
                 } else {
-                    let quoted: Vec<String> = cols.iter().map(|c| (cfg.qi)(c)).collect();
+                    let quoted: Vec<String> = cols.iter().map(|c| render_col_ref(c, cfg)).collect();
                     Some(format!("GROUP BY {}", quoted.join(", ")))
                 }
             }

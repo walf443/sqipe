@@ -76,7 +76,7 @@ pub enum SelectToken<V: Clone = crate::Value> {
         subquery: Option<Box<SelectTree<V>>>,
     },
     Where(Vec<WhereEntry<V>>),
-    GroupBy(Vec<String>),
+    GroupBy(Vec<crate::Col>),
     Having(Vec<WhereEntry<V>>),
     OrderBy(Vec<OrderByClause<V>>),
     Limit(u64),

@@ -155,7 +155,9 @@ pub trait SelectQueryBuilder<V: Clone + std::fmt::Debug> {
     /// application-controlled expressions.
     fn add_select_expr(&mut self, raw: RawSql<V>, alias: Option<&str>) -> &mut Self;
     /// Set the GROUP BY columns.
-    fn group_by(&mut self, cols: &[&str]) -> &mut Self;
+    ///
+    /// Accepts `&[&str]` for simple column names or `&[Col]` for qualified/aliased columns.
+    fn group_by(&mut self, cols: &[impl Into<Col> + Clone]) -> &mut Self;
     /// Add an INNER JOIN clause.
     fn join(&mut self, table: impl IntoJoinTable, condition: impl Into<JoinCondition>)
     -> &mut Self;
@@ -332,7 +334,7 @@ pub struct SelectQuery<V: Clone + std::fmt::Debug = Value> {
     pub(crate) selects: Vec<SelectItem<V>>,
     pub(crate) wheres: Vec<WhereEntry<V>>,
     pub(crate) havings: Vec<WhereEntry<V>>,
-    pub(crate) group_bys: Vec<String>,
+    pub(crate) group_bys: Vec<Col>,
     pub(crate) joins: Vec<JoinClause<V>>,
     /// Subquery sources for joins, aligned with `joins` by index.
     pub(crate) join_subqueries: Vec<Option<Box<crate::tree::SelectTree<V>>>>,
@@ -483,8 +485,8 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
         self
     }
 
-    fn group_by(&mut self, cols: &[&str]) -> &mut Self {
-        self.group_bys = cols.iter().map(|s| s.to_string()).collect();
+    fn group_by(&mut self, cols: &[impl Into<Col> + Clone]) -> &mut Self {
+        self.group_bys = cols.iter().map(|c| c.clone().into()).collect();
         self
     }
 
