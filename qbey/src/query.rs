@@ -486,7 +486,7 @@ impl<V: Clone + std::fmt::Debug> SelectQueryBuilder<V> for SelectQuery<V> {
     }
 
     fn group_by(&mut self, cols: &[impl Into<Col> + Clone]) -> &mut Self {
-        self.group_bys = cols.iter().map(|c| c.clone().into()).collect();
+        self.group_bys.extend(cols.iter().map(|c| c.clone().into()));
         self
     }
 
