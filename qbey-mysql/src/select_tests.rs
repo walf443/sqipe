@@ -725,7 +725,7 @@ fn test_having_in_subquery() {
 }
 
 #[test]
-fn test_eq_col_in_where() {
+fn test_col_eq_col_in_where() {
     let mut q = qbey("users");
     q.select(&["name"]);
     q.and_where(table("users").col("dept_id").eq(table("depts").col("id")));
@@ -739,7 +739,7 @@ fn test_eq_col_in_where() {
 }
 
 #[test]
-fn test_eq_col_correlated_subquery_with_exists() {
+fn test_col_eq_col_correlated_subquery_with_exists() {
     use qbey::exists;
 
     let mut sub = qbey("orders");

@@ -230,7 +230,7 @@ fn test_join_subquery_mixed_with_table_join() {
 }
 
 #[test]
-fn test_join_with_unqualified_col_eq_col() {
+fn test_join_with_unqualified_col_eq() {
     let mut q = qbey("users");
     q.join("orders", col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
@@ -294,7 +294,7 @@ fn test_join_condition_expr_inside_and() {
 }
 
 #[test]
-fn test_join_with_eq_col_ref() {
+fn test_join_with_col_eq() {
     let mut q = qbey("users");
     q.join("orders", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
@@ -307,7 +307,7 @@ fn test_join_with_eq_col_ref() {
 }
 
 #[test]
-fn test_left_join_with_eq_col_ref() {
+fn test_left_join_with_col_eq() {
     let mut q = qbey("users");
     q.left_join("addresses", table("users").col("id").eq(col("user_id")));
     q.select(&["id", "name"]);
