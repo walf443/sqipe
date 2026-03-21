@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-full
       - run: cargo build --workspace --all-targets --features full
 
   test-qbey:
@@ -25,7 +27,22 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p qbey --features full
+        with:
+          shared-key: cargo-full
+          save-if: false
+      - run: cargo test -p qbey --features returning,test-sqlx,test-sqlx-mysql,test-rusqlite,test-libsql
+
+  test-qbey-postgres:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-full
+          save-if: false
+      - run: cargo test -p qbey --features returning,test-tokio-postgres,test-postgres
 
   test-qbey-mysql:
     needs: build
@@ -34,6 +51,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-full
+          save-if: false
       - run: cargo test -p qbey-mysql --features full
 
   fmt:
@@ -53,5 +73,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-full
+          save-if: false
       - run: cargo clippy -p qbey --all-targets --features full -- -D warnings
       - run: cargo clippy -p qbey-mysql --all-targets --features full -- -D warnings
