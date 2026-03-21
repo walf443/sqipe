@@ -195,3 +195,35 @@ fn test_schema_raw_identifier_column() {
     );
     assert_eq!(binds, vec![Value::String("click".to_string())]);
 }
+
+#[test]
+fn test_schema_renamed_column() {
+    qbey_schema!(Nodes, "nodes", [id, name, table_col = "table"]);
+
+    let n = Nodes::new();
+    let mut q = qbey(&n);
+    q.select(&n.all_columns());
+    q.and_where(n.table_col().eq("foo"));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "nodes"."id", "nodes"."name", "nodes"."table" FROM "nodes" WHERE "nodes"."table" = ?"#
+    );
+    assert_eq!(binds, vec![Value::String("foo".to_string())]);
+}
+
+#[test]
+fn test_schema_renamed_column_mixed_with_raw_identifier() {
+    qbey_schema!(Records, "records", [id, r#type, status_col = "status"]);
+
+    let r = Records::new();
+    let mut q = qbey(&r);
+    q.select(&r.all_columns());
+
+    let (sql, _) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "records"."id", "records"."type", "records"."status" FROM "records""#
+    );
+}
