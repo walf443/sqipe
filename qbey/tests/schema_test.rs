@@ -12,7 +12,7 @@ fn test_schema_table_name() {
 #[test]
 fn test_schema_select_all_columns() {
     let u = Users::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&u);
     q.select(&u.all_columns());
 
     let (sql, _) = q.to_sql();
@@ -25,7 +25,7 @@ fn test_schema_select_all_columns() {
 #[test]
 fn test_schema_where_with_column() {
     let u = Users::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&u);
     q.select(&u.all_columns());
     q.and_where(u.name().eq("Alice"));
 
@@ -40,7 +40,7 @@ fn test_schema_where_with_column() {
 #[test]
 fn test_schema_single_column_select() {
     let u = Users::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&u);
     q.add_select(u.id());
     q.add_select(u.name());
 
@@ -68,10 +68,10 @@ fn test_schema_alias() {
 fn test_schema_alias_table_ref_for_join() {
     let u = Users::new();
     let o = Orders::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&u);
     q.select(&[u.name()]);
     q.add_select(o.total());
-    q.join(o.table(), u.id().eq(o.user_id()));
+    q.join(&o, u.id().eq(o.user_id()));
 
     let (sql, _) = q.to_sql();
     assert_eq!(
@@ -86,9 +86,9 @@ fn test_schema_self_join_with_alias() {
 
     let e = Employees::new();
     let m = Employees::new().as_("mgr");
-    let mut q = qbey("employees");
+    let mut q = qbey(&e);
     q.select(&[e.name(), m.name().as_("manager_name")]);
-    q.left_join(m.table(), e.manager_id().eq(m.id()));
+    q.left_join(&m, e.manager_id().eq(m.id()));
 
     let (sql, _) = q.to_sql();
     assert_eq!(
@@ -100,7 +100,7 @@ fn test_schema_self_join_with_alias() {
 #[test]
 fn test_schema_with_order_by() {
     let u = Users::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&u);
     q.select(&u.all_columns());
     q.order_by(u.name().asc());
     q.order_by(u.id().desc());
@@ -115,7 +115,7 @@ fn test_schema_with_order_by() {
 #[test]
 fn test_schema_with_aggregate() {
     let o = Orders::new();
-    let mut q = qbey("orders");
+    let mut q = qbey(&o);
     q.add_select(o.user_id());
     q.add_select(o.total().sum().as_("total_amount"));
     q.group_by(&[o.user_id()]);
@@ -130,7 +130,7 @@ fn test_schema_with_aggregate() {
 #[test]
 fn test_schema_update() {
     let u = Users::new();
-    let mut q = qbey("users").into_update();
+    let mut q = qbey(&u).into_update();
     q.set(u.name(), "Bob");
     let q = q.and_where(u.id().eq(1));
 
@@ -145,7 +145,7 @@ fn test_schema_update() {
 #[test]
 fn test_schema_delete() {
     let u = Users::new();
-    let q = qbey("users").into_delete().and_where(u.id().eq(1));
+    let q = qbey(&u).into_delete().and_where(u.id().eq(1));
 
     let (sql, binds) = q.to_sql();
     assert_eq!(sql, r#"DELETE FROM "users" WHERE "users"."id" = ?"#);
@@ -155,7 +155,7 @@ fn test_schema_delete() {
 #[test]
 fn test_schema_const_initialization() {
     const USERS: Users = Users::new();
-    let mut q = qbey("users");
+    let mut q = qbey(&USERS);
     q.select(&USERS.all_columns());
 
     let (sql, _) = q.to_sql();
@@ -170,7 +170,7 @@ fn test_schema_trailing_comma_in_columns() {
     qbey_schema!(Items, "items", [id, name, price,]);
 
     let i = Items::new();
-    let (sql, _) = qbey("items").select(&i.all_columns()).to_sql();
+    let (sql, _) = qbey(&i).select(&i.all_columns()).to_sql();
     assert_eq!(
         sql,
         r#"SELECT "items"."id", "items"."name", "items"."price" FROM "items""#

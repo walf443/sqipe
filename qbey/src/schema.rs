@@ -13,7 +13,7 @@
 /// qbey_schema!(Users, "users", [id, name, email]);
 ///
 /// let u = Users::new();
-/// let mut q = qbey("users");
+/// let mut q = qbey(&u);
 /// q.select(&u.all_columns());
 /// q.and_where(u.name().eq("Alice"));
 /// let (sql, _binds) = q.to_sql();
@@ -31,10 +31,10 @@
 ///
 /// let u = Users::new();
 /// let m = Users::new().as_("managers");
-/// let mut q = qbey("users");
+/// let mut q = qbey(&u);
 /// q.select(&[u.name(), m.name().as_("manager_name")]);
 /// q.left_join(
-///     m.table(),
+///     &m,
 ///     u.manager_id().eq(m.id()),
 /// );
 /// let (sql, _binds) = q.to_sql();
@@ -108,6 +108,12 @@ macro_rules! qbey_schema {
 
             pub fn all_columns(&self) -> Vec<$crate::Col> {
                 vec![$(self.$col()),*]
+            }
+        }
+
+        impl $crate::IntoFromTable for &$struct_name {
+            fn into_from_table(self) -> (String, Option<String>) {
+                self.table().into_from_table()
             }
         }
     };

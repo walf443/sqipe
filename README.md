@@ -14,7 +14,7 @@ use qbey::prelude::*;
 qbey_schema!(Employee, "employee", [id, name, age]);
 const EMPLOYEE: Employee = Employee::new();
 
-let mut q = qbey("employee");
+let mut q = qbey(&EMPLOYEE);
 q.and_where(EMPLOYEE.name().eq("Alice"));
 q.select(&[EMPLOYEE.id(), EMPLOYEE.name()]);
 
@@ -718,7 +718,7 @@ See [qbey-mysql](./qbey-mysql/README.md) for MySQL-specific features (backtick q
 qbey_schema!(Users, "users", [id, name, email]);
 
 let u = Users::new();
-let mut q = qbey("users");
+let mut q = qbey(&u);
 q.and_where(u.name().eq("Alice"));
 q.select(&u.all_columns());
 
@@ -734,9 +734,9 @@ qbey_schema!(Users, "users", [id, name, manager_id]);
 
 let u = Users::new();
 let m = Users::new().as_("managers");
-let mut q = qbey("users");
+let mut q = qbey(&u);
 q.left_join(
-    m.table(),
+    &m,
     u.manager_id().eq(m.id()),
 );
 q.select(&[u.name(), m.name().as_("manager_name")]);
