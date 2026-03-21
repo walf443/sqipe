@@ -102,7 +102,8 @@ macro_rules! qbey_schema {
 
             $(
                 pub fn $col(&self) -> $crate::Col {
-                    $crate::table(self.alias.unwrap_or($table_name)).col(stringify!($col))
+                    let col_name = stringify!($col).trim_start_matches("r#");
+                    $crate::table(self.alias.unwrap_or($table_name)).col(col_name)
                 }
             )*
 

@@ -178,3 +178,20 @@ fn test_schema_trailing_comma_in_columns() {
         r#"SELECT "items"."id", "items"."name", "items"."price" FROM "items""#
     );
 }
+
+#[test]
+fn test_schema_raw_identifier_column() {
+    qbey_schema!(Events, "events", [id, r#type, r#match]);
+
+    let e = Events::new();
+    let mut q = qbey(&e);
+    q.select(&e.all_columns());
+    q.and_where(e.r#type().eq("click"));
+
+    let (sql, binds) = q.to_sql();
+    assert_eq!(
+        sql,
+        r#"SELECT "events"."id", "events"."type", "events"."match" FROM "events" WHERE "events"."type" = ?"#
+    );
+    assert_eq!(binds, vec![Value::String("click".to_string())]);
+}
