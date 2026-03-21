@@ -80,6 +80,14 @@
 /// assert_eq!(sql, r#"SELECT "features"."id", "features"."name", "features"."new" FROM "features" WHERE "features"."new" = ?"#);
 /// ```
 ///
+/// The SQL name must be a string literal:
+///
+/// ```compile_fail
+/// use qbey::qbey_schema;
+///
+/// qbey_schema!(Bad, "bad", [id, col = 42]);
+/// ```
+///
 /// # Adding custom methods
 ///
 /// The generated struct is a regular Rust struct, so you can add your own
@@ -213,10 +221,7 @@ macro_rules! __qbey_schema_col {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __qbey_schema_col_call {
-    ($self:ident, $col:ident, $sql_name:expr) => {
-        $self.$col()
-    };
-    ($self:ident, $col:ident) => {
+    ($self:ident, $col:ident $(, $sql_name:expr)?) => {
         $self.$col()
     };
 }
