@@ -334,3 +334,16 @@ fn test_insert_tree_map_values() {
     assert!(found_insert_into, "expected InsertInto token");
     assert!(found_values, "expected Values token");
 }
+
+#[test]
+fn test_insert_with_bytes_value() {
+    let mut ins = qbey("files").into_insert();
+    let data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF];
+    ins.add_value(&[("name", "test.bin".into()), ("data", data.clone().into())]);
+    let (sql, binds) = ins.to_sql();
+    assert_eq!(sql, r#"INSERT INTO "files" ("name", "data") VALUES (?, ?)"#);
+    assert_eq!(
+        binds,
+        vec![Value::String("test.bin".to_string()), Value::Bytes(data)]
+    );
+}

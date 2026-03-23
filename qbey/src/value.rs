@@ -5,6 +5,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Bytes(Vec<u8>),
 }
 
 impl From<&str> for Value {
@@ -43,6 +44,18 @@ impl From<bool> for Value {
     }
 }
 
+impl From<Vec<u8>> for Value {
+    fn from(b: Vec<u8>) -> Self {
+        Value::Bytes(b)
+    }
+}
+
+impl From<&[u8]> for Value {
+    fn from(b: &[u8]) -> Self {
+        Value::Bytes(b.to_vec())
+    }
+}
+
 /// Marker trait for types that can be used as bind parameter values in conditions.
 ///
 /// This is automatically implemented for common types (integers, strings, booleans, floats)
@@ -67,6 +80,8 @@ impl ConditionValue for f64 {}
 impl ConditionValue for bool {}
 impl ConditionValue for String {}
 impl ConditionValue for &str {}
+impl ConditionValue for Vec<u8> {}
+impl ConditionValue for &[u8] {}
 impl ConditionValue for Value {}
 
 /// Comparison operator.

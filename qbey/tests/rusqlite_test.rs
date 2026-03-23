@@ -12,6 +12,7 @@ enum SqliteValue {
     Text(String),
     Integer(i64),
     Real(f64),
+    Blob(Vec<u8>),
 }
 
 impl From<&str> for SqliteValue {
@@ -44,6 +45,12 @@ impl From<String> for SqliteValue {
     }
 }
 
+impl From<Vec<u8>> for SqliteValue {
+    fn from(b: Vec<u8>) -> Self {
+        SqliteValue::Blob(b)
+    }
+}
+
 fn to_rusqlite_params(binds: &[SqliteValue]) -> Vec<Box<dyn rusqlite::types::ToSql>> {
     binds
         .iter()
@@ -52,6 +59,7 @@ fn to_rusqlite_params(binds: &[SqliteValue]) -> Vec<Box<dyn rusqlite::types::ToS
                 SqliteValue::Text(s) => Box::new(s.clone()),
                 SqliteValue::Integer(n) => Box::new(*n),
                 SqliteValue::Real(f) => Box::new(*f),
+                SqliteValue::Blob(b) => Box::new(b.clone()),
             }
         })
         .collect()
@@ -1280,4 +1288,77 @@ fn test_named_window() {
     assert_eq!(rows[0], (3, "Charlie".to_string(), 35, 1));
     assert_eq!(rows[1], (1, "Alice".to_string(), 30, 2));
     assert_eq!(rows[2], (2, "Bob".to_string(), 25, 3));
+}
+
+#[test]
+fn test_insert_and_select_blob() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE files (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            data BLOB NOT NULL
+        );",
+    )
+    .unwrap();
+
+    let blob_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE];
+
+    // INSERT with blob
+    let mut ins = qbey_with::<SqliteValue>("files").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("test.bin".to_string())),
+        ("data", SqliteValue::Blob(blob_data.clone())),
+    ]);
+    let (sql, binds) = ins.to_sql();
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // SELECT and verify blob
+    let mut q = qbey_with::<SqliteValue>("files");
+    q.select(&["name", "data"]);
+    q.and_where(col("id").eq(1));
+    let (sql, binds) = q.to_sql();
+    let params = to_rusqlite_params(&binds);
+    let mut stmt = conn.prepare(&sql).unwrap();
+    let (name, data): (String, Vec<u8>) = stmt
+        .query_row(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(name, "test.bin");
+    assert_eq!(data, blob_data);
+}
+
+#[test]
+fn test_update_blob() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE files (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            data BLOB NOT NULL
+        );
+        INSERT INTO files (id, name, data) VALUES (1, 'test.bin', X'0001');",
+    )
+    .unwrap();
+
+    let new_data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+
+    let mut u = qbey_with::<SqliteValue>("files").into_update();
+    u.set(col("data"), SqliteValue::Blob(new_data.clone()));
+    let u = u.and_where(col("id").eq(1));
+    let (sql, binds) = u.to_sql();
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Verify updated blob
+    let mut stmt = conn
+        .prepare(r#"SELECT "data" FROM "files" WHERE "id" = 1"#)
+        .unwrap();
+    let data: Vec<u8> = stmt.query_row([], |row| row.get(0)).unwrap();
+    assert_eq!(data, new_data);
 }

@@ -22,6 +22,7 @@ enum MysqlValue {
     Text(String),
     Int(i64),
     Float(f64),
+    Blob(Vec<u8>),
 }
 
 impl From<&str> for MysqlValue {
@@ -45,6 +46,12 @@ impl From<f64> for MysqlValue {
 impl From<String> for MysqlValue {
     fn from(s: String) -> Self {
         MysqlValue::Text(s)
+    }
+}
+
+impl From<Vec<u8>> for MysqlValue {
+    fn from(b: Vec<u8>) -> Self {
+        MysqlValue::Blob(b)
     }
 }
 
@@ -109,6 +116,7 @@ fn bind_params<'a>(
             MysqlValue::Text(s) => query.bind(s.as_str()),
             MysqlValue::Int(n) => query.bind(*n),
             MysqlValue::Float(f) => query.bind(*f),
+            MysqlValue::Blob(b) => query.bind(b.as_slice()),
         };
     }
     query
@@ -1176,4 +1184,77 @@ async fn test_exists_with_outer_binds() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].get::<String, _>("name"), "Alice");
     assert_eq!(rows[1].get::<String, _>("name"), "Charlie");
+}
+
+#[tokio::test]
+async fn test_insert_and_select_blob() {
+    let pool = setup_pool().await;
+
+    sqlx::query(
+        "CREATE TABLE files (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            data BLOB NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let blob_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE];
+
+    let mut ins = qbey_with::<MysqlValue>("files").into_insert();
+    ins.add_value(&[
+        ("name", MysqlValue::Text("test.bin".to_string())),
+        ("data", MysqlValue::Blob(blob_data.clone())),
+    ]);
+    let (sql, binds) = ins.to_sql_with(&DIALECT);
+    bind_params(sqlx::query(&sql), &binds)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let rows = sqlx::query("SELECT name, data FROM files WHERE id = 1")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<String, _>("name"), "test.bin");
+    assert_eq!(rows[0].get::<Vec<u8>, _>("data"), blob_data);
+}
+
+#[tokio::test]
+async fn test_update_blob() {
+    let pool = setup_pool().await;
+
+    sqlx::query(
+        "CREATE TABLE files (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            data BLOB NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO files (id, name, data) VALUES (1, 'test.bin', X'0001')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let new_data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+
+    let mut u = qbey_with::<MysqlValue>("files").into_update();
+    u.set(col("data"), MysqlValue::Blob(new_data.clone()));
+    let u = u.and_where(col("id").eq(1));
+    let (sql, binds) = u.to_sql_with(&DIALECT);
+    bind_params(sqlx::query(&sql), &binds)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let rows = sqlx::query("SELECT data FROM files WHERE id = 1")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<Vec<u8>, _>("data"), new_data);
 }

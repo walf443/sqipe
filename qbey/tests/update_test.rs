@@ -435,3 +435,14 @@ fn test_update_set_expr_with_binds_mixed() {
         ]
     );
 }
+
+#[test]
+fn test_update_with_bytes_value() {
+    let mut u = qbey("files").into_update();
+    let data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+    u.set(col("data"), Value::Bytes(data.clone()));
+    let u = u.and_where(col("id").eq(1));
+    let (sql, binds) = u.to_sql();
+    assert_eq!(sql, r#"UPDATE "files" SET "data" = ? WHERE "id" = ?"#);
+    assert_eq!(binds, vec![Value::Bytes(data), Value::Int(1)]);
+}

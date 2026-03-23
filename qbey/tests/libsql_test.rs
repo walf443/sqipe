@@ -14,6 +14,7 @@ enum SqliteValue {
     Text(String),
     Integer(i64),
     Real(f64),
+    Blob(Vec<u8>),
 }
 
 impl From<&str> for SqliteValue {
@@ -46,6 +47,12 @@ impl From<String> for SqliteValue {
     }
 }
 
+impl From<Vec<u8>> for SqliteValue {
+    fn from(b: Vec<u8>) -> Self {
+        SqliteValue::Blob(b)
+    }
+}
+
 fn to_libsql_params(binds: &[SqliteValue]) -> Vec<Value> {
     binds
         .iter()
@@ -53,6 +60,7 @@ fn to_libsql_params(binds: &[SqliteValue]) -> Vec<Value> {
             SqliteValue::Text(s) => Value::Text(s.clone()),
             SqliteValue::Integer(n) => Value::Integer(*n),
             SqliteValue::Real(f) => Value::Real(*f),
+            SqliteValue::Blob(b) => Value::Blob(b.clone()),
         })
         .collect()
 }
@@ -1488,4 +1496,76 @@ async fn test_delete_returning_multiple_rows() {
         remaining += 1;
     }
     assert_eq!(remaining, 1);
+}
+
+#[tokio::test]
+async fn test_insert_and_select_blob() {
+    let db = Builder::new_local(":memory:").build().await.unwrap();
+    let conn = db.connect().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE files (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            data BLOB NOT NULL
+        );",
+    )
+    .await
+    .unwrap();
+
+    let blob_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE];
+
+    let mut ins = qbey_with::<SqliteValue>("files").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("test.bin".to_string())),
+        ("data", SqliteValue::Blob(blob_data.clone())),
+    ]);
+    let (sql, binds) = ins.to_sql();
+    let params = to_libsql_params(&binds);
+    conn.execute(&sql, params).await.unwrap();
+
+    let mut q = qbey_with::<SqliteValue>("files");
+    q.select(&["name", "data"]);
+    q.and_where(col("id").eq(1));
+    let (sql, binds) = q.to_sql();
+    let params = to_libsql_params(&binds);
+    let mut rows = conn.query(&sql, params).await.unwrap();
+    let row = rows.next().await.unwrap().unwrap();
+    let name: String = row.get::<String>(0).unwrap();
+    let data: Vec<u8> = row.get::<Vec<u8>>(1).unwrap();
+    assert_eq!(name, "test.bin");
+    assert_eq!(data, blob_data);
+}
+
+#[tokio::test]
+async fn test_update_blob() {
+    let db = Builder::new_local(":memory:").build().await.unwrap();
+    let conn = db.connect().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE files (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            data BLOB NOT NULL
+        );
+        INSERT INTO files (id, name, data) VALUES (1, 'test.bin', X'0001');",
+    )
+    .await
+    .unwrap();
+
+    let new_data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+
+    let mut u = qbey_with::<SqliteValue>("files").into_update();
+    u.set(col("data"), SqliteValue::Blob(new_data.clone()));
+    let u = u.and_where(col("id").eq(1));
+    let (sql, binds) = u.to_sql();
+    let params = to_libsql_params(&binds);
+    conn.execute(&sql, params).await.unwrap();
+
+    let mut rows = conn
+        .query(r#"SELECT "data" FROM "files" WHERE "id" = 1"#, ())
+        .await
+        .unwrap();
+    let row = rows.next().await.unwrap().unwrap();
+    let data: Vec<u8> = row.get::<Vec<u8>>(0).unwrap();
+    assert_eq!(data, new_data);
 }

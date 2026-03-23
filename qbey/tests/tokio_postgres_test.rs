@@ -25,6 +25,7 @@ enum PgValue {
     BigInt(i64),
     Float(f64),
     Bool(bool),
+    Bytes(Vec<u8>),
 }
 
 impl From<&str> for PgValue {
@@ -63,6 +64,12 @@ impl From<String> for PgValue {
     }
 }
 
+impl From<Vec<u8>> for PgValue {
+    fn from(b: Vec<u8>) -> Self {
+        PgValue::Bytes(b)
+    }
+}
+
 fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
     binds
         .iter()
@@ -73,6 +80,7 @@ fn to_pg_params(binds: &[PgValue]) -> Vec<Box<dyn ToSql + Sync>> {
                 PgValue::BigInt(n) => Box::new(*n),
                 PgValue::Float(f) => Box::new(*f),
                 PgValue::Bool(b) => Box::new(*b),
+                PgValue::Bytes(b) => Box::new(b.clone()),
             }
         })
         .collect()
@@ -1261,4 +1269,80 @@ async fn test_delete_returning_multiple_rows() {
 
     let remaining = client.query("SELECT id FROM users", &[]).await.unwrap();
     assert_eq!(remaining.len(), 1); // Only Bob remains
+}
+
+#[tokio::test]
+async fn test_insert_and_select_blob() {
+    let client = setup_client().await;
+
+    client
+        .execute(
+            "CREATE TABLE files (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                data BYTEA NOT NULL
+            )",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    let blob_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE];
+
+    let mut ins = qbey_with::<PgValue>("files").into_insert();
+    ins.add_value(&[
+        ("name", PgValue::Text("test.bin".to_string())),
+        ("data", PgValue::Bytes(blob_data.clone())),
+    ]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT name, data FROM files WHERE id = 1", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "test.bin");
+    assert_eq!(rows[0].get::<_, Vec<u8>>("data"), blob_data);
+}
+
+#[tokio::test]
+async fn test_update_blob() {
+    let client = setup_client().await;
+
+    client
+        .execute(
+            "CREATE TABLE files (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                data BYTEA NOT NULL
+            )",
+            &[],
+        )
+        .await
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO files (id, name, data) VALUES (1, 'test.bin', '\\x0001'::bytea)",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    let new_data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+
+    let mut u = qbey_with::<PgValue>("files").into_update();
+    u.set(col("data"), PgValue::Bytes(new_data.clone()));
+    let u = u.and_where(col("id").eq(1));
+    let (sql, binds) = u.to_sql_with(&PostgresDialect);
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    let rows = client
+        .query("SELECT data FROM files WHERE id = 1", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, Vec<u8>>("data"), new_data);
 }
