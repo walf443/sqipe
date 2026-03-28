@@ -213,12 +213,7 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
 
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |_: usize| "?".to_string();
-        let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
-        let (sql, binds) = qbey::renderer::delete::render_delete(&tree, &cfg);
-        (sql, binds.into_iter().cloned().collect())
+        self.clone().into_sql()
     }
 
     /// Consume this query and build standard SQL with MySQL dialect.

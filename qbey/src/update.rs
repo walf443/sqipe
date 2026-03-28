@@ -389,14 +389,7 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereProvided> {
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        let (sql, binds) = crate::renderer::update::render_update(
-            &tree,
-            &RenderConfig::from_dialect(&ph, &qi, dialect),
-        );
-        (sql, binds.into_iter().cloned().collect())
+        self.clone().into_sql_with(dialect)
     }
 
     /// Consume this query and build standard SQL with `?` placeholders.

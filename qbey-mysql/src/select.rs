@@ -482,20 +482,13 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
 
     /// Build standard SQL with MySQL dialect.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = if self.set_operations.is_empty() {
-            self.to_tree()
-        } else {
-            self.to_compound_tree()
-        };
-        let ph = |n: usize| MySqlDialect.placeholder(n);
-        let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        let (sql, binds) = StandardSqlRenderer
-            .render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySqlDialect));
-        (sql, binds.into_iter().cloned().collect())
+        self.clone().into_sql()
     }
 
     /// Consume this query and build standard SQL with MySQL dialect.
     /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    /// Note: compound queries (UNION/INTERSECT/EXCEPT) still clone internally
+    /// as `to_compound_tree()` requires borrowing the set operation parts.
     pub fn into_sql(self) -> (String, Vec<V>) {
         let tree = if self.set_operations.is_empty() {
             self.into_tree()

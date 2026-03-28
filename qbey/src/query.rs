@@ -904,12 +904,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        let (sql, binds) = StandardSqlRenderer
-            .render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect));
-        (sql, binds.into_iter().cloned().collect())
+        self.clone().into_sql_with(dialect)
     }
 
     /// Consume this query and build standard SQL with `?` placeholders.

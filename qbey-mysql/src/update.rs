@@ -199,12 +199,7 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V, WhereProvided> {
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
     pub fn to_sql(&self) -> (String, Vec<V>) {
-        let tree = self.to_tree();
-        let ph = |_: usize| "?".to_string();
-        let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
-        let (sql, binds) = qbey::renderer::update::render_update(&tree, &cfg);
-        (sql, binds.into_iter().cloned().collect())
+        self.clone().into_sql()
     }
 
     /// Consume this query and build standard SQL with MySQL dialect.
