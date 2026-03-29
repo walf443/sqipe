@@ -8,8 +8,6 @@ use crate::update::UpdateQuery;
 use crate::value::Value;
 use crate::where_clause::{IntoIncluded, IntoWhereClause, WhereClause, WhereEntry};
 
-use crate::renderer::standard::StandardSqlRenderer;
-use crate::renderer::{RenderConfig, Renderer};
 use crate::tree::SelectTree;
 
 use crate::Dialect;
@@ -916,12 +914,7 @@ impl<V: Clone + std::fmt::Debug> SelectQuery<V> {
     /// Consume this query and build SQL with dialect-specific placeholders and quoting.
     /// More efficient than `to_sql_with()` as it avoids cloning the query into a tree.
     pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.into_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        let (sql, binds) = StandardSqlRenderer
-            .render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, dialect));
-        (sql, binds.into_iter().cloned().collect())
+        self.into_tree().into_sql_with(dialect)
     }
 }
 

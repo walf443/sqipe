@@ -433,3 +433,40 @@ impl<V: Clone> WhereEntry<V> {
         }
     }
 }
+
+/// Extract owned bind values from a WhereClause in renderer traversal order.
+pub(crate) fn drain_where_clause_binds<V: Clone>(clause: WhereClause<V>, out: &mut Vec<V>) {
+    match clause {
+        WhereClause::Condition { val, .. } => out.push(val),
+        WhereClause::Between { low, high, .. } | WhereClause::NotBetween { low, high, .. } => {
+            out.push(low);
+            out.push(high);
+        }
+        WhereClause::In { vals, .. } | WhereClause::NotIn { vals, .. } => {
+            out.extend(vals);
+        }
+        WhereClause::InSubQuery { sub, .. } | WhereClause::NotInSubQuery { sub, .. } => {
+            crate::tree::drain_select_tree_binds(*sub, out);
+        }
+        WhereClause::Exists { sub } | WhereClause::NotExists { sub } => {
+            crate::tree::drain_select_tree_binds(*sub, out);
+        }
+        WhereClause::Like { val, .. } | WhereClause::NotLike { val, .. } => out.push(val),
+        WhereClause::Any(clauses) | WhereClause::All(clauses) => {
+            for c in clauses {
+                drain_where_clause_binds(c, out);
+            }
+        }
+        WhereClause::Not(clause) => drain_where_clause_binds(*clause, out),
+        WhereClause::ColComparison { .. } => {}
+    }
+}
+
+/// Extract owned bind values from WhereEntry list in renderer traversal order.
+pub(crate) fn drain_where_entries_binds<V: Clone>(entries: Vec<WhereEntry<V>>, out: &mut Vec<V>) {
+    for entry in entries {
+        match entry {
+            WhereEntry::And(c) | WhereEntry::Or(c) => drain_where_clause_binds(c, out),
+        }
+    }
+}

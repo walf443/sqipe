@@ -8,8 +8,6 @@ use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 use crate::{WhereNotSet, WhereProvided};
 
-use crate::renderer::RenderConfig;
-
 /// A single SET clause entry in an UPDATE statement.
 #[derive(Debug, Clone)]
 pub enum SetClause<V: Clone> {
@@ -405,13 +403,6 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereProvided> {
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
     pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.into_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        let (sql, binds) = crate::renderer::update::render_update(
-            &tree,
-            &RenderConfig::from_dialect(&ph, &qi, dialect),
-        );
-        (sql, binds.into_iter().cloned().collect())
+        self.into_tree().into_sql_with(dialect)
     }
 }

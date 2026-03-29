@@ -589,3 +589,234 @@ impl<V: Clone> DeleteTree<V> {
         }
     }
 }
+
+// ── into_sql: consume tree and return owned binds without cloning ──
+
+impl<V: Clone> SelectTree<V> {
+    /// Consume this tree and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning bind values.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this tree and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning bind values.
+    pub fn into_sql_with(self, dialect: &dyn crate::Dialect) -> (String, Vec<V>) {
+        let (sql, _) = self.to_sql_with(dialect);
+        let mut binds = Vec::new();
+        drain_select_tree_binds(self, &mut binds);
+        (sql, binds)
+    }
+}
+
+impl<V: Clone> InsertTree<V> {
+    /// Consume this tree and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning bind values.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this tree and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning bind values.
+    pub fn into_sql_with(self, dialect: &dyn crate::Dialect) -> (String, Vec<V>) {
+        let (sql, _) = self.to_sql_with(dialect);
+        let mut binds = Vec::new();
+        drain_insert_tree_binds(self, &mut binds);
+        (sql, binds)
+    }
+}
+
+impl<V: Clone> UpdateTree<V> {
+    /// Consume this tree and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning bind values.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this tree and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning bind values.
+    pub fn into_sql_with(self, dialect: &dyn crate::Dialect) -> (String, Vec<V>) {
+        let (sql, _) = self.to_sql_with(dialect);
+        let mut binds = Vec::new();
+        drain_update_tree_binds(self, &mut binds);
+        (sql, binds)
+    }
+}
+
+impl<V: Clone> DeleteTree<V> {
+    /// Consume this tree and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning bind values.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this tree and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning bind values.
+    pub fn into_sql_with(self, dialect: &dyn crate::Dialect) -> (String, Vec<V>) {
+        let (sql, _) = self.to_sql_with(dialect);
+        let mut binds = Vec::new();
+        drain_delete_tree_binds(self, &mut binds);
+        (sql, binds)
+    }
+}
+
+// ── Drain bind values from trees in renderer traversal order ──
+
+/// Extract owned bind values from a SelectTree in renderer traversal order.
+pub(crate) fn drain_select_tree_binds<V: Clone>(tree: SelectTree<V>, out: &mut Vec<V>) {
+    for token in tree.tokens {
+        match token {
+            SelectToken::Select(clause) => match clause {
+                SelectClause::Columns { items, .. } => {
+                    for item in items {
+                        drain_select_item_binds(item, out);
+                    }
+                }
+            },
+            SelectToken::From(from) => {
+                if let FromSource::Subquery(sub) = from.source {
+                    drain_select_tree_binds(*sub, out);
+                }
+            }
+            SelectToken::Join { clause, subquery } => {
+                drain_join_condition_binds(clause.condition, out);
+                if let Some(sub) = subquery {
+                    drain_select_tree_binds(*sub, out);
+                }
+            }
+            SelectToken::Where(wheres) | SelectToken::Having(wheres) => {
+                crate::where_clause::drain_where_entries_binds(wheres, out);
+            }
+            SelectToken::OrderBy(obs) => {
+                for ob in obs {
+                    if let OrderByClause::Expr(raw) = ob {
+                        out.extend(raw.binds);
+                    }
+                }
+            }
+            SelectToken::SubSelect(sub) => {
+                drain_select_tree_binds(*sub, out);
+            }
+            SelectToken::Window(defs) => {
+                for (_, spec) in defs {
+                    for ob in spec.order_by {
+                        if let OrderByClause::Expr(raw) = ob {
+                            out.extend(raw.binds);
+                        }
+                    }
+                }
+            }
+            SelectToken::With(ctes) => {
+                for cte in ctes {
+                    drain_select_tree_binds(*cte.subquery, out);
+                }
+            }
+            SelectToken::GroupBy(_)
+            | SelectToken::Limit(_)
+            | SelectToken::Offset(_)
+            | SelectToken::LockFor(_)
+            | SelectToken::Raw(_)
+            | SelectToken::OpenParen
+            | SelectToken::CloseParen
+            | SelectToken::SetOperator(_) => {}
+        }
+    }
+}
+
+fn drain_select_item_binds<V: Clone>(item: SelectItem<V>, out: &mut Vec<V>) {
+    match item {
+        SelectItem::Expr { raw, .. } => out.extend(raw.binds),
+        SelectItem::WindowFunction { window, .. } => {
+            for ob in window.order_by {
+                if let OrderByClause::Expr(raw) = ob {
+                    out.extend(raw.binds);
+                }
+            }
+        }
+        SelectItem::Col(_) | SelectItem::Function { .. } => {}
+    }
+}
+
+fn drain_join_condition_binds<V: Clone>(cond: crate::JoinCondition<V>, out: &mut Vec<V>) {
+    match cond {
+        crate::JoinCondition::Expr(raw) => out.extend(raw.binds),
+        crate::JoinCondition::And(conditions) => {
+            for c in conditions {
+                drain_join_condition_binds(c, out);
+            }
+        }
+        crate::JoinCondition::ColEq { .. } | crate::JoinCondition::Using(_) => {}
+    }
+}
+
+/// Extract owned bind values from an InsertTree in renderer traversal order.
+fn drain_insert_tree_binds<V: Clone>(tree: InsertTree<V>, out: &mut Vec<V>) {
+    for token in tree.tokens {
+        match token {
+            InsertToken::Values(rows) => {
+                for row in rows {
+                    out.extend(row);
+                }
+            }
+            InsertToken::SelectSource(sub) => {
+                drain_select_tree_binds(*sub, out);
+            }
+            InsertToken::KeywordAssignments { sets, .. } => {
+                drain_set_clause_binds(sets, out);
+            }
+            InsertToken::InsertInto { .. } | InsertToken::Raw(_) => {}
+            #[cfg(feature = "returning")]
+            InsertToken::Returning(_) => {}
+        }
+    }
+}
+
+/// Extract owned bind values from an UpdateTree in renderer traversal order.
+fn drain_update_tree_binds<V: Clone>(tree: UpdateTree<V>, out: &mut Vec<V>) {
+    for token in tree.tokens {
+        match token {
+            UpdateToken::With(ctes) => {
+                for cte in ctes {
+                    drain_select_tree_binds(*cte.subquery, out);
+                }
+            }
+            UpdateToken::Set(sets) => {
+                drain_set_clause_binds(sets, out);
+            }
+            UpdateToken::Where(wheres) => {
+                crate::where_clause::drain_where_entries_binds(wheres, out);
+            }
+            UpdateToken::Update { .. } | UpdateToken::Raw(_) => {}
+            #[cfg(feature = "returning")]
+            UpdateToken::Returning(_) => {}
+        }
+    }
+}
+
+/// Extract owned bind values from a DeleteTree in renderer traversal order.
+fn drain_delete_tree_binds<V: Clone>(tree: DeleteTree<V>, out: &mut Vec<V>) {
+    for token in tree.tokens {
+        match token {
+            DeleteToken::With(ctes) => {
+                for cte in ctes {
+                    drain_select_tree_binds(*cte.subquery, out);
+                }
+            }
+            DeleteToken::Where(wheres) => {
+                crate::where_clause::drain_where_entries_binds(wheres, out);
+            }
+            DeleteToken::DeleteFrom { .. } | DeleteToken::Raw(_) => {}
+            #[cfg(feature = "returning")]
+            DeleteToken::Returning(_) => {}
+        }
+    }
+}
+
+fn drain_set_clause_binds<V: Clone>(sets: Vec<crate::SetClause<V>>, out: &mut Vec<V>) {
+    for clause in sets {
+        match clause {
+            crate::SetClause::Value(_, val) => out.push(val),
+            crate::SetClause::Expr(raw) => out.extend(raw.binds),
+        }
+    }
+}

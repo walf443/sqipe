@@ -1,7 +1,4 @@
-use qbey::Dialect;
 use qbey::Value;
-use qbey::renderer::standard::StandardSqlRenderer;
-use qbey::renderer::{RenderConfig, Renderer};
 use qbey::tree::SelectTree;
 use qbey::{MySqlDialect, SelectQueryBuilder};
 
@@ -495,11 +492,7 @@ impl<V: Clone + std::fmt::Debug> MysqlQuery<V> {
         } else {
             self.to_compound_tree()
         };
-        let ph = |n: usize| MySqlDialect.placeholder(n);
-        let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        let (sql, binds) = StandardSqlRenderer
-            .render_select(&tree, &RenderConfig::from_dialect(&ph, &qi, &MySqlDialect));
-        (sql, binds.into_iter().cloned().collect())
+        tree.into_sql_with(&MySqlDialect)
     }
 
     /// Convert this MySQL query builder into an UPDATE query builder.

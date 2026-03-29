@@ -6,8 +6,6 @@ use crate::value::Value;
 use crate::where_clause::{IntoWhereClause, WhereEntry};
 use crate::{WhereNotSet, WhereProvided};
 
-use crate::renderer::RenderConfig;
-
 /// Trait for DELETE query builder methods that do not change the WHERE state.
 ///
 /// Implement this trait on dialect-specific DELETE wrappers to ensure they
@@ -326,13 +324,6 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V, WhereProvided> {
     /// Consume this query and build SQL with dialect-specific placeholders and quoting.
     /// More efficient than `to_sql_with()` as it avoids cloning the query into a tree.
     pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.into_tree();
-        let ph = |n: usize| dialect.placeholder(n);
-        let qi = |name: &str| dialect.quote_identifier(name);
-        let (sql, binds) = crate::renderer::delete::render_delete(
-            &tree,
-            &RenderConfig::from_dialect(&ph, &qi, dialect),
-        );
-        (sql, binds.into_iter().cloned().collect())
+        self.into_tree().into_sql_with(dialect)
     }
 }

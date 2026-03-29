@@ -1,4 +1,3 @@
-use qbey::Dialect;
 use qbey::Value;
 use qbey::{InsertQueryBuilder, MySqlDialect};
 
@@ -189,11 +188,6 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
     /// Consume this query and build standard SQL with MySQL dialect.
     /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
     pub fn into_sql(self) -> (String, Vec<V>) {
-        let tree = self.into_tree();
-        let ph = |n: usize| MySqlDialect.placeholder(n);
-        let qi = |name: &str| MySqlDialect.quote_identifier(name);
-        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
-        let (sql, binds) = qbey::renderer::insert::render_insert(&tree, &cfg);
-        (sql, binds.into_iter().cloned().collect())
+        self.into_tree().into_sql_with(&MySqlDialect)
     }
 }
