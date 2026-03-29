@@ -120,6 +120,44 @@ fn test_insert_from_vec_of_structs_with_custom_value() {
     );
 }
 
+#[test]
+fn test_insert_add_values_from_slice_of_structs() {
+    let employees = vec![
+        Employee {
+            name: "Alice".to_string(),
+            age: 30,
+        },
+        Employee {
+            name: "Bob".to_string(),
+            age: 25,
+        },
+        Employee {
+            name: "Charlie".to_string(),
+            age: 35,
+        },
+    ];
+
+    let mut ins = qbey("employee").into_insert();
+    ins.add_values(&employees);
+
+    let (sql, binds) = ins.to_sql();
+    assert_eq!(
+        sql,
+        r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?), (?, ?), (?, ?)"#
+    );
+    assert_eq!(
+        binds,
+        vec![
+            Value::String("Alice".to_string()),
+            Value::Int(30),
+            Value::String("Bob".to_string()),
+            Value::Int(25),
+            Value::String("Charlie".to_string()),
+            Value::Int(35),
+        ]
+    );
+}
+
 /// Slice-based API still works alongside ToInsertRow.
 #[test]
 fn test_insert_slice_api_still_works() {
