@@ -82,24 +82,23 @@ impl<V: Clone> RawSql<V> {
     }
 
     /// Render the SQL expression, replacing `{}` placeholders with
-    /// dialect-specific bind markers and pushing values into `binds`.
+    /// dialect-specific bind markers and incrementing the bind counter.
     ///
     /// If there are no bind values, the SQL template is returned as-is.
-    pub(crate) fn render<'a>(&'a self, cfg: &RenderConfig, binds: &mut Vec<&'a V>) -> String {
+    pub(crate) fn render(&self, cfg: &RenderConfig, bind_count: &mut usize) -> String {
         if self.binds.is_empty() {
             return self.sql.clone();
         }
 
         let mut result = String::new();
-        let mut bind_iter = self.binds.iter();
+        let mut remaining_binds = self.binds.len();
         let parts: Vec<&str> = self.sql.split("{}").collect();
         for (i, part) in parts.iter().enumerate() {
             result.push_str(part);
-            if i < parts.len() - 1
-                && let Some(val) = bind_iter.next()
-            {
-                binds.push(val);
-                result.push_str(&(cfg.ph)(binds.len()));
+            if i < parts.len() - 1 && remaining_binds > 0 {
+                *bind_count += 1;
+                result.push_str(&(cfg.ph)(*bind_count));
+                remaining_binds -= 1;
             }
         }
         result

@@ -2,17 +2,14 @@ use super::{RenderConfig, render_cte_clause, render_wheres};
 use crate::tree::{DeleteToken, DeleteTree};
 
 /// Render a DELETE statement from a `DeleteTree`.
-pub fn render_delete<'a, V: Clone>(
-    tree: &'a DeleteTree<V>,
-    cfg: &RenderConfig,
-) -> (String, Vec<&'a V>) {
-    let mut binds: Vec<&V> = Vec::new();
+pub fn render_delete<V: Clone>(tree: &DeleteTree<V>, cfg: &RenderConfig) -> String {
+    let mut bind_count: usize = 0;
     let mut parts = Vec::new();
 
     for token in &tree.tokens {
         match token {
             DeleteToken::With(ctes) => {
-                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut binds) {
+                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut bind_count) {
                     parts.push(with_sql);
                 }
             }
@@ -24,7 +21,7 @@ pub fn render_delete<'a, V: Clone>(
                 parts.push(s);
             }
             DeleteToken::Where(wheres) => {
-                if let Some(where_sql) = render_wheres(wheres, cfg, &mut binds) {
+                if let Some(where_sql) = render_wheres(wheres, cfg, &mut bind_count) {
                     parts.push(format!("WHERE {}", where_sql));
                 }
             }
@@ -40,5 +37,5 @@ pub fn render_delete<'a, V: Clone>(
         }
     }
 
-    (parts.join(" "), binds)
+    parts.join(" ")
 }

@@ -178,12 +178,12 @@ impl<V: Clone + std::fmt::Debug> MysqlUpdateQuery<V, WhereProvided> {
         // and appended after render_update. This is correct for MySQL's `?`
         // placeholders (position-independent) but would need a different approach
         // for PostgreSQL's `$N` indexed placeholders.
-        let mut order_by_binds: Vec<&Value> = Vec::new();
+        let mut bind_count: usize = 0;
         if let Some(order_by) =
-            qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut order_by_binds)
+            qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut bind_count)
         {
             debug_assert!(
-                order_by_binds.is_empty(),
+                bind_count == 0,
                 "RawSql binds in MySQL UPDATE ORDER BY are not supported with custom value types"
             );
             tree.tokens.push(qbey::tree::UpdateToken::Raw(order_by));

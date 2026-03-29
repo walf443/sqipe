@@ -178,12 +178,12 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
         // DELETE FROM ... WHERE ... ORDER BY ... LIMIT ... RETURNING ...
         let mut extra_tokens: Vec<qbey::tree::DeleteToken<V>> = Vec::new();
 
-        let mut order_by_binds: Vec<&Value> = Vec::new();
+        let mut bind_count: usize = 0;
         if let Some(order_by) =
-            qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut order_by_binds)
+            qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut bind_count)
         {
             debug_assert!(
-                order_by_binds.is_empty(),
+                bind_count == 0,
                 "RawSql binds in MySQL DELETE ORDER BY are not supported with custom value types"
             );
             extra_tokens.push(qbey::tree::DeleteToken::Raw(order_by));

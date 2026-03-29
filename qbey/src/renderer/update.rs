@@ -7,17 +7,14 @@ use crate::tree::{UpdateToken, UpdateTree};
 /// # Panics
 ///
 /// Panics if no `Set` token is found, as an UPDATE with no SET clause is invalid SQL.
-pub fn render_update<'a, V: Clone>(
-    tree: &'a UpdateTree<V>,
-    cfg: &RenderConfig,
-) -> (String, Vec<&'a V>) {
-    let mut binds: Vec<&V> = Vec::new();
+pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> String {
+    let mut bind_count: usize = 0;
     let mut parts = Vec::new();
 
     for token in &tree.tokens {
         match token {
             UpdateToken::With(ctes) => {
-                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut binds) {
+                if let Some(with_sql) = render_cte_clause(ctes, cfg, &mut bind_count) {
                     parts.push(with_sql);
                 }
             }
@@ -33,18 +30,18 @@ pub fn render_update<'a, V: Clone>(
                 let set_items: Vec<String> = sets
                     .iter()
                     .map(|clause| match clause {
-                        SetClause::Value(col, val) => {
-                            binds.push(val);
-                            let placeholder = (cfg.ph)(binds.len());
+                        SetClause::Value(col, _val) => {
+                            bind_count += 1;
+                            let placeholder = (cfg.ph)(bind_count);
                             format!("{} = {}", (cfg.qi)(col), placeholder)
                         }
-                        SetClause::Expr(expr) => expr.render(cfg, &mut binds),
+                        SetClause::Expr(expr) => expr.render(cfg, &mut bind_count),
                     })
                     .collect();
                 parts.push(format!("SET {}", set_items.join(", ")));
             }
             UpdateToken::Where(wheres) => {
-                if let Some(where_sql) = render_wheres(wheres, cfg, &mut binds) {
+                if let Some(where_sql) = render_wheres(wheres, cfg, &mut bind_count) {
                     parts.push(format!("WHERE {}", where_sql));
                 }
             }
@@ -60,5 +57,5 @@ pub fn render_update<'a, V: Clone>(
         }
     }
 
-    (parts.join(" "), binds)
+    parts.join(" ")
 }

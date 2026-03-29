@@ -2,19 +2,8 @@ use super::RenderConfig;
 use crate::tree::{InsertToken, InsertTree};
 
 /// Render an INSERT statement from an `InsertTree`.
-pub fn render_insert<'a, V: Clone>(
-    tree: &'a InsertTree<V>,
-    cfg: &RenderConfig,
-) -> (String, Vec<&'a V>) {
-    // Pre-calculate bind capacity from Values token.
-    let bind_cap = tree.tokens.iter().fold(0usize, |acc, t| {
-        if let InsertToken::Values(rows) = t {
-            acc + rows.iter().map(|r| r.len()).sum::<usize>()
-        } else {
-            acc
-        }
-    });
-    let mut binds: Vec<&V> = Vec::with_capacity(bind_cap);
+pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> String {
+    let mut bind_count: usize = 0;
     let mut parts = Vec::new();
 
     // Extract InsertInto metadata first (required by Values/SelectSource).
@@ -47,12 +36,12 @@ pub fn render_insert<'a, V: Clone>(
                         sql.push_str(", ");
                     }
                     sql.push('(');
-                    for (j, val) in row.iter().enumerate() {
+                    for (j, _val) in row.iter().enumerate() {
                         if j > 0 {
                             sql.push_str(", ");
                         }
-                        binds.push(val);
-                        sql.push_str(&(cfg.ph)(binds.len()));
+                        bind_count += 1;
+                        sql.push_str(&(cfg.ph)(bind_count));
                     }
                     for (k, (_, expr)) in col_exprs.iter().enumerate() {
                         if !row.is_empty() || k > 0 {
@@ -66,7 +55,7 @@ pub fn render_insert<'a, V: Clone>(
                 parts.push(sql);
             }
             InsertToken::SelectSource(sub) => {
-                let sub_sql = super::render_subquery_sql(sub, cfg, &mut binds);
+                let sub_sql = super::render_subquery_sql(sub, cfg, &mut bind_count);
                 parts.push(format!("INSERT INTO {} {}", (cfg.qi)(table), sub_sql));
             }
             InsertToken::Raw(s) => {
@@ -76,12 +65,12 @@ pub fn render_insert<'a, V: Clone>(
                 let mut items = Vec::new();
                 for clause in sets {
                     match clause {
-                        crate::SetClause::Value(col, val) => {
-                            binds.push(val);
-                            items.push(format!("{} = {}", (cfg.qi)(col), (cfg.ph)(binds.len())));
+                        crate::SetClause::Value(col, _val) => {
+                            bind_count += 1;
+                            items.push(format!("{} = {}", (cfg.qi)(col), (cfg.ph)(bind_count)));
                         }
                         crate::SetClause::Expr(expr) => {
-                            items.push(expr.render(cfg, &mut binds));
+                            items.push(expr.render(cfg, &mut bind_count));
                         }
                     }
                 }
@@ -96,7 +85,7 @@ pub fn render_insert<'a, V: Clone>(
         }
     }
 
-    (parts.join(" "), binds)
+    parts.join(" ")
 }
 
 /// Extract table, columns, and col_exprs from the first `InsertInto` token.

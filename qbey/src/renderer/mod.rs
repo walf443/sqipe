@@ -38,11 +38,7 @@ impl<'a> RenderConfig<'a> {
 
 /// Trait for SQL rendering strategies.
 pub trait Renderer {
-    fn render_select<'a, V: Clone>(
-        &self,
-        tree: &'a SelectTree<V>,
-        cfg: &RenderConfig,
-    ) -> (String, Vec<&'a V>);
+    fn render_select<V: Clone>(&self, tree: &SelectTree<V>, cfg: &RenderConfig) -> String;
 }
 
 // ── Shared rendering helpers (crate-visible for standard module) ──
@@ -58,10 +54,10 @@ pub(super) fn set_op_keyword(op: &crate::SetOp) -> &'static str {
     }
 }
 
-pub(super) fn render_wheres<'a, V: Clone>(
-    wheres: &'a [WhereEntry<V>],
+pub(super) fn render_wheres<V: Clone>(
+    wheres: &[WhereEntry<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> Option<String> {
     if wheres.is_empty() {
         return None;
@@ -80,17 +76,17 @@ pub(super) fn render_wheres<'a, V: Clone>(
             sql.push_str(&format!(" {} ", connector));
         }
 
-        sql.push_str(&render_where_clause(clause, single, cfg, binds));
+        sql.push_str(&render_where_clause(clause, single, cfg, bind_count));
     }
 
     Some(sql)
 }
 
 /// Render a WITH clause from CTE entries. Shared by SELECT, UPDATE, and DELETE renderers.
-pub(crate) fn render_cte_clause<'a, V: Clone>(
-    ctes: &'a [crate::tree::CteEntry<V>],
+pub(crate) fn render_cte_clause<V: Clone>(
+    ctes: &[crate::tree::CteEntry<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> Option<String> {
     if ctes.is_empty() {
         return None;
@@ -110,22 +106,22 @@ pub(crate) fn render_cte_clause<'a, V: Clone>(
                 let quoted: Vec<String> = cte.columns.iter().map(|c| (cfg.qi)(c)).collect();
                 format!(" ({})", quoted.join(", "))
             };
-            let sub_sql = render_subquery_sql(&cte.subquery, cfg, binds);
+            let sub_sql = render_subquery_sql(&cte.subquery, cfg, bind_count);
             format!("{}{} AS ({})", (cfg.qi)(&cte.name), col_list, sub_sql)
         })
         .collect();
     Some(format!("{} {}", keyword, defs.join(", ")))
 }
 
-pub(super) fn render_from<'a, V: Clone>(
-    from: &'a FromClause<V>,
+pub(super) fn render_from<V: Clone>(
+    from: &FromClause<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     let mut s = match &from.source {
         FromSource::Table(table) => format!("FROM {}", (cfg.qi)(table)),
         FromSource::Subquery(sub) => {
-            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            let sub_sql = render_subquery_sql(sub, cfg, bind_count);
             format!("FROM ({})", sub_sql)
         }
     };
@@ -135,10 +131,10 @@ pub(super) fn render_from<'a, V: Clone>(
     s
 }
 
-pub(super) fn render_join_condition<'a, V: Clone>(
-    cond: &'a JoinCondition<V>,
+pub(super) fn render_join_condition<V: Clone>(
+    cond: &JoinCondition<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     match cond {
         JoinCondition::ColEq { left, right } => {
@@ -151,12 +147,12 @@ pub(super) fn render_join_condition<'a, V: Clone>(
         JoinCondition::And(conditions) => {
             let parts: Vec<String> = conditions
                 .iter()
-                .map(|c| render_join_condition(c, cfg, binds))
+                .map(|c| render_join_condition(c, cfg, bind_count))
                 .collect();
             parts.join(" AND ")
         }
         JoinCondition::Using(_) => unreachable!("Using is handled in render_join"),
-        JoinCondition::Expr(raw) => raw.render(cfg, binds),
+        JoinCondition::Expr(raw) => raw.render(cfg, bind_count),
     }
 }
 
@@ -168,11 +164,11 @@ fn render_join_table(table: &str, alias: &Option<String>, cfg: &RenderConfig) ->
 }
 
 /// Render a single JOIN token.
-pub(super) fn render_join<'a, V: Clone>(
-    join: &'a JoinClause<V>,
-    subquery: &'a Option<Box<SelectTree<V>>>,
+pub(super) fn render_join<V: Clone>(
+    join: &JoinClause<V>,
+    subquery: &Option<Box<SelectTree<V>>>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     let keyword = match &join.join_type {
         JoinType::Inner => "INNER JOIN",
@@ -180,7 +176,7 @@ pub(super) fn render_join<'a, V: Clone>(
         JoinType::Custom(s) => s.as_str(),
     };
     let table = if let Some(sub) = subquery {
-        let sub_sql = render_subquery_sql(sub, cfg, binds);
+        let sub_sql = render_subquery_sql(sub, cfg, bind_count);
         match &join.alias {
             Some(a) => format!("({}) AS {}", sub_sql, (cfg.qi)(a)),
             None => format!("({})", sub_sql),
@@ -196,15 +192,15 @@ pub(super) fn render_join<'a, V: Clone>(
         "{} {} ON {}",
         keyword,
         table,
-        render_join_condition(&join.condition, cfg, binds)
+        render_join_condition(&join.condition, cfg, bind_count)
     )
 }
 
-pub(super) fn render_select_columns<'a, V: Clone>(
-    items: &'a [SelectItem<V>],
+pub(super) fn render_select_columns<V: Clone>(
+    items: &[SelectItem<V>],
     distinct: bool,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     let keyword = if distinct {
         "SELECT DISTINCT"
@@ -216,7 +212,7 @@ pub(super) fn render_select_columns<'a, V: Clone>(
     } else {
         let quoted: Vec<String> = items
             .iter()
-            .map(|c| render_select_item(c, cfg, binds))
+            .map(|c| render_select_item(c, cfg, bind_count))
             .collect();
         format!("{} {}", keyword, quoted.join(", "))
     }
@@ -243,10 +239,10 @@ pub(crate) fn render_col_ref(col: &Col, cfg: &RenderConfig) -> String {
     }
 }
 
-fn render_select_item<'a, V: Clone>(
-    item: &'a SelectItem<V>,
+fn render_select_item<V: Clone>(
+    item: &SelectItem<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     match item {
         SelectItem::Col(col) => {
@@ -257,7 +253,7 @@ fn render_select_item<'a, V: Clone>(
             }
         }
         SelectItem::Expr { raw, alias } => {
-            let rendered = raw.render(cfg, binds);
+            let rendered = raw.render(cfg, bind_count);
             match alias {
                 Some(alias) => format!("{} AS {}", rendered, (cfg.qi)(alias)),
                 None => rendered,
@@ -289,7 +285,7 @@ fn render_select_item<'a, V: Clone>(
             let base = match &window.name {
                 Some(name) => format!("{} OVER {}", func_call, (cfg.qi)(name)),
                 None => {
-                    let over_clause = render_window_spec(window, cfg, binds);
+                    let over_clause = render_window_spec(window, cfg, bind_count);
                     format!("{} OVER ({})", func_call, over_clause)
                 }
             };
@@ -301,10 +297,10 @@ fn render_select_item<'a, V: Clone>(
     }
 }
 
-fn render_window_spec<'a, V: Clone>(
-    spec: &'a WindowSpec<V>,
+fn render_window_spec<V: Clone>(
+    spec: &WindowSpec<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     let mut parts = Vec::new();
 
@@ -329,7 +325,7 @@ fn render_window_spec<'a, V: Clone>(
                     };
                     format!("{} {}", render_col_ref(col, cfg), dir_str)
                 }
-                OrderByClause::Expr(raw) => raw.render(cfg, binds),
+                OrderByClause::Expr(raw) => raw.render(cfg, bind_count),
             })
             .collect();
         parts.push(format!("ORDER BY {}", clauses.join(", ")));
@@ -339,37 +335,37 @@ fn render_window_spec<'a, V: Clone>(
 }
 
 /// Render the SELECT clause as a string.
-pub(super) fn render_select_clause<'a, V: Clone>(
-    select: &'a crate::tree::SelectClause<V>,
+pub(super) fn render_select_clause<V: Clone>(
+    select: &crate::tree::SelectClause<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     use crate::tree::SelectClause;
 
     match select {
         SelectClause::Columns { items, distinct } => {
-            render_select_columns(items, *distinct, cfg, binds)
+            render_select_columns(items, *distinct, cfg, bind_count)
         }
     }
 }
 
 /// Render a SelectTree as standard SQL for use in subqueries.
-/// Uses the shared binds accumulator so placeholder indices are correct.
-pub(super) fn render_subquery_sql<'a, V: Clone>(
-    tree: &'a SelectTree<V>,
+/// Uses the shared bind counter so placeholder indices are correct.
+pub(super) fn render_subquery_sql<V: Clone>(
+    tree: &SelectTree<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     let mut parts = Vec::new();
-    render_select_tokens(&tree.tokens, cfg, binds, &mut parts);
+    render_select_tokens(&tree.tokens, cfg, bind_count, &mut parts);
     parts.join(" ")
 }
 
 /// Core token-walking logic shared by render_select and render_subquery_sql.
-pub(super) fn render_select_tokens<'a, V: Clone>(
-    tokens: &'a [SelectToken<V>],
+pub(super) fn render_select_tokens<V: Clone>(
+    tokens: &[SelectToken<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
     parts: &mut Vec<String>,
 ) {
     let mut open_parens: usize = 0;
@@ -394,14 +390,13 @@ pub(super) fn render_select_tokens<'a, V: Clone>(
         }
 
         let rendered = match token {
-            SelectToken::Select(clause) => Some(render_select_clause(clause, cfg, binds)),
-            SelectToken::From(from) => Some(render_from(from, cfg, binds)),
+            SelectToken::Select(clause) => Some(render_select_clause(clause, cfg, bind_count)),
+            SelectToken::From(from) => Some(render_from(from, cfg, bind_count)),
             SelectToken::Join { clause, subquery } => {
-                Some(render_join(clause, subquery, cfg, binds))
+                Some(render_join(clause, subquery, cfg, bind_count))
             }
-            SelectToken::Where(wheres) => {
-                render_wheres(wheres, cfg, binds).map(|where_sql| format!("WHERE {}", where_sql))
-            }
+            SelectToken::Where(wheres) => render_wheres(wheres, cfg, bind_count)
+                .map(|where_sql| format!("WHERE {}", where_sql)),
             SelectToken::GroupBy(cols) => {
                 if cols.is_empty() {
                     None
@@ -410,16 +405,16 @@ pub(super) fn render_select_tokens<'a, V: Clone>(
                     Some(format!("GROUP BY {}", quoted.join(", ")))
                 }
             }
-            SelectToken::Having(havings) => render_wheres(havings, cfg, binds)
+            SelectToken::Having(havings) => render_wheres(havings, cfg, bind_count)
                 .map(|having_sql| format!("HAVING {}", having_sql)),
-            SelectToken::OrderBy(obs) => render_order_by(obs, cfg, binds),
+            SelectToken::OrderBy(obs) => render_order_by(obs, cfg, bind_count),
             SelectToken::Limit(n) => Some(format!("LIMIT {}", n)),
             SelectToken::Offset(n) => Some(format!("OFFSET {}", n)),
             SelectToken::LockFor(s) => Some(format!("FOR {}", s)),
             SelectToken::Raw(s) => Some(s.clone()),
             SelectToken::SubSelect(sub) => {
                 let mut sub_parts = Vec::new();
-                render_select_tokens(&sub.tokens, cfg, binds, &mut sub_parts);
+                render_select_tokens(&sub.tokens, cfg, bind_count, &mut sub_parts);
                 Some(sub_parts.join(" "))
             }
             SelectToken::SetOperator(op) => Some(set_op_keyword(op).to_string()),
@@ -430,14 +425,14 @@ pub(super) fn render_select_tokens<'a, V: Clone>(
                     let parts: Vec<String> = defs
                         .iter()
                         .map(|(name, spec)| {
-                            let spec_sql = render_window_spec(spec, cfg, binds);
+                            let spec_sql = render_window_spec(spec, cfg, bind_count);
                             format!("{} AS ({})", (cfg.qi)(name), spec_sql)
                         })
                         .collect();
                     Some(format!("WINDOW {}", parts.join(", ")))
                 }
             }
-            SelectToken::With(ctes) => render_cte_clause(ctes, cfg, binds),
+            SelectToken::With(ctes) => render_cte_clause(ctes, cfg, bind_count),
             SelectToken::OpenParen | SelectToken::CloseParen => unreachable!(),
         };
 
@@ -458,16 +453,16 @@ pub(super) fn render_select_tokens<'a, V: Clone>(
     );
 }
 
-fn render_where_clause<'a, V: Clone>(
-    clause: &'a WhereClause<V>,
+fn render_where_clause<V: Clone>(
+    clause: &WhereClause<V>,
     is_top_level: bool,
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> String {
     match clause {
-        WhereClause::Condition { col, op, val } => {
-            binds.push(val);
-            let placeholder = (cfg.ph)(binds.len());
+        WhereClause::Condition { col, op, val: _ } => {
+            *bind_count += 1;
+            let placeholder = (cfg.ph)(*bind_count);
             format!(
                 "{} {} {}",
                 render_col_ref(col, cfg),
@@ -475,11 +470,15 @@ fn render_where_clause<'a, V: Clone>(
                 placeholder
             )
         }
-        WhereClause::Between { col, low, high } => {
-            binds.push(low);
-            let ph_low = (cfg.ph)(binds.len());
-            binds.push(high);
-            let ph_high = (cfg.ph)(binds.len());
+        WhereClause::Between {
+            col,
+            low: _,
+            high: _,
+        } => {
+            *bind_count += 1;
+            let ph_low = (cfg.ph)(*bind_count);
+            *bind_count += 1;
+            let ph_high = (cfg.ph)(*bind_count);
             format!(
                 "{} BETWEEN {} AND {}",
                 render_col_ref(col, cfg),
@@ -487,11 +486,15 @@ fn render_where_clause<'a, V: Clone>(
                 ph_high
             )
         }
-        WhereClause::NotBetween { col, low, high } => {
-            binds.push(low);
-            let ph_low = (cfg.ph)(binds.len());
-            binds.push(high);
-            let ph_high = (cfg.ph)(binds.len());
+        WhereClause::NotBetween {
+            col,
+            low: _,
+            high: _,
+        } => {
+            *bind_count += 1;
+            let ph_low = (cfg.ph)(*bind_count);
+            *bind_count += 1;
+            let ph_high = (cfg.ph)(*bind_count);
             format!(
                 "{} NOT BETWEEN {} AND {}",
                 render_col_ref(col, cfg),
@@ -503,9 +506,9 @@ fn render_where_clause<'a, V: Clone>(
         WhereClause::In { col, vals } => {
             let placeholders: Vec<Cow<'static, str>> = vals
                 .iter()
-                .map(|v| {
-                    binds.push(v);
-                    (cfg.ph)(binds.len())
+                .map(|_v| {
+                    *bind_count += 1;
+                    (cfg.ph)(*bind_count)
                 })
                 .collect();
             format!(
@@ -515,16 +518,16 @@ fn render_where_clause<'a, V: Clone>(
             )
         }
         WhereClause::InSubQuery { col, sub } => {
-            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            let sub_sql = render_subquery_sql(sub, cfg, bind_count);
             format!("{} IN ({})", render_col_ref(col, cfg), sub_sql)
         }
         WhereClause::NotIn { col: _, vals } if vals.is_empty() => "1 = 1".to_string(),
         WhereClause::NotIn { col, vals } => {
             let placeholders: Vec<Cow<'static, str>> = vals
                 .iter()
-                .map(|v| {
-                    binds.push(v);
-                    (cfg.ph)(binds.len())
+                .map(|_v| {
+                    *bind_count += 1;
+                    (cfg.ph)(*bind_count)
                 })
                 .collect();
             format!(
@@ -534,20 +537,20 @@ fn render_where_clause<'a, V: Clone>(
             )
         }
         WhereClause::NotInSubQuery { col, sub } => {
-            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            let sub_sql = render_subquery_sql(sub, cfg, bind_count);
             format!("{} NOT IN ({})", render_col_ref(col, cfg), sub_sql)
         }
         WhereClause::Exists { sub } => {
-            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            let sub_sql = render_subquery_sql(sub, cfg, bind_count);
             format!("EXISTS ({})", sub_sql)
         }
         WhereClause::NotExists { sub } => {
-            let sub_sql = render_subquery_sql(sub, cfg, binds);
+            let sub_sql = render_subquery_sql(sub, cfg, bind_count);
             format!("NOT EXISTS ({})", sub_sql)
         }
-        WhereClause::Like { col, expr, val } | WhereClause::NotLike { col, expr, val } => {
-            binds.push(val);
-            let placeholder = (cfg.ph)(binds.len());
+        WhereClause::Like { col, expr, val: _ } | WhereClause::NotLike { col, expr, val: _ } => {
+            *bind_count += 1;
+            let placeholder = (cfg.ph)(*bind_count);
             let keyword = if matches!(clause, WhereClause::Like { .. }) {
                 "LIKE"
             } else {
@@ -570,7 +573,7 @@ fn render_where_clause<'a, V: Clone>(
         WhereClause::Any(clauses) => {
             let parts: Vec<String> = clauses
                 .iter()
-                .map(|c| render_where_clause(c, false, cfg, binds))
+                .map(|c| render_where_clause(c, false, cfg, bind_count))
                 .collect();
             let joined = parts.join(" OR ");
             if is_top_level {
@@ -582,7 +585,7 @@ fn render_where_clause<'a, V: Clone>(
         WhereClause::All(clauses) => {
             let parts: Vec<String> = clauses
                 .iter()
-                .map(|c| render_where_clause(c, false, cfg, binds))
+                .map(|c| render_where_clause(c, false, cfg, bind_count))
                 .collect();
             let joined = parts.join(" AND ");
             if is_top_level {
@@ -592,7 +595,7 @@ fn render_where_clause<'a, V: Clone>(
             }
         }
         WhereClause::Not(clause) => {
-            let inner = render_where_clause(clause, false, cfg, binds);
+            let inner = render_where_clause(clause, false, cfg, bind_count);
             format!("NOT ({})", inner)
         }
         WhereClause::ColComparison { left, op, right } => {
@@ -624,10 +627,10 @@ pub(crate) fn render_returning(cols: &[Col], cfg: &RenderConfig) -> Option<Strin
 /// Returns `None` if the slice is empty; otherwise returns `Some("ORDER BY ...")`.
 /// Exposed publicly so dialect crates can reuse this for dialect-specific
 /// ORDER BY support (e.g., MySQL's ORDER BY in UPDATE/DELETE).
-pub fn render_order_by<'a, V: Clone>(
-    order_bys: &'a [OrderByClause<V>],
+pub fn render_order_by<V: Clone>(
+    order_bys: &[OrderByClause<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<&'a V>,
+    bind_count: &mut usize,
 ) -> Option<String> {
     if order_bys.is_empty() {
         return None;
@@ -642,7 +645,7 @@ pub fn render_order_by<'a, V: Clone>(
                 };
                 format!("{} {}", render_col_ref(col, cfg), dir_str)
             }
-            OrderByClause::Expr(raw) => raw.render(cfg, binds),
+            OrderByClause::Expr(raw) => raw.render(cfg, bind_count),
         })
         .collect();
     Some(format!("ORDER BY {}", clauses.join(", ")))
