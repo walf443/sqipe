@@ -88,7 +88,12 @@ pub trait InsertQueryBuilder<V: Clone> {
     /// # Panics
     ///
     /// Same as [`add_value()`](InsertQueryBuilder::add_value).
-    fn add_values(&mut self, rows: &[impl ToInsertRow<V>]) -> &mut Self;
+    fn add_values(&mut self, rows: &[impl ToInsertRow<V>]) -> &mut Self {
+        for row in rows {
+            self.add_value(row);
+        }
+        self
+    }
 
     /// Add an extra column whose value is a raw SQL expression applied to every row.
     ///
@@ -207,13 +212,6 @@ impl<V: Clone + std::fmt::Debug> InsertQueryBuilder<V> for InsertQuery<V> {
             }
         }
 
-        self
-    }
-
-    fn add_values(&mut self, rows: &[impl ToInsertRow<V>]) -> &mut Self {
-        for row in rows {
-            self.add_value(row);
-        }
         self
     }
 

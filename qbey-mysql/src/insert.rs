@@ -39,11 +39,6 @@ impl<V: Clone + std::fmt::Debug> InsertQueryBuilder<V> for MysqlInsertQuery<V> {
         self
     }
 
-    fn add_values(&mut self, rows: &[impl qbey::ToInsertRow<V>]) -> &mut Self {
-        self.inner.add_values(rows);
-        self
-    }
-
     fn add_col_value_expr(
         &mut self,
         column: impl Into<qbey::Col>,
