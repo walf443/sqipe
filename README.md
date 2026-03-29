@@ -517,6 +517,41 @@ let (sql, binds) = ins.into_sql();
 assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (?, ?, NOW()), (?, ?, NOW())"#);
 ```
 
+#### ToInsertRow trait
+
+Custom structs can implement `ToInsertRow<V>` to be used directly with `add_value()` / `add_values()`:
+
+```rust
+# use qbey::{qbey, col, Value, ToInsertRow, InsertQueryBuilder};
+struct Employee {
+    name: String,
+    age: i32,
+}
+
+impl ToInsertRow<Value> for Employee {
+    fn to_insert_row(&self) -> Vec<(&'static str, Value)> {
+        vec![
+            ("name", self.name.as_str().into()),
+            ("age", self.age.into()),
+        ]
+    }
+}
+
+let employees = vec![
+    Employee { name: "Alice".to_string(), age: 30 },
+    Employee { name: "Bob".to_string(), age: 25 },
+];
+
+let mut ins = qbey("employee").into_insert();
+// add_values() adds multiple rows at once from a slice
+ins.add_values(&employees);
+
+let (sql, binds) = ins.into_sql();
+assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age") VALUES (?, ?), (?, ?)"#);
+```
+
+#### INSERT ... SELECT
+
 INSERT ... SELECT is also supported via `from_select()`:
 
 ```rust

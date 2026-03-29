@@ -80,6 +80,21 @@ pub trait InsertQueryBuilder<V: Clone> {
     /// - Panics if the column set does not match the first call's column set.
     fn add_value(&mut self, row: &(impl ToInsertRow<V> + ?Sized)) -> &mut Self;
 
+    /// Add multiple rows at once from a slice of [`ToInsertRow<V>`] implementors.
+    ///
+    /// This is equivalent to calling [`add_value()`](InsertQueryBuilder::add_value)
+    /// in a loop, but more convenient when you already have a collection of rows.
+    ///
+    /// # Panics
+    ///
+    /// Same as [`add_value()`](InsertQueryBuilder::add_value).
+    fn add_values(&mut self, rows: &[impl ToInsertRow<V>]) -> &mut Self {
+        for row in rows {
+            self.add_value(row);
+        }
+        self
+    }
+
     /// Add an extra column whose value is a raw SQL expression applied to every row.
     ///
     /// This is useful for columns like `created_at` that should use a database
