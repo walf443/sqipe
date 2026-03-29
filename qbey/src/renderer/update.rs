@@ -7,8 +7,11 @@ use crate::tree::{UpdateToken, UpdateTree};
 /// # Panics
 ///
 /// Panics if no `Set` token is found, as an UPDATE with no SET clause is invalid SQL.
-pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (String, Vec<V>) {
-    let mut binds: Vec<V> = Vec::new();
+pub fn render_update<'a, V: Clone>(
+    tree: &'a UpdateTree<V>,
+    cfg: &RenderConfig,
+) -> (String, Vec<&'a V>) {
+    let mut binds: Vec<&V> = Vec::new();
     let mut parts = Vec::new();
 
     for token in &tree.tokens {
@@ -31,7 +34,7 @@ pub fn render_update<V: Clone>(tree: &UpdateTree<V>, cfg: &RenderConfig) -> (Str
                     .iter()
                     .map(|clause| match clause {
                         SetClause::Value(col, val) => {
-                            binds.push(val.clone());
+                            binds.push(val);
                             let placeholder = (cfg.ph)(binds.len());
                             format!("{} = {}", (cfg.qi)(col), placeholder)
                         }

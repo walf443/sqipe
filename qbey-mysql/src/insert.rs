@@ -139,19 +139,22 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
         self
     }
 
-    /// Build standard SQL with MySQL dialect.
-    pub fn to_sql(&self) -> (String, Vec<V>) {
-        let mut tree = self.inner.to_tree();
+    /// Build an InsertTree with MySQL-specific ODKU applied.
+    pub fn to_tree(&self) -> qbey::tree::InsertTree<V> {
+        self.clone().into_tree()
+    }
+
+    /// Consume this query and build an InsertTree by moving values.
+    pub fn into_tree(self) -> qbey::tree::InsertTree<V> {
+        let mut tree = self.inner.into_tree();
 
         if !self.on_duplicate_key_updates.is_empty() {
             let sets: Vec<qbey::SetClause<V>> = self
                 .on_duplicate_key_updates
-                .iter()
+                .into_iter()
                 .map(|clause| match clause {
-                    OnDuplicateKeyUpdateClause::Value(col, val) => {
-                        qbey::SetClause::Value(col.clone(), val.clone())
-                    }
-                    OnDuplicateKeyUpdateClause::Expr(expr) => qbey::SetClause::Expr(expr.clone()),
+                    OnDuplicateKeyUpdateClause::Value(col, val) => qbey::SetClause::Value(col, val),
+                    OnDuplicateKeyUpdateClause::Expr(expr) => qbey::SetClause::Expr(expr),
                 })
                 .collect();
 
@@ -175,9 +178,22 @@ impl<V: Clone + std::fmt::Debug> MysqlInsertQuery<V> {
             tree.tokens.insert(insert_pos, odku_token);
         }
 
+        tree
+    }
+
+    /// Build standard SQL with MySQL dialect.
+    pub fn to_sql(&self) -> (String, Vec<V>) {
+        self.clone().into_sql()
+    }
+
+    /// Consume this query and build standard SQL with MySQL dialect.
+    /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        let tree = self.into_tree();
         let ph = |_: usize| "?".to_string();
         let qi = |name: &str| MySqlDialect.quote_identifier(name);
         let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
-        qbey::renderer::insert::render_insert(&tree, &cfg)
+        let (sql, binds) = qbey::renderer::insert::render_insert(&tree, &cfg);
+        (sql, binds.into_iter().cloned().collect())
     }
 }

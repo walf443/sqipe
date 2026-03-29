@@ -36,8 +36,11 @@ impl<'a> RenderConfig<'a> {
 
 /// Trait for SQL rendering strategies.
 pub trait Renderer {
-    fn render_select<V: Clone>(&self, tree: &SelectTree<V>, cfg: &RenderConfig)
-    -> (String, Vec<V>);
+    fn render_select<'a, V: Clone>(
+        &self,
+        tree: &'a SelectTree<V>,
+        cfg: &RenderConfig,
+    ) -> (String, Vec<&'a V>);
 }
 
 // ── Shared rendering helpers (crate-visible for standard module) ──
@@ -53,10 +56,10 @@ pub(super) fn set_op_keyword(op: &crate::SetOp) -> &'static str {
     }
 }
 
-pub(super) fn render_wheres<V: Clone>(
-    wheres: &[WhereEntry<V>],
+pub(super) fn render_wheres<'a, V: Clone>(
+    wheres: &'a [WhereEntry<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> Option<String> {
     if wheres.is_empty() {
         return None;
@@ -82,10 +85,10 @@ pub(super) fn render_wheres<V: Clone>(
 }
 
 /// Render a WITH clause from CTE entries. Shared by SELECT, UPDATE, and DELETE renderers.
-pub(crate) fn render_cte_clause<V: Clone>(
-    ctes: &[crate::tree::CteEntry<V>],
+pub(crate) fn render_cte_clause<'a, V: Clone>(
+    ctes: &'a [crate::tree::CteEntry<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> Option<String> {
     if ctes.is_empty() {
         return None;
@@ -112,10 +115,10 @@ pub(crate) fn render_cte_clause<V: Clone>(
     Some(format!("{} {}", keyword, defs.join(", ")))
 }
 
-pub(super) fn render_from<V: Clone>(
-    from: &FromClause<V>,
+pub(super) fn render_from<'a, V: Clone>(
+    from: &'a FromClause<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     let mut s = match &from.source {
         FromSource::Table(table) => format!("FROM {}", (cfg.qi)(table)),
@@ -130,10 +133,10 @@ pub(super) fn render_from<V: Clone>(
     s
 }
 
-pub(super) fn render_join_condition<V: Clone>(
-    cond: &JoinCondition<V>,
+pub(super) fn render_join_condition<'a, V: Clone>(
+    cond: &'a JoinCondition<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     match cond {
         JoinCondition::ColEq { left, right } => {
@@ -163,11 +166,11 @@ fn render_join_table(table: &str, alias: &Option<String>, cfg: &RenderConfig) ->
 }
 
 /// Render a single JOIN token.
-pub(super) fn render_join<V: Clone>(
-    join: &JoinClause<V>,
-    subquery: &Option<Box<SelectTree<V>>>,
+pub(super) fn render_join<'a, V: Clone>(
+    join: &'a JoinClause<V>,
+    subquery: &'a Option<Box<SelectTree<V>>>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     let keyword = match &join.join_type {
         JoinType::Inner => "INNER JOIN",
@@ -195,11 +198,11 @@ pub(super) fn render_join<V: Clone>(
     )
 }
 
-pub(super) fn render_select_columns<V: Clone>(
-    items: &[SelectItem<V>],
+pub(super) fn render_select_columns<'a, V: Clone>(
+    items: &'a [SelectItem<V>],
     distinct: bool,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     let keyword = if distinct {
         "SELECT DISTINCT"
@@ -238,10 +241,10 @@ pub(crate) fn render_col_ref(col: &Col, cfg: &RenderConfig) -> String {
     }
 }
 
-fn render_select_item<V: Clone>(
-    item: &SelectItem<V>,
+fn render_select_item<'a, V: Clone>(
+    item: &'a SelectItem<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     match item {
         SelectItem::Col(col) => {
@@ -296,10 +299,10 @@ fn render_select_item<V: Clone>(
     }
 }
 
-fn render_window_spec<V: Clone>(
-    spec: &WindowSpec<V>,
+fn render_window_spec<'a, V: Clone>(
+    spec: &'a WindowSpec<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     let mut parts = Vec::new();
 
@@ -334,10 +337,10 @@ fn render_window_spec<V: Clone>(
 }
 
 /// Render the SELECT clause as a string.
-pub(super) fn render_select_clause<V: Clone>(
-    select: &crate::tree::SelectClause<V>,
+pub(super) fn render_select_clause<'a, V: Clone>(
+    select: &'a crate::tree::SelectClause<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     use crate::tree::SelectClause;
 
@@ -350,10 +353,10 @@ pub(super) fn render_select_clause<V: Clone>(
 
 /// Render a SelectTree as standard SQL for use in subqueries.
 /// Uses the shared binds accumulator so placeholder indices are correct.
-pub(super) fn render_subquery_sql<V: Clone>(
-    tree: &SelectTree<V>,
+pub(super) fn render_subquery_sql<'a, V: Clone>(
+    tree: &'a SelectTree<V>,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     let mut parts = Vec::new();
     render_select_tokens(&tree.tokens, cfg, binds, &mut parts);
@@ -361,10 +364,10 @@ pub(super) fn render_subquery_sql<V: Clone>(
 }
 
 /// Core token-walking logic shared by render_select and render_subquery_sql.
-pub(super) fn render_select_tokens<V: Clone>(
-    tokens: &[SelectToken<V>],
+pub(super) fn render_select_tokens<'a, V: Clone>(
+    tokens: &'a [SelectToken<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
     parts: &mut Vec<String>,
 ) {
     let mut open_parens: usize = 0;
@@ -453,15 +456,15 @@ pub(super) fn render_select_tokens<V: Clone>(
     );
 }
 
-fn render_where_clause<V: Clone>(
-    clause: &WhereClause<V>,
+fn render_where_clause<'a, V: Clone>(
+    clause: &'a WhereClause<V>,
     is_top_level: bool,
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> String {
     match clause {
         WhereClause::Condition { col, op, val } => {
-            binds.push(val.clone());
+            binds.push(val);
             let placeholder = (cfg.ph)(binds.len());
             format!(
                 "{} {} {}",
@@ -471,9 +474,9 @@ fn render_where_clause<V: Clone>(
             )
         }
         WhereClause::Between { col, low, high } => {
-            binds.push(low.clone());
+            binds.push(low);
             let ph_low = (cfg.ph)(binds.len());
-            binds.push(high.clone());
+            binds.push(high);
             let ph_high = (cfg.ph)(binds.len());
             format!(
                 "{} BETWEEN {} AND {}",
@@ -483,9 +486,9 @@ fn render_where_clause<V: Clone>(
             )
         }
         WhereClause::NotBetween { col, low, high } => {
-            binds.push(low.clone());
+            binds.push(low);
             let ph_low = (cfg.ph)(binds.len());
-            binds.push(high.clone());
+            binds.push(high);
             let ph_high = (cfg.ph)(binds.len());
             format!(
                 "{} NOT BETWEEN {} AND {}",
@@ -499,7 +502,7 @@ fn render_where_clause<V: Clone>(
             let placeholders: Vec<String> = vals
                 .iter()
                 .map(|v| {
-                    binds.push(v.clone());
+                    binds.push(v);
                     (cfg.ph)(binds.len())
                 })
                 .collect();
@@ -518,7 +521,7 @@ fn render_where_clause<V: Clone>(
             let placeholders: Vec<String> = vals
                 .iter()
                 .map(|v| {
-                    binds.push(v.clone());
+                    binds.push(v);
                     (cfg.ph)(binds.len())
                 })
                 .collect();
@@ -541,7 +544,7 @@ fn render_where_clause<V: Clone>(
             format!("NOT EXISTS ({})", sub_sql)
         }
         WhereClause::Like { col, expr, val } | WhereClause::NotLike { col, expr, val } => {
-            binds.push(val.clone());
+            binds.push(val);
             let placeholder = (cfg.ph)(binds.len());
             let keyword = if matches!(clause, WhereClause::Like { .. }) {
                 "LIKE"
@@ -619,10 +622,10 @@ pub(crate) fn render_returning(cols: &[Col], cfg: &RenderConfig) -> Option<Strin
 /// Returns `None` if the slice is empty; otherwise returns `Some("ORDER BY ...")`.
 /// Exposed publicly so dialect crates can reuse this for dialect-specific
 /// ORDER BY support (e.g., MySQL's ORDER BY in UPDATE/DELETE).
-pub fn render_order_by<V: Clone>(
-    order_bys: &[OrderByClause<V>],
+pub fn render_order_by<'a, V: Clone>(
+    order_bys: &'a [OrderByClause<V>],
     cfg: &RenderConfig,
-    binds: &mut Vec<V>,
+    binds: &mut Vec<&'a V>,
 ) -> Option<String> {
     if order_bys.is_empty() {
         return None;

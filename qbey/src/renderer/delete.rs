@@ -2,8 +2,11 @@ use super::{RenderConfig, render_cte_clause, render_wheres};
 use crate::tree::{DeleteToken, DeleteTree};
 
 /// Render a DELETE statement from a `DeleteTree`.
-pub fn render_delete<V: Clone>(tree: &DeleteTree<V>, cfg: &RenderConfig) -> (String, Vec<V>) {
-    let mut binds: Vec<V> = Vec::new();
+pub fn render_delete<'a, V: Clone>(
+    tree: &'a DeleteTree<V>,
+    cfg: &RenderConfig,
+) -> (String, Vec<&'a V>) {
+    let mut binds: Vec<&V> = Vec::new();
     let mut parts = Vec::new();
 
     for token in &tree.tokens {

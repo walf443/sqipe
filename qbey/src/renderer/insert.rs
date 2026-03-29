@@ -2,7 +2,10 @@ use super::RenderConfig;
 use crate::tree::{InsertToken, InsertTree};
 
 /// Render an INSERT statement from an `InsertTree`.
-pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (String, Vec<V>) {
+pub fn render_insert<'a, V: Clone>(
+    tree: &'a InsertTree<V>,
+    cfg: &RenderConfig,
+) -> (String, Vec<&'a V>) {
     // Pre-calculate bind capacity from Values token.
     let bind_cap = tree.tokens.iter().fold(0usize, |acc, t| {
         if let InsertToken::Values(rows) = t {
@@ -11,7 +14,7 @@ pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (Str
             acc
         }
     });
-    let mut binds: Vec<V> = Vec::with_capacity(bind_cap);
+    let mut binds: Vec<&V> = Vec::with_capacity(bind_cap);
     let mut parts = Vec::new();
 
     // Extract InsertInto metadata first (required by Values/SelectSource).
@@ -48,7 +51,7 @@ pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (Str
                         if j > 0 {
                             sql.push_str(", ");
                         }
-                        binds.push(val.clone());
+                        binds.push(val);
                         sql.push_str(&(cfg.ph)(binds.len()));
                     }
                     for (k, (_, expr)) in col_exprs.iter().enumerate() {
@@ -74,7 +77,7 @@ pub fn render_insert<V: Clone>(tree: &InsertTree<V>, cfg: &RenderConfig) -> (Str
                 for clause in sets {
                     match clause {
                         crate::SetClause::Value(col, val) => {
-                            binds.push(val.clone());
+                            binds.push(val);
                             items.push(format!("{} = {}", (cfg.qi)(col), (cfg.ph)(binds.len())));
                         }
                         crate::SetClause::Expr(expr) => {

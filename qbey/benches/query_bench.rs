@@ -190,5 +190,67 @@ fn bench_render(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_to_sql, bench_build_tree, bench_render);
+/// Two-step API: tree.to_sql() returns Vec<&V> (no clone in render).
+fn bench_tree_to_sql(c: &mut Criterion) {
+    let complex_query = make_complex_select_query();
+    c.bench_function("complex_select_tree_to_sql", |b| {
+        b.iter(|| {
+            let tree = complex_query.to_tree();
+            let (sql, binds) = tree.to_sql();
+            (sql, binds.len())
+        })
+    });
+
+    let union_query = make_union_query();
+    c.bench_function("union_5parts_tree_to_sql", |b| {
+        b.iter(|| {
+            let tree = union_query.to_tree();
+            let (sql, binds) = tree.to_sql();
+            (sql, binds.len())
+        })
+    });
+
+    let insert_query = make_bulk_insert_query();
+    c.bench_function("bulk_insert_100rows_tree_to_sql", |b| {
+        b.iter(|| {
+            let tree = insert_query.to_tree();
+            let (sql, binds) = tree.to_sql();
+            (sql, binds.len())
+        })
+    });
+
+    let nested_query = make_nested_subquery();
+    c.bench_function("nested_subquery_3level_tree_to_sql", |b| {
+        b.iter(|| {
+            let tree = nested_query.to_tree();
+            let (sql, binds) = tree.to_sql();
+            (sql, binds.len())
+        })
+    });
+}
+
+/// Full into_sql (build query + into_tree + render, one fewer clone than to_sql).
+fn bench_into_sql(c: &mut Criterion) {
+    c.bench_function("complex_select_into_sql", |b| {
+        b.iter(|| make_complex_select_query().into_sql())
+    });
+    c.bench_function("union_5parts_into_sql", |b| {
+        b.iter(|| make_union_query().into_sql())
+    });
+    c.bench_function("bulk_insert_100rows_into_sql", |b| {
+        b.iter(|| make_bulk_insert_query().into_sql())
+    });
+    c.bench_function("nested_subquery_3level_into_sql", |b| {
+        b.iter(|| make_nested_subquery().into_sql())
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_to_sql,
+    bench_into_sql,
+    bench_build_tree,
+    bench_render,
+    bench_tree_to_sql
+);
 criterion_main!(benches);

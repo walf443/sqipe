@@ -282,24 +282,27 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V, WhereProvided> {
 
     /// Build a DeleteTree AST from this query.
     pub fn to_tree(&self) -> crate::tree::DeleteTree<V> {
+        self.clone().into_tree()
+    }
+
+    /// Consume this query and build a DeleteTree AST by moving values instead of cloning.
+    pub fn into_tree(self) -> crate::tree::DeleteTree<V> {
         let mut tokens = Vec::new();
         if !self.ctes.is_empty() {
             tokens.push(crate::tree::DeleteToken::With(
-                self.ctes.iter().map(|cte| cte.to_entry()).collect(),
+                self.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
             ));
         }
         tokens.push(crate::tree::DeleteToken::DeleteFrom {
-            table: self.table.clone(),
-            alias: self.table_alias.clone(),
+            table: self.table,
+            alias: self.table_alias,
         });
         if !self.wheres.is_empty() {
-            tokens.push(crate::tree::DeleteToken::Where(self.wheres.clone()));
+            tokens.push(crate::tree::DeleteToken::Where(self.wheres));
         }
         #[cfg(feature = "returning")]
         if !self.returning_columns.is_empty() {
-            tokens.push(crate::tree::DeleteToken::Returning(
-                self.returning_columns.clone(),
-            ));
+            tokens.push(crate::tree::DeleteToken::Returning(self.returning_columns));
         }
         crate::tree::DeleteTree { tokens }
     }
@@ -311,12 +314,25 @@ impl<V: Clone + std::fmt::Debug> DeleteQuery<V, WhereProvided> {
 
     /// Build standard SQL with dialect-specific placeholders and quoting.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
+        self.clone().into_sql_with(dialect)
+    }
+
+    /// Consume this query and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this query and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning the query into a tree.
+    pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
+        let tree = self.into_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        crate::renderer::delete::render_delete(
+        let (sql, binds) = crate::renderer::delete::render_delete(
             &tree,
             &RenderConfig::from_dialect(&ph, &qi, dialect),
-        )
+        );
+        (sql, binds.into_iter().cloned().collect())
     }
 }

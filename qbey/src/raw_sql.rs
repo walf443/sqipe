@@ -85,7 +85,7 @@ impl<V: Clone> RawSql<V> {
     /// dialect-specific bind markers and pushing values into `binds`.
     ///
     /// If there are no bind values, the SQL template is returned as-is.
-    pub(crate) fn render(&self, cfg: &RenderConfig, binds: &mut Vec<V>) -> String {
+    pub(crate) fn render<'a>(&'a self, cfg: &RenderConfig, binds: &mut Vec<&'a V>) -> String {
         if self.binds.is_empty() {
             return self.sql.clone();
         }
@@ -98,7 +98,7 @@ impl<V: Clone> RawSql<V> {
             if i < parts.len() - 1
                 && let Some(val) = bind_iter.next()
             {
-                binds.push(val.clone());
+                binds.push(val);
                 result.push_str(&(cfg.ph)(binds.len()));
             }
         }

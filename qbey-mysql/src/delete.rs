@@ -161,9 +161,14 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
         self
     }
 
-    /// Build standard SQL with MySQL dialect.
-    pub fn to_sql(&self) -> (String, Vec<V>) {
-        let mut tree = self.inner.to_tree();
+    /// Build a DeleteTree with MySQL-specific ORDER BY and LIMIT applied.
+    pub fn to_tree(&self) -> qbey::tree::DeleteTree<V> {
+        self.clone().into_tree()
+    }
+
+    /// Consume this query and build a DeleteTree by moving values.
+    pub fn into_tree(self) -> qbey::tree::DeleteTree<V> {
+        let mut tree = self.inner.into_tree();
         let ph = |_: usize| "?".to_string();
         let qi = |name: &str| MySqlDialect.quote_identifier(name);
         let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
@@ -173,7 +178,7 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
         // DELETE FROM ... WHERE ... ORDER BY ... LIMIT ... RETURNING ...
         let mut extra_tokens: Vec<qbey::tree::DeleteToken<V>> = Vec::new();
 
-        let mut order_by_binds: Vec<Value> = Vec::new();
+        let mut order_by_binds: Vec<&Value> = Vec::new();
         if let Some(order_by) =
             qbey::renderer::render_order_by(&self.order_bys, &cfg, &mut order_by_binds)
         {
@@ -203,6 +208,22 @@ impl<V: Clone + std::fmt::Debug> MysqlDeleteQuery<V, WhereProvided> {
             }
         }
 
-        qbey::renderer::delete::render_delete(&tree, &cfg)
+        tree
+    }
+
+    /// Build standard SQL with MySQL dialect.
+    pub fn to_sql(&self) -> (String, Vec<V>) {
+        self.clone().into_sql()
+    }
+
+    /// Consume this query and build standard SQL with MySQL dialect.
+    /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        let tree = self.into_tree();
+        let ph = |_: usize| "?".to_string();
+        let qi = |name: &str| MySqlDialect.quote_identifier(name);
+        let cfg = qbey::renderer::RenderConfig::from_dialect(&ph, &qi, &MySqlDialect);
+        let (sql, binds) = qbey::renderer::delete::render_delete(&tree, &cfg);
+        (sql, binds.into_iter().cloned().collect())
     }
 }

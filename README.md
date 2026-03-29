@@ -19,7 +19,7 @@ q.and_where(EMPLOYEE.name().eq("Alice"));
 q.select(&[EMPLOYEE.id(), EMPLOYEE.name()]);
 
 // Standard SQL (default placeholder: ?)
-let (sql, binds) = q.to_sql();
+let (sql, binds) = q.into_sql();
 assert_eq!(sql, r#"SELECT "employee"."id", "employee"."name" FROM "employee" WHERE "employee"."name" = ?"#);
 ```
 
@@ -323,7 +323,7 @@ if let Some(min_age) = min_age {
 }
 
 q.select(&["id", "name"]);
-let (sql, binds) = q.to_sql();
+let (sql, binds) = q.into_sql();
 ```
 
 ### Column aliases
@@ -513,7 +513,7 @@ ins.add_value(&[("name", "Alice".into()), ("age", 30.into())]);
 ins.add_value(&[("age", 25.into()), ("name", "Bob".into())]);
 ins.add_col_value_expr("created_at", RawSql::new("NOW()"));
 
-let (sql, binds) = ins.to_sql();
+let (sql, binds) = ins.into_sql();
 assert_eq!(sql, r#"INSERT INTO "employee" ("name", "age", "created_at") VALUES (?, ?, NOW()), (?, ?, NOW())"#);
 ```
 
@@ -528,11 +528,11 @@ sub.select(&["name", "age"]);
 let mut ins = qbey("employee").into_insert();
 ins.from_select(sub);
 
-let (sql, binds) = ins.to_sql();
+let (sql, binds) = ins.into_sql();
 assert_eq!(sql, r#"INSERT INTO "employee" SELECT "name", "age" FROM "old_employee" WHERE "active" = ?"#);
 ```
 
-Calling `to_sql()` without any `add_value()` or `from_select()` will panic.
+Calling `to_sql()` / `into_sql()` without any `add_value()` or `from_select()` will panic.
 When building rows from a dynamic collection, the caller is responsible for ensuring the collection is non-empty.
 
 ### UPDATE
@@ -546,7 +546,7 @@ let mut u = qbey("employee").into_update();
 u.set(col("name"), "Alice");
 let u = u.and_where(col("id").eq(1));
 
-let (sql, binds) = u.to_sql();
+let (sql, binds) = u.into_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ? WHERE "id" = ?"#);
 ```
 
@@ -565,7 +565,7 @@ let (sql, binds) = u.to_sql();
 assert_eq!(sql, r#"UPDATE "employee" SET "name" = ?, "age" = ? WHERE "id" = ?"#);
 ```
 
-By default, `to_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less updates:
+By default, `to_sql()` / `into_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less updates:
 
 ```rust
 # use qbey::{qbey, col, UpdateQueryBuilder};
@@ -612,7 +612,7 @@ assert_eq!(binds, vec![Value::Int(10), Value::Int(1)]);
 let d = qbey("employee").into_delete()
     .and_where(col("id").eq(1));
 
-let (sql, binds) = d.to_sql();
+let (sql, binds) = d.into_sql();
 assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 ```
 
@@ -624,11 +624,11 @@ let mut q = qbey("employee");
 q.and_where(col("id").eq(1));
 let d = q.into_delete().where_set();
 
-let (sql, binds) = d.to_sql();
+let (sql, binds) = d.into_sql();
 assert_eq!(sql, r#"DELETE FROM "employee" WHERE "id" = ?"#);
 ```
 
-By default, `to_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less deletes:
+By default, `to_sql()` / `into_sql()` is not available until you call `and_where()`, `or_where()`, or `allow_without_where()` — this is enforced at compile time. Use `allow_without_where()` to explicitly allow WHERE-less deletes:
 
 ```rust
 # use qbey::{qbey};

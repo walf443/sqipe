@@ -271,8 +271,18 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Panics if no values or subquery have been provided.
     pub fn to_tree(&self) -> crate::tree::InsertTree<V> {
+        self.clone().into_tree()
+    }
+
+    /// Consume this query and build an InsertTree AST by moving values
+    /// instead of cloning. More efficient than `to_tree()` for large inserts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no values or subquery have been provided.
+    pub fn into_tree(self) -> crate::tree::InsertTree<V> {
         let mut tokens = Vec::new();
-        match &self.source {
+        match self.source {
             InsertSource::Values(rows) => {
                 assert!(
                     !rows.is_empty() || !self.col_exprs.is_empty(),
@@ -280,37 +290,29 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
                 );
                 let col_exprs: Vec<(String, String)> = self
                     .col_exprs
-                    .iter()
-                    .map(|(c, e)| (c.clone(), e.as_str().to_string()))
+                    .into_iter()
+                    .map(|(c, e)| (c, e.as_str().to_string()))
                     .collect();
                 tokens.push(crate::tree::InsertToken::InsertInto {
-                    table: self.table.clone(),
-                    columns: self.columns.clone(),
+                    table: self.table,
+                    columns: self.columns,
                     col_exprs,
                 });
-                // When only col_exprs are provided (no add_value rows),
-                // produce a single empty row so the renderer emits one VALUES tuple.
-                let rows = if rows.is_empty() {
-                    vec![vec![]]
-                } else {
-                    rows.clone()
-                };
+                let rows = if rows.is_empty() { vec![vec![]] } else { rows };
                 tokens.push(crate::tree::InsertToken::Values(rows));
             }
             InsertSource::Select(sub) => {
                 tokens.push(crate::tree::InsertToken::InsertInto {
-                    table: self.table.clone(),
-                    columns: self.columns.clone(),
+                    table: self.table,
+                    columns: self.columns,
                     col_exprs: Vec::new(),
                 });
-                tokens.push(crate::tree::InsertToken::SelectSource(sub.clone()));
+                tokens.push(crate::tree::InsertToken::SelectSource(sub));
             }
         }
         #[cfg(feature = "returning")]
         if !self.returning_columns.is_empty() {
-            tokens.push(crate::tree::InsertToken::Returning(
-                self.returning_columns.clone(),
-            ));
+            tokens.push(crate::tree::InsertToken::Returning(self.returning_columns));
         }
         crate::tree::InsertTree { tokens }
     }
@@ -330,12 +332,33 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Panics if no values or subquery have been provided.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
+        self.clone().into_sql_with(dialect)
+    }
+
+    /// Consume this query and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no values or subquery have been provided.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this query and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning the query into a tree.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no values or subquery have been provided.
+    pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
+        let tree = self.into_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        crate::renderer::insert::render_insert(
+        let (sql, binds) = crate::renderer::insert::render_insert(
             &tree,
             &RenderConfig::from_dialect(&ph, &qi, dialect),
-        )
+        );
+        (sql, binds.into_iter().cloned().collect())
     }
 }

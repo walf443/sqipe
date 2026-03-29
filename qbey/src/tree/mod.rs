@@ -1,3 +1,4 @@
+use crate::renderer::Renderer;
 use crate::{JoinClause, OrderByClause, SelectItem, WhereEntry, WindowSpec};
 
 /// A single CTE definition within a `WITH` clause in the AST.
@@ -178,6 +179,23 @@ pub struct SelectTree<V: Clone = crate::Value> {
 }
 
 impl<V: Clone> SelectTree<V> {
+    /// Build standard SQL with `?` placeholders and double-quote identifiers.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql(&self) -> (String, Vec<&V>) {
+        self.to_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Build SQL with dialect-specific placeholders and quoting.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql_with(&self, dialect: &dyn crate::Dialect) -> (String, Vec<&V>) {
+        let ph = |n: usize| dialect.placeholder(n);
+        let qi = |name: &str| dialect.quote_identifier(name);
+        crate::renderer::standard::StandardSqlRenderer.render_select(
+            self,
+            &crate::renderer::RenderConfig::from_dialect(&ph, &qi, dialect),
+        )
+    }
+
     /// Returns true if this tree contains tokens (ORDER BY, LIMIT, OFFSET, FOR)
     /// that require parentheses when used as a sub-select in compound queries.
     pub fn needs_parentheses(&self) -> bool {
@@ -398,6 +416,23 @@ pub struct UpdateTree<V: Clone = crate::Value> {
 }
 
 impl<V: Clone> UpdateTree<V> {
+    /// Build standard SQL with `?` placeholders and double-quote identifiers.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql(&self) -> (String, Vec<&V>) {
+        self.to_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Build SQL with dialect-specific placeholders and quoting.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql_with(&self, dialect: &dyn crate::Dialect) -> (String, Vec<&V>) {
+        let ph = |n: usize| dialect.placeholder(n);
+        let qi = |name: &str| dialect.quote_identifier(name);
+        crate::renderer::update::render_update(
+            self,
+            &crate::renderer::RenderConfig::from_dialect(&ph, &qi, dialect),
+        )
+    }
+
     /// Transform all bind values in this tree.
     pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> UpdateTree<U> {
         UpdateTree {
@@ -440,6 +475,23 @@ pub struct InsertTree<V: Clone = crate::Value> {
 }
 
 impl<V: Clone> InsertTree<V> {
+    /// Build standard SQL with `?` placeholders and double-quote identifiers.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql(&self) -> (String, Vec<&V>) {
+        self.to_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Build SQL with dialect-specific placeholders and quoting.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql_with(&self, dialect: &dyn crate::Dialect) -> (String, Vec<&V>) {
+        let ph = |n: usize| dialect.placeholder(n);
+        let qi = |name: &str| dialect.quote_identifier(name);
+        crate::renderer::insert::render_insert(
+            self,
+            &crate::renderer::RenderConfig::from_dialect(&ph, &qi, dialect),
+        )
+    }
+
     /// Transform all bind values in this tree.
     pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> InsertTree<U> {
         InsertTree {
@@ -496,6 +548,23 @@ pub struct DeleteTree<V: Clone = crate::Value> {
 }
 
 impl<V: Clone> DeleteTree<V> {
+    /// Build standard SQL with `?` placeholders and double-quote identifiers.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql(&self) -> (String, Vec<&V>) {
+        self.to_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Build SQL with dialect-specific placeholders and quoting.
+    /// Returns references to bind values instead of cloning them.
+    pub fn to_sql_with(&self, dialect: &dyn crate::Dialect) -> (String, Vec<&V>) {
+        let ph = |n: usize| dialect.placeholder(n);
+        let qi = |name: &str| dialect.quote_identifier(name);
+        crate::renderer::delete::render_delete(
+            self,
+            &crate::renderer::RenderConfig::from_dialect(&ph, &qi, dialect),
+        )
+    }
+
     /// Transform all bind values in this tree.
     pub fn map_values<U: Clone>(self, f: &dyn Fn(V) -> U) -> DeleteTree<U> {
         DeleteTree {

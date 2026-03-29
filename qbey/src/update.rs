@@ -352,25 +352,28 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereProvided> {
 
     /// Build an UpdateTree AST from this query.
     pub fn to_tree(&self) -> crate::tree::UpdateTree<V> {
+        self.clone().into_tree()
+    }
+
+    /// Consume this query and build an UpdateTree AST by moving values instead of cloning.
+    pub fn into_tree(self) -> crate::tree::UpdateTree<V> {
         let mut tokens = Vec::new();
         if !self.ctes.is_empty() {
             tokens.push(crate::tree::UpdateToken::With(
-                self.ctes.iter().map(|cte| cte.to_entry()).collect(),
+                self.ctes.into_iter().map(|cte| cte.into_entry()).collect(),
             ));
         }
         tokens.push(crate::tree::UpdateToken::Update {
-            table: self.table.clone(),
-            alias: self.table_alias.clone(),
+            table: self.table,
+            alias: self.table_alias,
         });
-        tokens.push(crate::tree::UpdateToken::Set(self.sets.clone()));
+        tokens.push(crate::tree::UpdateToken::Set(self.sets));
         if !self.wheres.is_empty() {
-            tokens.push(crate::tree::UpdateToken::Where(self.wheres.clone()));
+            tokens.push(crate::tree::UpdateToken::Where(self.wheres));
         }
         #[cfg(feature = "returning")]
         if !self.returning_columns.is_empty() {
-            tokens.push(crate::tree::UpdateToken::Returning(
-                self.returning_columns.clone(),
-            ));
+            tokens.push(crate::tree::UpdateToken::Returning(self.returning_columns));
         }
         crate::tree::UpdateTree { tokens }
     }
@@ -386,12 +389,29 @@ impl<V: Clone + std::fmt::Debug> UpdateQuery<V, WhereProvided> {
     ///
     /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
     pub fn to_sql_with(&self, dialect: &dyn Dialect) -> (String, Vec<V>) {
-        let tree = self.to_tree();
+        self.clone().into_sql_with(dialect)
+    }
+
+    /// Consume this query and build standard SQL with `?` placeholders.
+    /// More efficient than `to_sql()` as it avoids cloning the query into a tree.
+    ///
+    /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
+    pub fn into_sql(self) -> (String, Vec<V>) {
+        self.into_sql_with(&crate::DefaultDialect)
+    }
+
+    /// Consume this query and build SQL with dialect-specific placeholders and quoting.
+    /// More efficient than `to_sql_with()` as it avoids cloning the query into a tree.
+    ///
+    /// Bind values are returned in SQL clause order: SET values first, then WHERE values.
+    pub fn into_sql_with(self, dialect: &dyn Dialect) -> (String, Vec<V>) {
+        let tree = self.into_tree();
         let ph = |n: usize| dialect.placeholder(n);
         let qi = |name: &str| dialect.quote_identifier(name);
-        crate::renderer::update::render_update(
+        let (sql, binds) = crate::renderer::update::render_update(
             &tree,
             &RenderConfig::from_dialect(&ph, &qi, dialect),
-        )
+        );
+        (sql, binds.into_iter().cloned().collect())
     }
 }
