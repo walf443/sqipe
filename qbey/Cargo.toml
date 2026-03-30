@@ -1,10 +1,11 @@
 [package]
 name = "qbey"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 description = "A type-safe SQL query builder for Rust"
 repository = "https://github.com/walf443/qbey"
+changelog = "https://github.com/walf443/qbey/blob/main/CHANGELOG.md"
 readme = "../README.md"
 keywords = ["sql", "query-builder", "database"]
 categories = ["database"]

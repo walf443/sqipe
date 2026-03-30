@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.1] - 2026-03-30
+
+### Added
+
+- `add_values()` method on `InsertQueryBuilder` trait for bulk row insertion. Accepts an iterator of `ToInsertRow` items, enabling ergonomic multi-row INSERTs.
+- `ToInsertRow` trait documentation and `add_values` usage examples in README.
+
+### Changed
+
+- `add_values()` is now a default method on the `InsertQueryBuilder` trait.
+
+### Dev Dependencies
+
+- Updated `ctor` to 0.8.
+
 ## [0.2.0] - 2026-03-29
 
 ### Added
