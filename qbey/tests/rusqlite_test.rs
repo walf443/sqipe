@@ -1290,6 +1290,95 @@ fn test_named_window() {
     assert_eq!(rows[2], (2, "Bob".to_string(), 25, 3));
 }
 
+// ── ON CONFLICT clause ──
+
+#[cfg(feature = "conflict")]
+#[test]
+fn test_insert_on_conflict_do_nothing() {
+    let conn = setup_db();
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("Alice Updated".to_string())),
+        ("age", SqliteValue::Integer(99)),
+    ]);
+    ins.on_conflict_do_nothing(&["id"]);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Verify original row is unchanged
+    let mut stmt = conn
+        .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" = 1"#)
+        .unwrap();
+    let (name, age): (String, i64) = stmt
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
+    assert_eq!(name, "Alice");
+    assert_eq!(age, 30);
+}
+
+#[cfg(feature = "conflict")]
+#[test]
+fn test_insert_on_conflict_do_update_with_excluded() {
+    let conn = setup_db();
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("Alice Updated".to_string())),
+        ("age", SqliteValue::Integer(99)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Verify row was updated
+    let mut stmt = conn
+        .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" = 1"#)
+        .unwrap();
+    let (name, age): (String, i64) = stmt
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
+    assert_eq!(name, "Alice Updated");
+    assert_eq!(age, 99);
+}
+
+#[cfg(feature = "conflict")]
+#[test]
+fn test_insert_on_conflict_do_update_inserts_new_row() {
+    let conn = setup_db();
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(10)),
+        ("name", SqliteValue::Text("New User".to_string())),
+        ("age", SqliteValue::Integer(20)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql();
+
+    let params = to_rusqlite_params(&binds);
+    conn.execute(&sql, params_from_iter(params.iter().map(|p| p.as_ref())))
+        .unwrap();
+
+    // Verify new row was inserted
+    let mut stmt = conn
+        .prepare(r#"SELECT "name", "age" FROM "users" WHERE "id" = 10"#)
+        .unwrap();
+    let (name, age): (String, i64) = stmt
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
+    assert_eq!(name, "New User");
+    assert_eq!(age, 20);
+}
+
 #[test]
 fn test_insert_and_select_blob() {
     let conn = Connection::open_in_memory().unwrap();

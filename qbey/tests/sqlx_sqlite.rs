@@ -1093,6 +1093,117 @@ async fn test_named_window() {
     assert_eq!(rows[2].get::<String, _>("name"), "Bob");
 }
 
+// ── ON CONFLICT clause ──
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_nothing() {
+    let pool = setup_db().await;
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("Alice Updated".to_string())),
+        ("age", SqliteValue::Integer(99)),
+    ]);
+    ins.on_conflict_do_nothing(&["id"]);
+    let (sql, binds) = ins.to_sql();
+
+    bind_params(sqlx::query(&sql), &binds)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Verify original row is unchanged
+    let row = sqlx::query(r#"SELECT "name", "age" FROM "users" WHERE "id" = 1"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("name"), "Alice");
+    assert_eq!(row.get::<i64, _>("age"), 30);
+}
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_with_excluded() {
+    let pool = setup_db().await;
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("Alice Updated".to_string())),
+        ("age", SqliteValue::Integer(99)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql();
+
+    bind_params(sqlx::query(&sql), &binds)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Verify row was updated
+    let row = sqlx::query(r#"SELECT "name", "age" FROM "users" WHERE "id" = 1"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("name"), "Alice Updated");
+    assert_eq!(row.get::<i64, _>("age"), 99);
+}
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_inserts_new_row() {
+    let pool = setup_db().await;
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(10)),
+        ("name", SqliteValue::Text("New User".to_string())),
+        ("age", SqliteValue::Integer(20)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql();
+
+    bind_params(sqlx::query(&sql), &binds)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Verify new row was inserted
+    let row = sqlx::query(r#"SELECT "name", "age" FROM "users" WHERE "id" = 10"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("name"), "New User");
+    assert_eq!(row.get::<i64, _>("age"), 20);
+}
+
+#[cfg(all(feature = "conflict", feature = "returning"))]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_with_returning() {
+    let pool = setup_db().await;
+
+    let mut ins = qbey_with::<SqliteValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", SqliteValue::Integer(1)),
+        ("name", SqliteValue::Text("Alice Updated".to_string())),
+        ("age", SqliteValue::Integer(99)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    ins.returning(&[col("id"), col("name"), col("age")]);
+    let (sql, binds) = ins.to_sql();
+
+    let rows = bind_params(sqlx::query(&sql), &binds)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64, _>("id"), 1);
+    assert_eq!(rows[0].get::<String, _>("name"), "Alice Updated");
+    assert_eq!(rows[0].get::<i64, _>("age"), 99);
+}
+
 // ── RETURNING clause ──
 
 #[cfg(feature = "returning")]

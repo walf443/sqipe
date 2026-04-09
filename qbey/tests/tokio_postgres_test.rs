@@ -1138,6 +1138,113 @@ async fn test_exists_with_outer_binds() {
     assert_eq!(rows[1].get::<_, String>("name"), "Charlie");
 }
 
+// ── ON CONFLICT clause ──
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_nothing() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(1)),
+        ("name", PgValue::Text("Alice Updated".to_string())),
+        ("age", PgValue::Int(99)),
+    ]);
+    ins.on_conflict_do_nothing(&["id"]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    // Verify original row is unchanged
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 1", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice");
+    assert_eq!(rows[0].get::<_, i32>("age"), 30);
+}
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_with_excluded() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(1)),
+        ("name", PgValue::Text("Alice Updated".to_string())),
+        ("age", PgValue::Int(99)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    // Verify row was updated
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 1", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice Updated");
+    assert_eq!(rows[0].get::<_, i32>("age"), 99);
+}
+
+#[cfg(feature = "conflict")]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_inserts_new_row() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(10)),
+        ("name", PgValue::Text("New User".to_string())),
+        ("age", PgValue::Int(20)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    client.execute(&sql, &param_refs).await.unwrap();
+
+    // Verify new row was inserted
+    let rows = client
+        .query("SELECT name, age FROM users WHERE id = 10", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows[0].get::<_, String>("name"), "New User");
+    assert_eq!(rows[0].get::<_, i32>("age"), 20);
+}
+
+#[cfg(all(feature = "conflict", feature = "returning"))]
+#[tokio::test]
+async fn test_insert_on_conflict_do_update_with_returning() {
+    let client = setup_client().await;
+
+    let mut ins = qbey_with::<PgValue>("users").into_insert();
+    ins.add_value(&[
+        ("id", PgValue::Int(1)),
+        ("name", PgValue::Text("Alice Updated".to_string())),
+        ("age", PgValue::Int(99)),
+    ]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name", "age"]);
+    ins.returning(&[col("id"), col("name"), col("age")]);
+    let (sql, binds) = ins.to_sql_with(&PostgresDialect);
+
+    let params = to_pg_params(&binds);
+    let param_refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = client.query(&sql, &param_refs).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<_, i32>("id"), 1);
+    assert_eq!(rows[0].get::<_, String>("name"), "Alice Updated");
+    assert_eq!(rows[0].get::<_, i32>("age"), 99);
+}
+
 // ── RETURNING clause ──
 
 #[cfg(feature = "returning")]
