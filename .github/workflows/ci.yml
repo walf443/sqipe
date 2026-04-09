@@ -30,7 +30,7 @@ jobs:
         with:
           shared-key: cargo-full
           save-if: false
-      - run: cargo test -p qbey --features returning,test-sqlx,test-sqlx-mysql,test-rusqlite,test-libsql
+      - run: cargo test -p qbey --features returning,conflict,test-sqlx,test-sqlx-mysql,test-rusqlite,test-libsql
 
   test-qbey-postgres:
     needs: build
@@ -42,7 +42,7 @@ jobs:
         with:
           shared-key: cargo-full
           save-if: false
-      - run: cargo test -p qbey --features returning,test-tokio-postgres,test-postgres
+      - run: cargo test -p qbey --features returning,conflict,test-tokio-postgres,test-postgres
 
   test-qbey-mysql:
     needs: build
