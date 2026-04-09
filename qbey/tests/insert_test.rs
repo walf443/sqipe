@@ -500,6 +500,26 @@ fn test_insert_on_conflict_with_returning() {
     );
 }
 
+#[cfg(feature = "conflict")]
+#[test]
+#[should_panic(expected = "columns must not be empty")]
+fn test_insert_on_conflict_do_nothing_empty_columns_panics() {
+    let mut ins = qbey("employee").into_insert();
+    ins.add_value(&[("id", 1.into())]);
+    let empty: &[&str] = &[];
+    ins.on_conflict_do_nothing(empty);
+}
+
+#[cfg(feature = "conflict")]
+#[test]
+#[should_panic(expected = "ON CONFLICT clause already set")]
+fn test_insert_on_conflict_called_twice_panics() {
+    let mut ins = qbey("employee").into_insert();
+    ins.add_value(&[("id", 1.into()), ("name", "Alice".into())]);
+    ins.on_conflict_do_nothing(&["id"]);
+    ins.on_conflict_do_update_with_excluded(&["id"], &["name"]);
+}
+
 #[test]
 fn test_insert_with_bytes_value() {
     let mut ins = qbey("files").into_insert();

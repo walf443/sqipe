@@ -313,6 +313,11 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     /// Accepts `&str` or `Col` (from `qbey_schema!`). When `Col` is passed,
     /// the table prefix is ignored — only the column name is used.
     ///
+    /// # Panics
+    ///
+    /// - Panics if `columns` is empty.
+    /// - Panics if an ON CONFLICT clause has already been set.
+    ///
     /// ```
     /// use qbey::{qbey, Value, InsertQueryBuilder};
     ///
@@ -324,6 +329,14 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     /// ```
     #[cfg(feature = "conflict")]
     pub fn on_conflict_do_nothing(&mut self, columns: &[impl Into<Col> + Clone]) -> &mut Self {
+        assert!(
+            !columns.is_empty(),
+            "on_conflict_do_nothing: columns must not be empty"
+        );
+        assert!(
+            self.on_conflict.is_none(),
+            "on_conflict_do_nothing: ON CONFLICT clause already set"
+        );
         self.on_conflict = Some(OnConflict::DoNothing {
             columns: columns.iter().map(|c| c.clone().into().column).collect(),
         });
@@ -332,10 +345,13 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
 
     /// Add an ON CONFLICT (...) DO UPDATE SET col = ? clause with a bind value.
     ///
-    /// Accepts `&str` or `Col` for `columns`. When `Col` is passed,
+    /// Accepts `&str` or `Col` for `columns` and `col`. When `Col` is passed,
     /// the table prefix is ignored — only the column name is used.
     ///
-    /// Can be called multiple times to add more SET assignments.
+    /// # Panics
+    ///
+    /// - Panics if `columns` is empty.
+    /// - Panics if an ON CONFLICT clause has already been set.
     ///
     /// ```
     /// use qbey::{qbey, Value, InsertQueryBuilder};
@@ -350,21 +366,21 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     pub fn on_conflict_do_update(
         &mut self,
         columns: &[impl Into<Col> + Clone],
-        col: &str,
+        col: impl Into<Col>,
         val: impl Into<V>,
     ) -> &mut Self {
-        let col_columns: Vec<String> = columns.iter().map(|c| c.clone().into().column).collect();
-        match &mut self.on_conflict {
-            Some(OnConflict::DoUpdate { sets, .. }) => {
-                sets.push(OnConflictUpdateClause::Value(col.to_string(), val.into()));
-            }
-            _ => {
-                self.on_conflict = Some(OnConflict::DoUpdate {
-                    columns: col_columns,
-                    sets: vec![OnConflictUpdateClause::Value(col.to_string(), val.into())],
-                });
-            }
-        }
+        assert!(
+            !columns.is_empty(),
+            "on_conflict_do_update: columns must not be empty"
+        );
+        assert!(
+            self.on_conflict.is_none(),
+            "on_conflict_do_update: ON CONFLICT clause already set"
+        );
+        self.on_conflict = Some(OnConflict::DoUpdate {
+            columns: columns.iter().map(|c| c.clone().into().column).collect(),
+            sets: vec![OnConflictUpdateClause::Value(col.into().column, val.into())],
+        });
         self
     }
 
@@ -372,6 +388,11 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Accepts `&str` or `Col` for `columns`. When `Col` is passed,
     /// the table prefix is ignored — only the column name is used.
+    ///
+    /// # Panics
+    ///
+    /// - Panics if `columns` is empty.
+    /// - Panics if an ON CONFLICT clause has already been set.
     ///
     /// ```
     /// use qbey::{qbey, Value, RawSql, InsertQueryBuilder};
@@ -388,18 +409,18 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         columns: &[impl Into<Col> + Clone],
         expr: RawSql<V>,
     ) -> &mut Self {
-        let col_columns: Vec<String> = columns.iter().map(|c| c.clone().into().column).collect();
-        match &mut self.on_conflict {
-            Some(OnConflict::DoUpdate { sets, .. }) => {
-                sets.push(OnConflictUpdateClause::Expr(expr));
-            }
-            _ => {
-                self.on_conflict = Some(OnConflict::DoUpdate {
-                    columns: col_columns,
-                    sets: vec![OnConflictUpdateClause::Expr(expr)],
-                });
-            }
-        }
+        assert!(
+            !columns.is_empty(),
+            "on_conflict_do_update_expr: columns must not be empty"
+        );
+        assert!(
+            self.on_conflict.is_none(),
+            "on_conflict_do_update_expr: ON CONFLICT clause already set"
+        );
+        self.on_conflict = Some(OnConflict::DoUpdate {
+            columns: columns.iter().map(|c| c.clone().into().column).collect(),
+            sets: vec![OnConflictUpdateClause::Expr(expr)],
+        });
         self
     }
 
@@ -407,6 +428,11 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
     ///
     /// Accepts `&str` or `Col` (from `qbey_schema!`). When `Col` is passed,
     /// the table prefix is ignored — only the column name is used.
+    ///
+    /// # Panics
+    ///
+    /// - Panics if `columns` is empty.
+    /// - Panics if an ON CONFLICT clause has already been set.
     ///
     /// ```
     /// use qbey::{qbey, Value, InsertQueryBuilder};
@@ -423,7 +449,14 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
         columns: &[impl Into<Col> + Clone],
         update_columns: &[impl Into<Col> + Clone],
     ) -> &mut Self {
-        let col_columns: Vec<String> = columns.iter().map(|c| c.clone().into().column).collect();
+        assert!(
+            !columns.is_empty(),
+            "on_conflict_do_update_with_excluded: columns must not be empty"
+        );
+        assert!(
+            self.on_conflict.is_none(),
+            "on_conflict_do_update_with_excluded: ON CONFLICT clause already set"
+        );
         let sets: Vec<OnConflictUpdateClause<V>> = update_columns
             .iter()
             .map(|c| {
@@ -432,7 +465,7 @@ impl<V: Clone + std::fmt::Debug> InsertQuery<V> {
             })
             .collect();
         self.on_conflict = Some(OnConflict::DoUpdate {
-            columns: col_columns,
+            columns: columns.iter().map(|c| c.clone().into().column).collect(),
             sets,
         });
         self
