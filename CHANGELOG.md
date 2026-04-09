@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] - 2026-04-09
+
+### Added
+
+- `ON CONFLICT` support for PostgreSQL and SQLite behind the `conflict` feature gate.
+  - `on_conflict_do_nothing()` — `ON CONFLICT (...) DO NOTHING`.
+  - `on_conflict_do_update()` — `ON CONFLICT (...) DO UPDATE SET col = ?` with a bind value.
+  - `on_conflict_do_update_expr()` — `ON CONFLICT (...) DO UPDATE SET` with a raw SQL expression.
+  - `on_conflict_do_update_with_excluded()` — `ON CONFLICT (...) DO UPDATE SET col = EXCLUDED.col` for convenient upsert.
+- All conflict column parameters accept both `&str` and `Col` (from `qbey_schema!`). Table prefix is ignored.
+- `SetClause::Excluded` variant for rendering `EXCLUDED` references in ON CONFLICT context.
+
 ## [0.2.1] - 2026-03-30
 
 ### Added
