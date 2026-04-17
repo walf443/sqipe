@@ -19,7 +19,7 @@ rusqlite = { version = "0.32" }
 tokio-postgres = "0.7"
 postgres = "0.19"
 testcontainers = { version = "0.27", features = ["watchdog"] }
-ctor = "0.8"
+ctor = "0.10"
 testcontainers-modules = { version = "0.15", features = ["postgres", "mysql"] }
 criterion = { version = "0.8" }
 libsql = { version = "0.9", default-features = false, features = ["core"] }
