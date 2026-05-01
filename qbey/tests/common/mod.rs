@@ -1,4 +1,4 @@
-/// Defines `SharedContainer`, a static `OnceCell`, a `#[ctor::dtor]` cleanup
+/// Defines `SharedContainer`, a static `OnceCell`, a `#[dtor::dtor]` cleanup
 /// function, and `get_shared_container()` for the given testcontainers image
 /// and port.
 ///
@@ -22,7 +22,7 @@ macro_rules! define_shared_container {
 
         // Avoid unwrap() in dtor — panicking in a destructor causes process abort.
         // Errors are intentionally ignored since cleanup is best-effort.
-        #[ctor::dtor]
+        #[dtor::dtor(unsafe)]
         fn cleanup() {
             if let Some(shared) = SHARED_CONTAINER.get() {
                 if let Some(container) = shared.container.lock().ok().and_then(|mut g| g.take()) {
