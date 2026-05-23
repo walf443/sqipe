@@ -17,7 +17,7 @@ async fn test_insert_on_duplicate_key_update_with_value() {
     ins.on_duplicate_key_update(col("name"), "Alicia");
     let (sql, binds) = ins.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -47,7 +47,7 @@ async fn test_insert_on_duplicate_key_update_expr() {
     ins.on_duplicate_key_update_expr(qbey::RawSql::new("`age` = `age` + 1"));
     let (sql, binds) = ins.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -74,7 +74,7 @@ async fn test_insert_on_duplicate_key_update_no_conflict() {
     ins.on_duplicate_key_update(col("name"), "should_not_apply");
     let (sql, binds) = ins.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -112,7 +112,7 @@ async fn test_insert_blob() {
     ]);
     let (sql, binds) = ins.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
