@@ -102,10 +102,13 @@ pub async fn setup_pool() -> MySqlPool {
     let root_url = format!("mysql://root@127.0.0.1:{}", shared.host_port);
     let root_pool = MySqlPool::connect(&root_url).await.unwrap();
 
-    sqlx::query(&format!("CREATE DATABASE `{}`", db_name))
-        .execute(&root_pool)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE DATABASE `{}`",
+        db_name
+    )))
+    .execute(&root_pool)
+    .await
+    .unwrap();
 
     let url = format!("mysql://root@127.0.0.1:{}/{}", shared.host_port, db_name);
     let pool = MySqlPool::connect(&url).await.unwrap();

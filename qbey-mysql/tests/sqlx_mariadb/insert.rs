@@ -20,7 +20,7 @@ async fn test_insert_returning() {
     ins.returning(&[col("id"), col("name")]);
     let (sql, binds) = ins.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -45,7 +45,7 @@ async fn test_insert_multiple_rows_returning() {
     ins.returning(&[col("id"), col("name")]);
     let (sql, binds) = ins.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -69,7 +69,7 @@ async fn test_insert_on_duplicate_key_update_with_returning() {
     ins.returning(&[col("id"), col("name")]);
     let (sql, binds) = ins.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -101,7 +101,7 @@ async fn test_insert_blob() {
     ]);
     let (sql, binds) = ins.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();

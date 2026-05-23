@@ -14,7 +14,10 @@ async fn test_basic_select() {
     q.select(&["id", "name"]);
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].get::<String, _>("name"), "Alice");
 }
@@ -28,7 +31,7 @@ async fn test_where_condition() {
     q.select(&["id", "name", "age"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -48,7 +51,10 @@ async fn test_order_by_and_limit() {
     q.limit(2);
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].get::<String, _>("name"), "Charlie");
     assert_eq!(rows[1].get::<String, _>("name"), "Alice");
@@ -65,7 +71,7 @@ async fn test_join() {
     q.add_select(table("orders").col("total"));
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -89,7 +95,7 @@ async fn test_join_with_alias() {
     q.select(&cols);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -112,7 +118,10 @@ async fn test_left_join() {
     q.add_select(table("o").col("total").as_("order_total"));
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 4);
 }
 
@@ -126,7 +135,10 @@ async fn test_straight_join() {
     q.add_select(table("orders").col("total"));
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 3);
 }
 
@@ -146,7 +158,7 @@ async fn test_force_index() {
     q.select(&["id", "name"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -171,7 +183,7 @@ async fn test_force_index_for_join() {
     q.select(&table("users").cols(&["id", "name"]));
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -194,7 +206,7 @@ async fn test_use_index_for_order_by() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -225,7 +237,7 @@ async fn test_multiple_index_hints() {
     q.order_by(col("age").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -244,7 +256,7 @@ async fn test_between() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -269,7 +281,7 @@ async fn test_union() {
     let uq = q1.union(&q2);
     let (sql, binds) = uq.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -291,7 +303,7 @@ async fn test_in_subquery() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -315,7 +327,7 @@ async fn test_in_subquery_with_outer_binds() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -338,7 +350,7 @@ async fn test_not_in_subquery() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -361,7 +373,7 @@ async fn test_from_subquery() {
     q.order_by(col("total").desc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -384,7 +396,7 @@ async fn test_from_subquery_with_outer_where() {
     q.and_where(col("total").gt(60.0));
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -403,7 +415,7 @@ async fn test_like_contains() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -421,7 +433,7 @@ async fn test_like_starts_with() {
     q.select(&["id", "name"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -438,7 +450,7 @@ async fn test_like_ends_with() {
     q.select(&["id", "name"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -455,7 +467,7 @@ async fn test_not_like() {
     q.select(&["id", "name"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -475,7 +487,7 @@ async fn test_for_update() {
 
     assert!(sql.ends_with("FOR UPDATE"));
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -495,7 +507,7 @@ async fn test_for_update_with_nowait() {
 
     assert!(sql.ends_with("FOR UPDATE NOWAIT"));
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -514,7 +526,10 @@ async fn test_for_update_skip_locked() {
 
     assert!(sql.ends_with("FOR UPDATE SKIP LOCKED"));
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 3);
 }
 
@@ -530,7 +545,7 @@ async fn test_for_with_share() {
 
     assert!(sql.ends_with("FOR SHARE"));
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -548,7 +563,7 @@ async fn test_like_custom_escape_char() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -569,7 +584,10 @@ async fn test_distinct() {
     q.order_by(col("status").asc());
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
     // orders has: shipped, pending, shipped → distinct gives: pending, shipped
     assert_eq!(rows.len(), 2);
@@ -588,7 +606,7 @@ async fn test_having() {
     q.having(col("cnt").gt(1));
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -609,7 +627,7 @@ async fn test_having_with_where() {
     q.and_having(col("cnt").gt(0));
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -632,7 +650,10 @@ async fn test_row_number_over() {
     );
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
     // Ordered by age DESC: Charlie(35)=1, Alice(30)=2, Bob(25)=3
     assert_eq!(rows.len(), 3);
@@ -654,7 +675,10 @@ async fn test_sum_over_partition() {
     q.order_by(col("id").asc());
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
     // user_id=1 has orders 100+200=300, user_id=2 has 50
     assert_eq!(rows.len(), 3);
@@ -676,7 +700,10 @@ async fn test_count_over_partition() {
     q.order_by(col("id").asc());
     let (sql, _) = q.to_sql();
 
-    let rows = sqlx::query(&sql).fetch_all(&pool).await.unwrap();
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
     // user_id=1 has 2 orders, user_id=2 has 1
     assert_eq!(rows.len(), 3);
@@ -698,7 +725,7 @@ async fn test_cte() {
     q.order_by(col("age").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -722,7 +749,7 @@ async fn test_exists_subquery() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -743,7 +770,7 @@ async fn test_not_exists_subquery() {
     q.select(&["id", "name"]);
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -765,7 +792,7 @@ async fn test_exists_with_outer_binds() {
     q.order_by(col("name").asc());
     let (sql, binds) = q.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();

@@ -12,7 +12,7 @@ async fn test_delete_basic() {
         .and_where(col("id").eq(1));
     let (sql, binds) = d.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -35,7 +35,7 @@ async fn test_delete_from_query_with_where() {
     let d = q.into_delete().where_set();
     let (sql, binds) = d.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -59,7 +59,7 @@ async fn test_delete_allow_without_where() {
         .allow_without_where();
     let (sql, binds) = d.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -83,7 +83,7 @@ async fn test_delete_with_order_by_and_limit() {
     d.limit(1);
     let (sql, binds) = d.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();

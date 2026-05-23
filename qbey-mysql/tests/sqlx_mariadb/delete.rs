@@ -17,7 +17,7 @@ async fn test_delete_returning() {
     d.returning(&[col("id"), col("name")]);
     let (sql, binds) = d.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -45,7 +45,7 @@ async fn test_delete_returning_multiple_rows() {
     d.returning(&[col("name"), col("age")]);
     let (sql, binds) = d.to_sql();
 
-    let rows = bind_params(sqlx::query(&sql), &binds)
+    let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .fetch_all(&pool)
         .await
         .unwrap();

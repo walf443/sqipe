@@ -12,7 +12,7 @@ async fn test_update_basic() {
     let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -34,7 +34,7 @@ async fn test_update_multiple_sets() {
     let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -58,7 +58,7 @@ async fn test_update_from_query_with_where() {
     let u = u.where_set();
     let (sql, binds) = u.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -79,7 +79,7 @@ async fn test_update_allow_without_where() {
     let u = u.allow_without_where();
     let (sql, binds) = u.to_sql();
 
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -114,7 +114,7 @@ async fn test_update_blob() {
         ("data", MysqlValue::Blob(vec![0x00, 0x01])),
     ]);
     let (sql, binds) = ins.to_sql();
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
@@ -125,7 +125,7 @@ async fn test_update_blob() {
     u.set(col("data"), MysqlValue::Blob(new_data.clone()));
     let u = u.and_where(col("id").eq(1));
     let (sql, binds) = u.to_sql();
-    bind_params(sqlx::query(&sql), &binds)
+    bind_params(sqlx::query(sqlx::AssertSqlSafe(sql.as_str())), &binds)
         .execute(&pool)
         .await
         .unwrap();
