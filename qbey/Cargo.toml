@@ -15,7 +15,7 @@ categories = ["database"]
 [dev-dependencies]
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "mysql"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-rusqlite = { version = "0.39" }
+rusqlite = { version = "0.40" }
 tokio-postgres = "0.7"
 postgres = "0.19"
 testcontainers = { version = "0.27", features = ["watchdog"] }
